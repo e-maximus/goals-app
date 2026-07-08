@@ -16,12 +16,14 @@ import { GroupCard, AddGroupCard } from "@/components/group-card";
 import { ProgressBar, SectionLabel } from "@/components/ui-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Check } from "lucide-react";
+import { ShareDialog } from "@/components/share-dialog";
 
 export function GoalDetail({ goalId }: { goalId: string }) {
   const { getGoal, hydrated, addGoal, addGroup } = useStore();
   const router = useRouter();
   const [newGoalOpen, setNewGoalOpen] = useState(false);
   const [addGroupOpen, setAddGroupOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const goal = getGoal(goalId);
 
@@ -65,7 +67,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
   return (
     <div className="flex flex-1 flex-col">
-      <Topbar crumbs={<Crumbs goalTitle={goal.title} />} onNewGoal={openNewGoal} showShare />
+      <Topbar crumbs={<Crumbs goalTitle={goal.title} />} onNewGoal={openNewGoal} showShare onShare={() => setShareOpen(true)} />
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-8 sm:px-10">
         {/* Goal banner */}
@@ -145,6 +147,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
         submitLabel="Add group"
         onSubmit={(v) => addGroup(goal.id, v)}
       />
+      <ShareDialog open={shareOpen} onOpenChange={setShareOpen} goal={goal} />
     </div>
   );
 }
