@@ -15,11 +15,11 @@ import { PromptDialog } from "@/components/prompt-dialog";
 import { GroupCard, AddGroupCard } from "@/components/group-card";
 import { ProgressBar, SectionLabel } from "@/components/ui-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Check } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
 import { ShareDialog } from "@/components/share-dialog";
 
 export function GoalDetail({ goalId }: { goalId: string }) {
-  const { getGoal, hydrated, addGoal, addGroup } = useStore();
+  const { getGoal, hydrated, addGoal, addGroup, deleteGoal } = useStore();
   const router = useRouter();
   const [newGoalOpen, setNewGoalOpen] = useState(false);
   const [addGroupOpen, setAddGroupOpen] = useState(false);
@@ -85,6 +85,18 @@ export function GoalDetail({ goalId }: { goalId: string }) {
             <ProgressBar value={pct} className="h-2.5" />
             <span className="tabular-nums text-xl font-bold text-primary">{pct}%</span>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              deleteGoal(goal.id);
+              router.push("/");
+            }}
+            className="text-destructive border-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            Delete
+          </Button>
         </div>
 
         {/* Completion celebration */}
