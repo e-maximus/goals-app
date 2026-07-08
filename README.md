@@ -6,6 +6,8 @@ time.
 
 **Live demo:** https://e-maximus.github.io/goals-app/
 
+[![Goals app — dashboard](docs/my-goals.png)](https://e-maximus.github.io/goals-app/)
+
 ## What it does
 
 - Create a goal with an optional "why" to remember your motivation.
