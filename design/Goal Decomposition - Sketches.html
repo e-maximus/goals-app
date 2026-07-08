@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="design_doc_mode" content="canvas">
+<title>Goal Decomposition — Sketches</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Helvetica, Arial, sans-serif; }
+
+  :root {
+    --bg: oklch(98% 0.006 150);
+    --surface: oklch(100% 0 0);
+    --text: oklch(22% 0.01 150);
+    --muted: oklch(52% 0.012 150);
+    --border: oklch(90% 0.008 150);
+    --border-strong: oklch(78% 0.012 150);
+    --track: oklch(93% 0.01 150);
+    --accent: oklch(60% 0.13 150);
+    --accent-soft: oklch(95% 0.03 150);
+    --accent-contrast: white;
+    --radius: 14px;
+    --radius-sm: 9px;
+    --shadow: 0 1px 3px rgba(20,40,20,0.05);
+  }
+
+  .frame {
+    position: absolute;
+    width: 1440px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .label {
+    position: absolute;
+    top: -34px;
+    left: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #888;
+    letter-spacing: 0.02em;
+  }
+
+  .topbar {
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 36px;
+    border-bottom: 1px solid var(--border);
+  }
+  .crumbs { font-size: 14px; color: var(--muted); }
+  .crumbs b { color: var(--text); font-weight: 600; }
+  .topbar-actions { display: flex; gap: 10px; }
+  .pill-btn {
+    font-size: 13px;
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    color: var(--text);
+    background: var(--surface);
+  }
+  .pill-btn.primary {
+    background: var(--accent);
+    color: var(--accent-contrast);
+    border: none;
+    font-weight: 600;
+  }
+
+  .goal-banner {
+    margin: 32px 40px 28px 40px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+  }
+  .goal-banner-main { flex: 1; min-width: 0; }
+  .goal-eyebrow {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .goal-title { font-size: 24px; font-weight: 700; color: var(--text); }
+  .goal-banner-progress { display: flex; align-items: center; gap: 16px; width: 260px; flex-shrink: 0; }
+  .bar-track { flex: 1; height: 10px; border-radius: 999px; background: var(--track); overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+  .goal-pct { font-size: 20px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+  .section-label {
+    margin: 0 40px 14px 40px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+  .groups-grid {
+    margin: 0 40px 40px 40px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+    align-items: stretch;
+  }
+
+  .group-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  .group-card.done { border-color: var(--accent); }
+  .group-header { padding: 16px 18px 14px 18px; border-bottom: 1px solid var(--border); }
+  .group-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 8px; }
+  .group-title { font-size: 15px; font-weight: 700; }
+  .group-pct-badge {
+    font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+    background: var(--track); color: var(--muted); font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .group-pct-badge.complete { background: var(--accent); color: var(--accent-contrast); }
+  .group-bar-track { height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; }
+  .group-bar-fill { height: 100%; border-radius: 999px; background: var(--accent); }
+
+  .steps-list {
+    flex: 1 1 auto;
+    max-height: 216px;
+    overflow-y: auto;
+    padding: 8px 10px 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  .steps-list::-webkit-scrollbar { width: 6px; }
+  .steps-list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; }
+  .add-step-wrap { flex-shrink: 0; padding: 0 10px 12px 10px; }
+
+  .step-row { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: var(--radius-sm); }
+  .step-check { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-strong); flex-shrink: 0; }
+  .step-check.done { background: var(--accent); border-color: var(--accent); position: relative; }
+  .step-check.done::after {
+    content: ""; position: absolute; left: 5px; top: 1px; width: 4px; height: 8px;
+    border: solid var(--accent-contrast); border-width: 0 2px 2px 0; transform: rotate(45deg);
+  }
+  .step-text { font-size: 13.5px; color: var(--text); }
+  .step-text.done { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--border-strong); }
+
+  .add-step-row {
+    display: flex; align-items: center; gap: 10px; padding: 9px 8px;
+    border-radius: var(--radius-sm); border: 1.5px dashed var(--border-strong);
+    color: var(--muted); font-size: 13px;
+  }
+  .add-step-row .plus { font-size: 15px; font-weight: 700; width: 18px; text-align: center; }
+
+  .group-card.add-new {
+    border: 1.5px dashed var(--border-strong); background: transparent; box-shadow: none;
+    align-items: center; justify-content: center; color: var(--muted);
+    font-size: 14px; font-weight: 600; min-height: 120px;
+  }
+  .plus-circle {
+    width: 34px; height: 34px; border-radius: 50%; border: 1.5px dashed var(--border-strong);
+    display: flex; align-items: center; justify-content: center; font-size: 18px; margin-bottom: 8px;
+  }
+
+  .empty-block {
+    flex: 1 1 auto;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 28px 16px; color: var(--muted); text-align: center;
+  }
+  .empty-block .empty-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .empty-block .empty-sub { font-size: 12.5px; }
+
+  /* multiple-goals dashboard */
+  .goals-list { margin: 0 40px; display: flex; flex-direction: column; gap: 14px; }
+  .goal-row {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 18px 24px; display: flex; align-items: center; gap: 24px;
+  }
+  .goal-row-main { flex: 1; min-width: 0; }
+  .goal-row-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .goal-row-meta { font-size: 12.5px; color: var(--muted); }
+  .goal-row-progress { display: flex; align-items: center; gap: 12px; width: 220px; flex-shrink: 0; }
+  .goal-row-progress .bar-track { height: 8px; }
+  .goal-row-progress .goal-pct { font-size: 15px; }
+  .goal-row.complete { border-color: var(--accent); background: var(--accent-soft); }
+  .goal-row-status {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 4px 10px; border-radius: 999px; background: var(--track); color: var(--muted); flex-shrink: 0;
+  }
+  .goal-row-status.complete { background: var(--accent); color: var(--accent-contrast); }
+
+  /* full-app empty state */
+  .app-empty {
+    height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 40px; text-align: center;
+  }
+  .app-empty .empty-icon-circle {
+    width: 56px; height: 56px; border-radius: 50%; border: 1.5px dashed var(--border-strong);
+    display: flex; align-items: center; justify-content: center; font-size: 26px; color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .app-empty .empty-title { font-size: 19px; font-weight: 700; color: var(--text); }
+  .app-empty .empty-sub { font-size: 14px; color: var(--muted); max-width: 380px; }
+
+  /* modal overlay */
+  .modal-overlay {
+    position: absolute; inset: 0; background: rgba(20, 30, 20, 0.35);
+    display: flex; align-items: center; justify-content: center; z-index: 10;
+  }
+  .modal-card {
+    width: 440px; background: var(--surface); border-radius: var(--radius);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.2); padding: 28px;
+  }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .modal-sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+  .form-field { margin-bottom: 16px; }
+  .form-field label {
+    display: block; font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;
+  }
+  .form-field input, .form-field textarea {
+    width: 100%; font-family: inherit; font-size: 14px; color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px;
+    background: var(--bg);
+  }
+  .form-field textarea { resize: none; height: 64px; }
+  .form-field .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
+  /* goal complete celebration */
+  .complete-banner {
+    margin: 32px 40px 0 40px; background: var(--accent-soft); border: 1px solid var(--accent);
+    border-radius: var(--radius); padding: 20px 28px; display: flex; align-items: center; gap: 16px;
+  }
+  .complete-banner .check-badge {
+    width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: var(--accent-contrast);
+    display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; flex-shrink: 0;
+  }
+  .complete-banner-title { font-size: 16px; font-weight: 700; }
+  .complete-banner-sub { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- ============ 1: Base — goal with groups & steps ============ -->
+<div class="frame" style="left:0; top:0; height: 760px;">
+  <div class="label">1 · Base</div>
+
+  <div class="topbar">
+    <div class="crumbs">My Goals / <b>Launch a Podcast</b></div>
+    <div class="topbar-actions">
+      <div class="pill-btn">Share</div>
+      <div class="pill-btn primary">+ New Goal</div>
+    </div>
+  </div>
+
+  <div class="goal-banner">
+    <div class="goal-banner-main">
+      <div class="goal-eyebrow">Goal</div>
+      <div class="goal-title">Launch my podcast</div>
+    </div>
+    <div class="goal-banner-progress">
+      <div class="bar-track"><div class="bar-fill" style="width:42%"></div></div>
+      <div class="goal-pct">42%</div>
+    </div>
+  </div>
+
+  <div class="section-label">Groups · 3</div>
+
+  <div class="groups-grid">
+    <div class="group-card done">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Preparation</div><div class="group-pct-badge complete">100%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:100%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Pick a name</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Choose a platform</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Buy a microphone</div></div>
+        </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Recording Content</div><div class="group-pct-badge">40%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:40%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Write ep. 1 script</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Record ep. 1</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Edit ep. 1</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Record ep. 2</div></div>
+        </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Promotion</div><div class="group-pct-badge">0%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:0%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Create social accounts</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Write announcement</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Find platforms</div></div>
+        </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card add-new">
+      <div class="plus-circle">+</div>
+      <div>Add group</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2: Group with many steps (scrollable) ============ -->
+<div class="frame" style="left:1560px; top:0; height: 760px;">
+  <div class="label">2 · Group with many steps</div>
+
+  <div class="topbar">
+    <div class="crumbs">My Goals / <b>Launch a Podcast</b></div>
+    <div class="topbar-actions">
+      <div class="pill-btn">Share</div>
+      <div class="pill-btn primary">+ New Goal</div>
+    </div>
+  </div>
+
+  <div class="goal-banner">
+    <div class="goal-banner-main">
+      <div class="goal-eyebrow">Goal</div>
+      <div class="goal-title">Launch my podcast</div>
+    </div>
+    <div class="goal-banner-progress">
+      <div class="bar-track"><div class="bar-fill" style="width:42%"></div></div>
+      <div class="goal-pct">42%</div>
+    </div>
+  </div>
+
+  <div class="section-label">Groups · 3</div>
+
+  <div class="groups-grid">
+    <div class="group-card done">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Preparation</div><div class="group-pct-badge complete">100%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:100%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Pick a name</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Choose a platform</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Buy a microphone</div></div>
+        </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Recording Content</div><div class="group-pct-badge">25%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:25%"></div></div>
+      </div>
+      <div class="steps-list scrollable">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Write ep. 1 script</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Record ep. 1</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Edit ep. 1</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Write ep. 2 script</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Record ep. 2</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Edit ep. 2</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Write ep. 3 script</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Record ep. 3</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Edit ep. 3</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Design cover art</div></div>
+        </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Promotion</div><div class="group-pct-badge">0%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:0%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Create social accounts</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Write announcement</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Find platforms</div></div>
+        </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card add-new">
+      <div class="plus-circle">+</div>
+      <div>Add group</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3: Empty group (no steps yet) ============ -->
+<div class="frame" style="left:3120px; top:0; height: 760px;">
+  <div class="label">3 · Empty group — no steps yet</div>
+
+  <div class="topbar">
+    <div class="crumbs">My Goals / <b>Launch a Podcast</b></div>
+    <div class="topbar-actions">
+      <div class="pill-btn">Share</div>
+      <div class="pill-btn primary">+ New Goal</div>
+    </div>
+  </div>
+
+  <div class="goal-banner">
+    <div class="goal-banner-main">
+      <div class="goal-eyebrow">Goal</div>
+      <div class="goal-title">Launch my podcast</div>
+    </div>
+    <div class="goal-banner-progress">
+      <div class="bar-track"><div class="bar-fill" style="width:33%"></div></div>
+      <div class="goal-pct">33%</div>
+    </div>
+  </div>
+
+  <div class="section-label">Groups · 3</div>
+
+  <div class="groups-grid">
+    <div class="group-card done">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Preparation</div><div class="group-pct-badge complete">100%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:100%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Pick a name</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Choose a platform</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Buy a microphone</div></div>
+        </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Recording Content</div><div class="group-pct-badge">100%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:100%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Write ep. 1 script</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Record ep. 1</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Edit ep. 1</div></div>
+        </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Promotion</div><div class="group-pct-badge">—</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:0%"></div></div>
+      </div>
+      <div class="empty-block">
+        <div class="empty-title">No steps yet</div>
+        <div class="empty-sub">Break this group down into steps</div>
+      </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card add-new">
+      <div class="plus-circle">+</div>
+      <div>Add group</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 4: New goal — no groups yet ============ -->
+<div class="frame" style="left:4680px; top:0; height: 480px;">
+  <div class="label">4 · New goal — no groups yet</div>
+
+  <div class="topbar">
+    <div class="crumbs">My Goals / <b>Learn Watercolor Painting</b></div>
+    <div class="topbar-actions">
+      <div class="pill-btn">Share</div>
+      <div class="pill-btn primary">+ New Goal</div>
+    </div>
+  </div>
+
+  <div class="goal-banner">
+    <div class="goal-banner-main">
+      <div class="goal-eyebrow">Goal</div>
+      <div class="goal-title">Learn watercolor painting</div>
+    </div>
+    <div class="goal-banner-progress">
+      <div class="bar-track"><div class="bar-fill" style="width:0%"></div></div>
+      <div class="goal-pct">0%</div>
+    </div>
+  </div>
+
+  <div style="margin: 40px 40px 0 40px; border: 1.5px dashed var(--border-strong); border-radius: var(--radius); padding: 56px 20px; display:flex; flex-direction:column; align-items:center; gap:12px;">
+    <div class="plus-circle" style="width:44px;height:44px;font-size:22px;">+</div>
+    <div style="font-size:15px; font-weight:700;">No groups yet</div>
+    <div style="font-size:13px; color:var(--muted); max-width: 360px; text-align:center;">Break this goal down into a few groups of steps to get started</div>
+    <div class="pill-btn primary" style="margin-top:8px;">+ Add first group</div>
+  </div>
+</div>
+
+<!-- ============ 5: Multiple goals — dashboard ============ -->
+<div class="frame" style="left:6240px; top:0; height: 720px;">
+  <div class="label">5 · Multiple goals — dashboard</div>
+
+  <div class="topbar">
+    <div class="crumbs"><b>My Goals</b></div>
+    <div class="topbar-actions">
+      <div class="pill-btn primary">+ New Goal</div>
+    </div>
+  </div>
+
+  <div class="section-label" style="margin-top:28px;">In progress · 3</div>
+  <div class="goals-list" style="margin-bottom: 24px;">
+    <div class="goal-row">
+      <div class="goal-row-main">
+        <div class="goal-row-title">Launch my podcast</div>
+        <div class="goal-row-meta">3 groups · 12 steps</div>
+      </div>
+      <div class="goal-row-progress">
+        <div class="bar-track"><div class="bar-fill" style="width:42%"></div></div>
+        <div class="goal-pct">42%</div>
+      </div>
+      <div class="goal-row-status">Active</div>
+    </div>
+
+    <div class="goal-row">
+      <div class="goal-row-main">
+        <div class="goal-row-title">Run a half marathon</div>
+        <div class="goal-row-meta">4 groups · 18 steps</div>
+      </div>
+      <div class="goal-row-progress">
+        <div class="bar-track"><div class="bar-fill" style="width:67%"></div></div>
+        <div class="goal-pct">67%</div>
+      </div>
+      <div class="goal-row-status">Active</div>
+    </div>
+
+    <div class="goal-row">
+      <div class="goal-row-main">
+        <div class="goal-row-title">Learn watercolor painting</div>
+        <div class="goal-row-meta">No groups yet</div>
+      </div>
+      <div class="goal-row-progress">
+        <div class="bar-track"><div class="bar-fill" style="width:0%"></div></div>
+        <div class="goal-pct">0%</div>
+      </div>
+      <div class="goal-row-status">Just started</div>
+    </div>
+  </div>
+
+  <div class="section-label">Completed · 1</div>
+  <div class="goals-list">
+    <div class="goal-row complete">
+      <div class="goal-row-main">
+        <div class="goal-row-title">Redesign personal website</div>
+        <div class="goal-row-meta">5 groups · 21 steps</div>
+      </div>
+      <div class="goal-row-progress">
+        <div class="bar-track"><div class="bar-fill" style="width:100%"></div></div>
+        <div class="goal-pct">100%</div>
+      </div>
+      <div class="goal-row-status complete">Done</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 6: Empty state — no goals yet (first use) ============ -->
+<div class="frame" style="left:7800px; top:0; height: 560px;">
+  <div class="label">6 · No goals yet (first use)</div>
+
+  <div class="topbar">
+    <div class="crumbs"><b>My Goals</b></div>
+    <div class="topbar-actions">
+      <div class="pill-btn primary">+ New Goal</div>
+    </div>
+  </div>
+
+  <div class="app-empty" style="height: 496px;">
+    <div class="empty-icon-circle">+</div>
+    <div class="empty-title">No goals yet</div>
+    <div class="empty-sub">Turn something big and vague into a goal you can actually make progress on — one small step at a time.</div>
+    <div class="pill-btn primary" style="margin-top:8px;">+ Create your first goal</div>
+  </div>
+</div>
+
+<!-- ============ 7: New Goal — modal ============ -->
+<div class="frame" style="left:9360px; top:0; height: 560px;">
+  <div class="label">7 · New goal — modal</div>
+
+  <div class="topbar">
+    <div class="crumbs"><b>My Goals</b></div>
+    <div class="topbar-actions">
+      <div class="pill-btn primary">+ New Goal</div>
+    </div>
+  </div>
+
+  <div class="section-label" style="margin-top:28px;">In progress · 1</div>
+  <div class="goals-list">
+    <div class="goal-row">
+      <div class="goal-row-main">
+        <div class="goal-row-title">Launch my podcast</div>
+        <div class="goal-row-meta">3 groups · 12 steps</div>
+      </div>
+      <div class="goal-row-progress">
+        <div class="bar-track"><div class="bar-fill" style="width:42%"></div></div>
+        <div class="goal-pct">42%</div>
+      </div>
+      <div class="goal-row-status">Active</div>
+    </div>
+  </div>
+
+  <div class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-title">New goal</div>
+      <div class="modal-sub">What do you want to achieve?</div>
+      <div class="form-field">
+        <label>Goal name</label>
+        <input type="text" value="Run a half marathon" />
+      </div>
+      <div class="form-field">
+        <label>Why it matters (optional)</label>
+        <textarea placeholder="e.g. Prove to myself I can stick with something for months"></textarea>
+      </div>
+      <div class="modal-actions">
+        <div class="pill-btn">Cancel</div>
+        <div class="pill-btn primary">Create goal</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 8: Add Group — modal ============ -->
+<div class="frame" style="left:10920px; top:0; height: 760px;">
+  <div class="label">8 · Add group — modal</div>
+
+  <div class="topbar">
+    <div class="crumbs">My Goals / <b>Launch a Podcast</b></div>
+    <div class="topbar-actions">
+      <div class="pill-btn">Share</div>
+      <div class="pill-btn primary">+ New Goal</div>
+    </div>
+  </div>
+
+  <div class="goal-banner">
+    <div class="goal-banner-main">
+      <div class="goal-eyebrow">Goal</div>
+      <div class="goal-title">Launch my podcast</div>
+    </div>
+    <div class="goal-banner-progress">
+      <div class="bar-track"><div class="bar-fill" style="width:42%"></div></div>
+      <div class="goal-pct">42%</div>
+    </div>
+  </div>
+
+  <div class="section-label">Groups · 3</div>
+
+  <div class="groups-grid">
+    <div class="group-card done">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Preparation</div><div class="group-pct-badge complete">100%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:100%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Pick a name</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Choose a platform</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Buy a microphone</div></div>
+      </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Recording Content</div><div class="group-pct-badge">40%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:40%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Write ep. 1 script</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Record ep. 1</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Edit ep. 1</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Record ep. 2</div></div>
+      </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Promotion</div><div class="group-pct-badge">0%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:0%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Create social accounts</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Write announcement</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Find platforms</div></div>
+      </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card add-new">
+      <div class="plus-circle">+</div>
+      <div>Add group</div>
+    </div>
+  </div>
+
+  <div class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-title">Add group</div>
+      <div class="modal-sub">Split "Launch my podcast" into a new group of steps</div>
+      <div class="form-field">
+        <label>Group name</label>
+        <input type="text" value="Editing & Mixing" />
+      </div>
+      <div class="modal-actions">
+        <div class="pill-btn">Cancel</div>
+        <div class="pill-btn primary">Add group</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 9: Add Step — modal ============ -->
+<div class="frame" style="left:12480px; top:0; height: 760px;">
+  <div class="label">9 · Add step — modal</div>
+
+  <div class="topbar">
+    <div class="crumbs">My Goals / <b>Launch a Podcast</b></div>
+    <div class="topbar-actions">
+      <div class="pill-btn">Share</div>
+      <div class="pill-btn primary">+ New Goal</div>
+    </div>
+  </div>
+
+  <div class="goal-banner">
+    <div class="goal-banner-main">
+      <div class="goal-eyebrow">Goal</div>
+      <div class="goal-title">Launch my podcast</div>
+    </div>
+    <div class="goal-banner-progress">
+      <div class="bar-track"><div class="bar-fill" style="width:42%"></div></div>
+      <div class="goal-pct">42%</div>
+    </div>
+  </div>
+
+  <div class="section-label">Groups · 3</div>
+
+  <div class="groups-grid">
+    <div class="group-card done">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Preparation</div><div class="group-pct-badge complete">100%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:100%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Pick a name</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Choose a platform</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Buy a microphone</div></div>
+      </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Recording Content</div><div class="group-pct-badge">40%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:40%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Write ep. 1 script</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Record ep. 1</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Edit ep. 1</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Record ep. 2</div></div>
+      </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Promotion</div><div class="group-pct-badge">0%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:0%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Create social accounts</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Write announcement</div></div>
+        <div class="step-row"><div class="step-check"></div><div class="step-text">Find platforms</div></div>
+      </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card add-new">
+      <div class="plus-circle">+</div>
+      <div>Add group</div>
+    </div>
+  </div>
+
+  <div class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-title">Add step</div>
+      <div class="modal-sub">Add a step to "Recording Content"</div>
+      <div class="form-field">
+        <label>Step</label>
+        <input type="text" value="Record ep. 3" />
+        <div class="hint">Keep it small — something you could do in one sitting.</div>
+      </div>
+      <div class="modal-actions">
+        <div class="pill-btn">Cancel</div>
+        <div class="pill-btn primary">Add step</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 10: Goal completed ============ -->
+<div class="frame" style="left:14040px; top:0; height: 760px;">
+  <div class="label">10 · Goal completed</div>
+
+  <div class="topbar">
+    <div class="crumbs">My Goals / <b>Redesign Personal Website</b></div>
+    <div class="topbar-actions">
+      <div class="pill-btn">Share</div>
+      <div class="pill-btn primary">+ New Goal</div>
+    </div>
+  </div>
+
+  <div class="goal-banner">
+    <div class="goal-banner-main">
+      <div class="goal-eyebrow">Goal</div>
+      <div class="goal-title">Redesign personal website</div>
+    </div>
+    <div class="goal-banner-progress">
+      <div class="bar-track"><div class="bar-fill" style="width:100%"></div></div>
+      <div class="goal-pct">100%</div>
+    </div>
+  </div>
+
+  <div class="complete-banner">
+    <div class="check-badge">✓</div>
+    <div>
+      <div class="complete-banner-title">Goal complete</div>
+      <div class="complete-banner-sub">All 5 groups and 21 steps are done. Nice work.</div>
+    </div>
+  </div>
+
+  <div class="section-label" style="margin-top: 28px;">Groups · 5</div>
+
+  <div class="groups-grid">
+    <div class="group-card done">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Research</div><div class="group-pct-badge complete">100%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:100%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Audit current site</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Collect references</div></div>
+      </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card done">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Design</div><div class="group-pct-badge complete">100%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:100%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Wireframe homepage</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Design system pass</div></div>
+      </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card done">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Build</div><div class="group-pct-badge complete">100%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:100%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Build homepage</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Build project pages</div></div>
+      </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+
+    <div class="group-card done">
+      <div class="group-header">
+        <div class="group-title-row"><div class="group-title">Launch</div><div class="group-pct-badge complete">100%</div></div>
+        <div class="group-bar-track"><div class="group-bar-fill" style="width:100%"></div></div>
+      </div>
+      <div class="steps-list">
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">QA on all devices</div></div>
+        <div class="step-row"><div class="step-check done"></div><div class="step-text done">Point domain live</div></div>
+      </div>
+      <div class="add-step-wrap">
+        <div class="add-step-row"><div class="plus">+</div><div>Add step</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

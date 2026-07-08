@@ -1,0 +1,132 @@
+import type { Goal, Step } from "./types";
+
+let counter = 0;
+function id(prefix: string): string {
+  counter += 1;
+  return `${prefix}-${counter}`;
+}
+
+function steps(pairs: [string, boolean][]): Step[] {
+  return pairs.map(([text, done]) => ({ id: id("s"), text, done }));
+}
+
+// Example data mirroring the design sketches. Only used on first visit,
+// after which the user's own edits live in localStorage.
+export function seedGoals(): Goal[] {
+  return [
+    {
+      id: "goal-podcast",
+      title: "Launch my podcast",
+      why: "Prove to myself I can ship something creative from start to finish.",
+      createdAt: Date.now() - 1000 * 60 * 60 * 24 * 20,
+      groups: [
+        {
+          id: id("g"),
+          title: "Preparation",
+          steps: steps([
+            ["Pick a name", true],
+            ["Choose a platform", true],
+            ["Buy a microphone", true],
+          ]),
+        },
+        {
+          id: id("g"),
+          title: "Recording Content",
+          steps: steps([
+            ["Write ep. 1 script", true],
+            ["Record ep. 1", true],
+            ["Edit ep. 1", false],
+            ["Record ep. 2", false],
+          ]),
+        },
+        {
+          id: id("g"),
+          title: "Promotion",
+          steps: steps([
+            ["Create social accounts", false],
+            ["Write announcement", false],
+            ["Find platforms", false],
+          ]),
+        },
+      ],
+    },
+    {
+      id: "goal-marathon",
+      title: "Run a half marathon",
+      createdAt: Date.now() - 1000 * 60 * 60 * 24 * 40,
+      groups: [
+        {
+          id: id("g"),
+          title: "Base building",
+          steps: steps([
+            ["Buy running shoes", true],
+            ["Run 5k without stopping", true],
+            ["Run 3x per week for a month", true],
+          ]),
+        },
+        {
+          id: id("g"),
+          title: "Build endurance",
+          steps: steps([
+            ["Run 8k long run", true],
+            ["Run 12k long run", true],
+            ["Run 16k long run", false],
+          ]),
+        },
+        {
+          id: id("g"),
+          title: "Race prep",
+          steps: steps([
+            ["Register for the race", true],
+            ["Plan race-day fuel", false],
+          ]),
+        },
+      ],
+    },
+    {
+      id: "goal-watercolor",
+      title: "Learn watercolor painting",
+      createdAt: Date.now() - 1000 * 60 * 60 * 24 * 2,
+      groups: [],
+    },
+    {
+      id: "goal-website",
+      title: "Redesign personal website",
+      createdAt: Date.now() - 1000 * 60 * 60 * 24 * 60,
+      groups: [
+        {
+          id: id("g"),
+          title: "Research",
+          steps: steps([
+            ["Audit current site", true],
+            ["Collect references", true],
+          ]),
+        },
+        {
+          id: id("g"),
+          title: "Design",
+          steps: steps([
+            ["Wireframe homepage", true],
+            ["Design system pass", true],
+          ]),
+        },
+        {
+          id: id("g"),
+          title: "Build",
+          steps: steps([
+            ["Build homepage", true],
+            ["Build project pages", true],
+          ]),
+        },
+        {
+          id: id("g"),
+          title: "Launch",
+          steps: steps([
+            ["QA on all devices", true],
+            ["Point domain live", true],
+          ]),
+        },
+      ],
+    },
+  ];
+}
