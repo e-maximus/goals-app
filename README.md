@@ -1,36 +1,86 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Goals
 
-## Getting Started
+Break big things into steps. **Goals** is a small web app for decomposing a
+goal into groups of concrete steps, then tracking progress one checkbox at a
+time.
 
-First, run the development server:
+**Live demo:** https://e-maximus.github.io/goals-app/
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## What it does
+
+- Create a goal with an optional "why" to remember your motivation.
+- Break each goal into **groups**, and each group into checkable **steps**.
+- Watch progress roll up automatically — per group and per goal — with progress
+  bars and status labels (Just started / Active / Done).
+- Everything is saved locally in your browser (`localStorage`); a seeded example
+  goal shows up on your first visit.
+
+No account, no backend — open the page and start.
+
+## Tech stack
+
+- **[Next.js 16](https://nextjs.org)** (App Router) + **React 19**
+- **TypeScript**
+- **Tailwind CSS v4** with **shadcn/ui** components (built on
+  **[Base UI](https://base-ui.com)**)
+- **lucide-react** icons, **next-themes** for light/dark, **sonner** for toasts
+- Static export deployed to **GitHub Pages** via **GitHub Actions**
+
+## Architecture
+
+The app is a fully client-side single-page experience exported as a static site.
+
+```
+src/
+  app/            # Next.js App Router
+    layout.tsx    # root layout, fonts, StoreProvider, Toaster
+    page.tsx      # dashboard route (goal list)
+    goal/page.tsx # single-goal detail route (?id=…)
+  components/     # UI: dashboard, goal-detail, group-card, dialogs, topbar
+    ui/           # shadcn/Base UI primitives (button, card, dialog, …)
+  lib/
+    types.ts      # Goal / Group / Step types + progress helpers
+    store.tsx     # StoreProvider — state + localStorage persistence
+    seed.ts       # example data for first visit
+    utils.ts      # cn() and helpers
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **State** lives in a single React context (`StoreProvider` in
+  [src/lib/store.tsx](src/lib/store.tsx)). It exposes CRUD actions for goals,
+  groups, and steps, and persists to `localStorage` under the `goals-app:v1`
+  key.
+- **Derived progress** (percentages, counts, completion) is computed by pure
+  helpers in [src/lib/types.ts](src/lib/types.ts) rather than stored.
+- **Routing** is two routes — a dashboard and a `?id=`-driven goal detail —
+  kept static-export friendly (`trailingSlash`, unoptimized images).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Getting started
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npm run dev
+```
 
-## Learn More
+Open [http://localhost:3000](http://localhost:3000).
 
-To learn more about Next.js, take a look at the following resources:
+## Build & deploy
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The build is driven by [scripts/build.mjs](scripts/build.mjs) and defaults to a
+static export into `./out`:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run build                         # static export (GitHub Pages) → ./out
+npm run build -- --output server      # regular server build (npm start)
+npm run build -- --output standalone  # self-contained server (Docker)
+```
 
-## Deploy on Vercel
+For a GitHub Pages **project** site (`user.github.io/<repo>`), set the base path
+at build time:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+NEXT_PUBLIC_BASE_PATH="/goals-app" npm run build
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Pushing to `main` triggers the
+[Deploy to GitHub Pages](.github/workflows/deploy.yml) workflow, which builds the
+static export (computing the base path automatically) and publishes it.
