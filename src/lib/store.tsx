@@ -36,7 +36,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
-  // Load from localStorage on mount.
+  // Load from localStorage on mount. This intentionally sets state in an effect:
+  // hydrating from a client-only store after mount is the sanctioned use of an
+  // effect (syncing React with an external system). A lazy useState initializer
+  // can't be used here — localStorage is unavailable during static prerender, so
+  // initializing from it would desync server and client and break hydration.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -50,6 +55,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
     setHydrated(true);
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Persist on change (after hydration so we don't clobber storage with []).
   useEffect(() => {
