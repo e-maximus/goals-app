@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -37,9 +37,14 @@ export function PromptDialog({
 }) {
   const [value, setValue] = useState("");
 
-  useEffect(() => {
+  // Reset the field each time the dialog transitions to open. Adjusting state
+  // during render on a prop change is React's recommended pattern and avoids a
+  // setState-in-effect cascade.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) setValue("");
-  }, [open]);
+  }
 
   const submit = () => {
     if (!value.trim()) return;
