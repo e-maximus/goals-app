@@ -10,7 +10,33 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { Goal } from "@/lib/types";
+import { goalProgress, groupProgress } from "@/lib/types";
 import { Copy, Check } from "lucide-react";
+
+type ShareMode = "text" | "json";
+
+function formatGoalAsText(goal: Goal): string {
+  const pct = goalProgress(goal);
+  const lines: string[] = [];
+  lines.push(`${goal.title} — ${pct}%`);
+  lines.push("");
+
+  for (const group of goal.groups) {
+    const { pct: gpct } = groupProgress(group);
+    lines.push(`${group.title} (${gpct === null ? 0 : gpct}%)`);
+    for (const step of group.steps) {
+      lines.push(`  ${step.done ? "[x]" : "[ ]"} ${step.text}`);
+    }
+    lines.push("");
+  }
+
+  // Trim trailing blank line
+  while (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+
+  return lines.join("\n");
+}
 
 export function ShareDialog({
   open,
@@ -22,12 +48,17 @@ export function ShareDialog({
   goal: Goal | null;
 }) {
   const [copied, setCopied] = useState(false);
+  const [mode, setMode] = useState<ShareMode>("text");
 
-  const json = goal ? JSON.stringify(goal, null, 2) : "";
+  const shareContent = goal
+    ? mode === "json"
+      ? JSON.stringify(goal, null, 2)
+      : formatGoalAsText(goal)
+    : "";
 
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(json);
+      await navigator.clipboard.writeText(shareContent);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -42,7 +73,7 @@ export function ShareDialog({
         setTimeout(() => setCopied(false), 2000);
       }
     }
-  }, [json]);
+  }, [shareContent]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -51,9 +82,23 @@ export function ShareDialog({
           <DialogTitle>Share goal</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          <div className="flex gap-2">
+            <Button
+              variant={mode === "text" ? "default" : "outline"}
+              onClick={() => setMode("text")}
+            >
+              Text
+            </Button>
+            <Button
+              variant={mode === "json" ? "default" : "outline"}
+              onClick={() => setMode("json")}
+            >
+              JSON
+            </Button>
+          </div>
           <Textarea
             id="share-json-textarea"
-            value={json}
+            value={shareContent}
             readOnly
             className="min-h-[200px] resize-y font-mono text-xs"
           />

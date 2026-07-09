@@ -12,6 +12,11 @@ Version semantics for this app:
 - **PATCH** — bug fixes and minor tweaks.
 
 ## [Unreleased]
+- Share dialog: added Text/JSON toggle; default to human-readable outline.
+
+### Added
+
+- Share dialog: added Text/JSON toggle; default to human-readable outline.
 
 ## [0.1.1] - 2026-07-09
 
