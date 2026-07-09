@@ -99,12 +99,12 @@ During development, add notes under the `## [Unreleased]` heading in
 To cut a release, run one command:
 
 ```bash
-npm run release            # patch bump (0.1.0 → 0.1.1)
-npm run release minor      # new feature (0.1.x → 0.2.0)
-npm run release major      # 0.x → 1.0.0
-npm run release 1.4.0      # explicit version
-npm run release minor --push       # also push the commit + tag
-npm run release minor --dry-run    # preview, change nothing
+npm run release               # patch bump (0.1.0 → 0.1.1)
+npm run release minor         # new feature (0.1.x → 0.2.0)
+npm run release major         # 0.x → 1.0.0
+npm run release 1.4.0         # explicit version
+npm run release -- minor --push      # also push the commit + tag
+npm run release -- minor --dry-run   # preview, change nothing
 ```
 
 The [release script](scripts/release.mjs) moves the `[Unreleased]` notes into a

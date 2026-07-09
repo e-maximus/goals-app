@@ -4,8 +4,11 @@
 //   npm run release minor      # 0.1.x -> 0.2.0
 //   npm run release major      # 0.x   -> 1.0.0
 //   npm run release 1.4.0      # explicit version
-//   npm run release minor --push       # also push commit + tag
-//   npm run release minor --dry-run    # print what would change, touch nothing
+//   npm run release -- minor --push    # also push commit + tag
+//   npm run release -- minor --dry-run # print what would change, touch nothing
+//
+// Note: pass flags after `--` so npm forwards them to this script rather than
+// consuming them itself.
 //
 // What it does:
 //   1. Verifies a clean working tree on a sensible branch.
@@ -87,7 +90,8 @@ writeFileSync(CHANGELOG, updated);
 sh("npm", ["version", next, "--no-git-tag-version"]);
 sh("git", ["add", CHANGELOG, "package.json", "package-lock.json"]);
 sh("git", ["commit", "-m", `release: v${next}`]);
-sh("git", ["tag", `v${next}`]);
+// Annotated tag so `git push --follow-tags` will push it.
+sh("git", ["tag", "-a", `v${next}`, "-m", `Release v${next}`]);
 console.log(`✓ Committed and tagged v${next}`);
 
 // --- 5. optionally push ------------------------------------------------------
