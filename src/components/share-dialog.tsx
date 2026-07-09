@@ -55,7 +55,7 @@ export function ShareDialog({
             id="share-json-textarea"
             value={json}
             readOnly
-            className="min-h-[200px] resize-y font-mono text-xs"
+            className="h-[300px] overflow-y-auto resize-y field-sizing-[fixed] font-mono text-xs"
           />
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>

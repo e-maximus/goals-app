@@ -118,3 +118,36 @@ test.describe("Goal detail — completion banner singular/plural", () => {
     await expect(page.getByText("All 1 group and 1 step are done. Nice work.")).toBeVisible();
   });
 });
+
+// Regression test for issue #7 — the Share dialog must not overflow the viewport
+// for goals with many groups/steps. The dialog height is capped (max-h-[85vh])
+// and the textarea scrolls internally instead of growing the whole dialog.
+test.describe("Share dialog — viewport overflow regression", () => {
+  test("dialog fits within viewport and textarea is scrollable for a large goal", async ({ page }) => {
+    // Use a constrained viewport where the unfixed dialog would overflow.
+    await page.setViewportSize({ width: 800, height: 600 });
+    await page.goto("/goal?id=goal-website");
+    await expect(
+      page.getByRole("heading", { name: "Redesign personal website", level: 1 })
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Share" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    // The dialog bounding box must lie entirely inside the viewport.
+    const box = await dialog.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(600);
+
+    // The textarea must have internal overflow (scrollable) since content
+    // exceeds its fixed height.
+    const textarea = page.locator("#share-json-textarea");
+    await expect(textarea).toBeVisible();
+    const isScrollable = await textarea.evaluate(
+      (el: HTMLTextAreaElement) => el.scrollHeight > el.clientHeight
+    );
+    expect(isScrollable).toBe(true);
+  });
+});

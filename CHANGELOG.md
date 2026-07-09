@@ -13,6 +13,10 @@ Version semantics for this app:
 
 ## [Unreleased]
 
+### Fixed
+
+- Share dialog no longer overflows the screen for large goals; modal height is capped and textarea scrolls internally ([#7]).
+
 ## [0.1.1] - 2026-07-09
 
 ### Added
