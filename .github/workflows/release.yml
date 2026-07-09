@@ -1,0 +1,39 @@
+name: Release
+
+# Fires when you push a version tag (created by `npm version`).
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # needed to create a GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pull the matching section out of CHANGELOG.md to use as the release body.
+      # e.g. tag v0.2.0 -> everything under "## [0.2.0]" up to the next "## [".
+      - name: Extract changelog section
+        id: notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
+            capture && /^## \[/       { exit }
+            capture                    { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No changelog entry found for $version" > release-notes.md
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md
