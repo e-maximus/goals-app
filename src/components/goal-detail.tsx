@@ -64,6 +64,8 @@ export function GoalDetail({ goalId }: { goalId: string }) {
   const { done, total } = goalStepCounts(goal);
   const complete = isGoalComplete(goal);
   const hasGroups = goal.groups.length > 0;
+  const groupWord = goal.groups.length === 1 ? "group" : "groups";
+  const stepWord = total === 1 ? "step" : "steps";
 
   return (
     <div className="flex flex-1 flex-col">
@@ -108,7 +110,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
             <div>
               <div className="text-base font-bold">Goal complete</div>
               <div className="text-[13px] text-muted-foreground">
-                All {goal.groups.length} groups and {total} steps are done. Nice work.
+                All {goal.groups.length} {groupWord} and {total} {stepWord} are done. Nice work.
               </div>
             </div>
           </div>

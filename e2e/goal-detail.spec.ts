@@ -83,3 +83,38 @@ test.describe("Goal detail — toggling and deleting", () => {
     await expect(page.getByRole("link", { name: /Launch my podcast/ })).toHaveCount(0);
   });
 });
+
+// Regression test for issue #8 — the "Goal complete" banner must use singular
+// "group" / "step" when there is exactly one of each, not always plural.
+test.describe("Goal detail — completion banner singular/plural", () => {
+  test("shows singular 'group' and 'step' when one group with one step is completed", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "+ New Goal" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Goal name").fill("Singular banner test");
+    await dialog.getByRole("button", { name: "Create goal" }).click();
+    await expect(page).toHaveURL(/\/goal\/\?id=/);
+    await expect(page.getByText("No groups yet")).toBeVisible();
+
+    // Add exactly one group
+    await page.getByRole("button", { name: "+ Add first group" }).click();
+    let d = page.getByRole("dialog");
+    await d.getByLabel("Group name").fill("Only group");
+    await d.getByRole("button", { name: "Add group" }).click();
+    await expect(page.getByText("Groups · 1")).toBeVisible();
+
+    // Add exactly one step inside that group
+    const group = page.locator("div.group\\/card").filter({ hasText: "Only group" });
+    await group.getByRole("button", { name: "Add step" }).click();
+    d = page.getByRole("dialog");
+    await d.getByLabel("Step").fill("Only step");
+    await d.getByRole("button", { name: "Add step" }).click();
+
+    // Mark the step complete — this should trigger the "Goal complete" banner
+    await page.getByRole("button", { name: "Mark step complete" }).click();
+    await expect(page.getByRole("button", { name: "Mark step incomplete" })).toBeVisible();
+
+    // The banner must use singular forms: "1 group" and "1 step"
+    await expect(page.getByText("All 1 group and 1 step are done. Nice work.")).toBeVisible();
+  });
+});
