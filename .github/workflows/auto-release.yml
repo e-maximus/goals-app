@@ -1,0 +1,82 @@
+name: Auto Release
+
+# When a PR is merged into main, cut a release automatically.
+#
+# Bump level comes from PR labels:
+#   release:major -> major   release:minor -> minor   (default) -> patch
+# Add the `skip-release` label to merge without releasing (docs, chore, etc.).
+#
+# The changelog line is the PR's [Unreleased] notes if present, otherwise the
+# PR title. This workflow bumps the version, tags it, pushes to main, and
+# publishes the GitHub Release itself — it does not rely on release.yml, because
+# a tag pushed with GITHUB_TOKEN would not trigger that workflow.
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+# Serialize releases so two merges can't race on pushing to main.
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.event.pull_request.merged == true &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-release')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0 # full history + tags, so version compare links resolve
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine bump level from labels
+        id: bump
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          level=patch
+          case ",$LABELS," in
+            *,release:major,*) level=major ;;
+            *,release:minor,*) level=minor ;;
+          esac
+          echo "level=$level" >> "$GITHUB_OUTPUT"
+          echo "Bumping: $level"
+
+      - name: Bump version, update changelog, commit and tag
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/release.mjs "${{ steps.bump.outputs.level }}" --note "$PR_TITLE"
+
+      - name: Push commit and tag
+        run: git push --follow-tags origin main
+
+      - name: Read new version
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/changelog-section.mjs "${{ steps.ver.outputs.version }}" > notes.md
+          gh release create "v${{ steps.ver.outputs.version }}" \
+            --title "v${{ steps.ver.outputs.version }}" \
+            --notes-file notes.md
