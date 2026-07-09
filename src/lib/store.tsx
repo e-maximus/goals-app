@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import type { Goal } from "./types";
+import type { Goal, Group, Step } from "./types";
 import { seedGoals } from "./seed";
 
 const STORAGE_KEY = "goals-app:v1";
@@ -28,6 +28,9 @@ type StoreValue = {
   deleteGoal: (goalId: string) => void;
   deleteGroup: (goalId: string, groupId: string) => void;
   deleteStep: (goalId: string, groupId: string, stepId: string) => void;
+  restoreGoal: (goal: Goal) => void;
+  restoreGroup: (goalId: string, group: Group) => void;
+  restoreStep: (goalId: string, groupId: string, step: Step) => void;
 };
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -162,6 +165,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const restoreGoal = useCallback((goal: Goal) => {
+    setGoals((prev) => [goal, ...prev]);
+  }, []);
+
+  const restoreGroup = useCallback((goalId: string, group: Group) => {
+    setGoals((prev) =>
+      prev.map((g) =>
+        g.id === goalId ? { ...g, groups: [...g.groups, group] } : g
+      )
+    );
+  }, []);
+
+  const restoreStep = useCallback((goalId: string, groupId: string, step: Step) => {
+    setGoals((prev) =>
+      prev.map((g) =>
+        g.id === goalId
+          ? {
+              ...g,
+              groups: g.groups.map((gr) =>
+                gr.id === groupId
+                  ? { ...gr, steps: [...gr.steps, step] }
+                  : gr
+              ),
+            }
+          : g
+      )
+    );
+  }, []);
+
   const value = useMemo<StoreValue>(
     () => ({
       goals,
@@ -174,8 +206,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       deleteGoal,
       deleteGroup,
       deleteStep,
+      restoreGoal,
+      restoreGroup,
+      restoreStep,
     }),
-    [goals, hydrated, getGoal, addGoal, addGroup, addStep, toggleStep, deleteGoal, deleteGroup, deleteStep]
+    [goals, hydrated, getGoal, addGoal, addGroup, addStep, toggleStep, deleteGoal, deleteGroup, deleteStep, restoreGoal, restoreGroup, restoreStep]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

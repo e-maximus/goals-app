@@ -13,6 +13,10 @@ Version semantics for this app:
 
 ## [Unreleased]
 
+### Fixed
+
+- Delete buttons for goals, groups, and steps now show an "Undo" toast instead of acting instantly and irreversibly. (#9)
+
 ## [0.1.1] - 2026-07-09
 
 ### Added

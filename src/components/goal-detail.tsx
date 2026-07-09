@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import {
   goalProgress,
@@ -19,7 +20,7 @@ import { Check, Trash2 } from "lucide-react";
 import { ShareDialog } from "@/components/share-dialog";
 
 export function GoalDetail({ goalId }: { goalId: string }) {
-  const { getGoal, hydrated, addGoal, addGroup, deleteGoal } = useStore();
+  const { getGoal, hydrated, addGoal, addGroup, deleteGoal, restoreGoal } = useStore();
   const router = useRouter();
   const [newGoalOpen, setNewGoalOpen] = useState(false);
   const [addGroupOpen, setAddGroupOpen] = useState(false);
@@ -91,8 +92,16 @@ export function GoalDetail({ goalId }: { goalId: string }) {
             variant="outline"
             size="sm"
             onClick={() => {
+              const captured = getGoal(goal.id);
               deleteGoal(goal.id);
-              router.push("/");
+              toast("Goal deleted", {
+                action: {
+                  label: "Undo",
+                  onClick: () => {
+                    if (captured) restoreGoal(captured);
+                  },
+                },
+              });
             }}
             className="text-destructive border-destructive hover:bg-destructive/10"
           >

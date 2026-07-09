@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { groupProgress, type Group } from "@/lib/types";
 import { ProgressBar } from "@/components/ui-bits";
 import { PromptDialog } from "@/components/prompt-dialog";
@@ -9,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { Check, Plus, Trash2 } from "lucide-react";
 
 export function GroupCard({ goalId, group }: { goalId: string; group: Group }) {
-  const { toggleStep, addStep, deleteStep, deleteGroup } = useStore();
+  const { toggleStep, addStep, deleteStep, deleteGroup, restoreGroup, restoreStep } = useStore();
   const [addOpen, setAddOpen] = useState(false);
   const { pct } = groupProgress(group);
   const complete = pct === 100;
@@ -34,7 +35,16 @@ export function GroupCard({ goalId, group }: { goalId: string; group: Group }) {
               {pct === null ? "—" : `${pct}%`}
             </span>
             <button
-              onClick={() => deleteGroup(goalId, group.id)}
+              onClick={() => {
+                const captured = { ...group };
+                deleteGroup(goalId, group.id);
+                toast("Group deleted", {
+                  action: {
+                    label: "Undo",
+                    onClick: () => restoreGroup(goalId, captured),
+                  },
+                });
+              }}
               className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/card:opacity-100"
               aria-label="Delete group"
             >
@@ -78,7 +88,16 @@ export function GroupCard({ goalId, group }: { goalId: string; group: Group }) {
                 {step.text}
               </span>
               <button
-                onClick={() => deleteStep(goalId, group.id, step.id)}
+                onClick={() => {
+                  const captured = { ...step };
+                  deleteStep(goalId, group.id, step.id);
+                  toast("Step deleted", {
+                    action: {
+                      label: "Undo",
+                      onClick: () => restoreStep(goalId, group.id, captured),
+                    },
+                  });
+                }}
                 className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/step:opacity-100"
                 aria-label="Delete step"
               >

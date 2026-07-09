@@ -64,7 +64,9 @@ test.describe("Goal detail — toggling and deleting", () => {
     await expect(row).toBeVisible();
 
     await row.getByRole("button", { name: "Delete step" }).click({ force: true });
-    await expect(page.getByText("Buy a microphone")).toHaveCount(0);
+    await expect(page.getByText("Step deleted")).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect(row).toBeVisible();
   });
 
   test("deletes a group", async ({ page }) => {
@@ -73,14 +75,42 @@ test.describe("Goal detail — toggling and deleting", () => {
     const card = page.locator("div.group\\/card").filter({ hasText: "Promotion" });
     await card.getByRole("button", { name: "Delete group" }).click({ force: true });
 
-    await expect(page.getByRole("heading", { name: "Promotion", level: 3 })).toHaveCount(0);
+    await expect(page.getByText("Group deleted")).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect(page.getByRole("heading", { name: "Promotion", level: 3 })).toBeVisible();
   });
 
-  test("deletes the whole goal and returns to the dashboard", async ({ page }) => {
+  test("deletes the whole goal and can undo", async ({ page }) => {
     await page.getByRole("button", { name: "Delete", exact: true }).click();
 
+    await expect(page.getByText("Goal deleted")).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+
+    // The goal should be restored and we're still on the goal detail page
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+  });
+
+  // Regression test for issue #9 — deleting a goal must show a toast with undo
+  // (not an immediate redirect), and the "Goal not found" fallback must appear
+  // before undo. After undo, the goal must be visible on the dashboard too.
+  test("shows Goal not found after deletion and restores goal on dashboard after undo", async ({ page }) => {
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+
+    // The page stays on the goal detail view and shows the "Goal not found"
+    // fallback (regression: old code redirected to / immediately).
+    await expect(page.getByText("Goal not found")).toBeVisible();
+
+    // The toast must appear with an Undo button
+    await expect(page.getByText("Goal deleted")).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+
+    // The goal detail page should render the goal again
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+
+    // Navigate to the dashboard — the goal must still be listed
+    await page.getByRole("link", { name: /My Goals/ }).click();
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole("link", { name: /Launch my podcast/ })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /Launch my podcast/ })).toBeVisible();
   });
 });
 
