@@ -14,7 +14,7 @@ Version semantics for this app:
 ## [Unreleased]
 
 ### Added
-- Current version of application shown at the bottom of every page ([#18]).
+- Application version shown at the bottom of every page ([#18]).
 
 ## [0.1.1] - 2026-07-09
 

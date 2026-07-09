@@ -34,7 +34,7 @@ export default function RootLayout({
         <StoreProvider>
           {children}
           <footer className="mt-auto py-2 text-center text-xs text-muted-foreground">
-            Current version of application v{packageJson.version}
+            v{packageJson.version}
           </footer>
         </StoreProvider>
         <Toaster />
