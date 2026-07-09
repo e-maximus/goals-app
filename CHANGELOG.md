@@ -13,6 +13,8 @@ Version semantics for this app:
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-09
+
 ### Added
 - Application version shown at the bottom of every page ([#18]).
 
@@ -37,7 +39,8 @@ Initial release.
 
 - Share button not working ([#3]).
 
-[Unreleased]: https://github.com/e-maximus/goals-app/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/e-maximus/goals-app/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/e-maximus/goals-app/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/e-maximus/goals-app/releases/tag/v0.1.1
 [0.1.0]: https://github.com/e-maximus/goals-app/releases/tag/v0.1.0
 [#2]: https://github.com/e-maximus/goals-app/pull/2
