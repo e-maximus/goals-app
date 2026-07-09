@@ -51,19 +51,37 @@ Semantic Versioning, interpreted for an app (see `CHANGELOG.md` header):
 **PATCH** = fixes, **MINOR** = new user-facing feature, **MAJOR** = redesign /
 broken UX. Do **not** hand-edit the `version` in `package.json`.
 
-Cutting a release is one command (do this only when asked to release):
+### Releases are automatic on merge
+
+Merging a PR into `main` cuts a release automatically
+([.github/workflows/auto-release.yml](.github/workflows/auto-release.yml)): it
+bumps the version, updates `CHANGELOG.md`, tags `vx.y.z`, and publishes a GitHub
+Release. **You do not run any release command.** Your job is just to set the
+right bump level via a PR label:
+
+| PR label        | Effect                                  |
+| --------------- | --------------------------------------- |
+| _(none)_        | **patch** bump — the default            |
+| `release:minor` | new user-facing feature                 |
+| `release:major` | redesign / broken UX                    |
+| `skip-release`  | merge without any release (docs, chore) |
+
+Add the label that matches your change when you open the PR. The changelog line
+is your `## [Unreleased]` notes if you wrote any (preferred — see the checklist),
+otherwise the PR title is used as a fallback. So: **write a clear
+`[Unreleased]` entry and a clear PR title.**
+
+### Manual release (rarely needed)
+
+The same logic is runnable locally for out-of-band releases:
 
 ```bash
-npm run release               # patch:  0.1.0 → 0.1.1
-npm run release minor         # feature
-npm run release major
+npm run release               # patch
+npm run release minor
 npm run release -- minor --push      # also push commit + tag
 npm run release -- minor --dry-run   # preview, change nothing
 ```
 
-It moves `[Unreleased]` notes into a dated `## [x.y.z]` section, bumps
-`package.json` + `package-lock.json`, commits as `release: vx.y.z`, and creates
-an annotated `vx.y.z` tag. Pushing the tag triggers
-[.github/workflows/release.yml](.github/workflows/release.yml), which publishes a
-GitHub Release from that changelog section. (Pass script flags after `--` so npm
-forwards them.)
+Pushing the tag triggers
+[.github/workflows/release.yml](.github/workflows/release.yml), which publishes
+the GitHub Release. (Pass script flags after `--` so npm forwards them.)

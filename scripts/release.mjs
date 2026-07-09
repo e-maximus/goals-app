@@ -22,7 +22,20 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
 const CHANGELOG = "CHANGELOG.md";
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+
+// Pull out `--note <text>` / `--note=<text>` first so its value isn't mistaken
+// for the bump argument. Used by CI to seed the changelog from a PR title when
+// nobody wrote an [Unreleased] entry.
+let note;
+const args = [];
+for (let i = 0; i < rawArgs.length; i++) {
+  const a = rawArgs[i];
+  if (a === "--note") note = rawArgs[++i];
+  else if (a.startsWith("--note=")) note = a.slice("--note=".length);
+  else args.push(a);
+}
+
 const flags = new Set(args.filter((a) => a.startsWith("--")));
 const positional = args.filter((a) => !a.startsWith("--"));
 const dryRun = flags.has("--dry-run");
@@ -125,15 +138,19 @@ function rewriteChangelog(text, version, date, prev, repo) {
   );
   if (nextHeadingIdx === -1) nextHeadingIdx = lines.length;
 
-  const body = lines
+  let body = lines
     .slice(unrelIdx + 1, nextHeadingIdx)
     .join("\n")
     .trim();
 
+  // If nobody wrote an [Unreleased] entry, fall back to the provided note
+  // (e.g. the merged PR title in CI) so releases always get a changelog line.
+  if (!body && note) body = `### Changed\n\n- ${note}`;
+
   if (!body && !allowEmpty) {
     fail(
       `Nothing under "## [Unreleased]" to release. ` +
-        `Add notes there first, or pass --allow-empty.`,
+        `Add notes there first, pass --note "...", or pass --allow-empty.`,
     );
   }
 
