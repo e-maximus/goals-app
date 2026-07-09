@@ -13,6 +13,9 @@ Version semantics for this app:
 
 ## [Unreleased]
 
+### Added
+- Current release version shown at the bottom of every page ([#18]).
+
 ## [0.1.1] - 2026-07-09
 
 ### Added
@@ -40,3 +43,4 @@ Initial release.
 [#2]: https://github.com/e-maximus/goals-app/pull/2
 [#3]: https://github.com/e-maximus/goals-app/pull/3
 [#6]: https://github.com/e-maximus/goals-app/pull/6
+[#18]: https://github.com/e-maximus/goals-app/issues/18
