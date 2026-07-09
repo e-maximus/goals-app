@@ -28,6 +28,7 @@ type StoreValue = {
   deleteGoal: (goalId: string) => void;
   deleteGroup: (goalId: string, groupId: string) => void;
   deleteStep: (goalId: string, groupId: string, stepId: string) => void;
+  importGoal: (json: string) => Goal | null;
 };
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -162,6 +163,65 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const importGoal = useCallback((json: string): Goal | null => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      return null;
+    }
+
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const obj = parsed as Record<string, unknown>;
+
+    if (typeof obj.title !== "string" || obj.title.trim() === "") return null;
+    if (!Array.isArray(obj.groups)) return null;
+
+    // Validate each group and its steps, building fresh IDs.
+    for (const g of obj.groups) {
+      if (typeof g !== "object" || g === null) return null;
+      const group = g as Record<string, unknown>;
+      if (typeof group.title !== "string") return null;
+      if (!Array.isArray(group.steps)) return null;
+
+      for (const s of group.steps) {
+        if (typeof s !== "object" || s === null) return null;
+        const step = s as Record<string, unknown>;
+        if (typeof step.text !== "string") return null;
+        if (typeof step.done !== "boolean") return null;
+      }
+    }
+
+    // Build the new goal with fresh IDs.
+    const newGoal: Goal = {
+      id: uid(),
+      title: (obj.title as string).trim(),
+      why:
+        typeof obj.why === "string" && obj.why.trim()
+          ? (obj.why as string).trim()
+          : undefined,
+      groups: obj.groups.map((g: unknown) => {
+        const group = g as Record<string, unknown>;
+        return {
+          id: uid(),
+          title: group.title as string,
+          steps: (group.steps as unknown[]).map((s: unknown) => {
+            const step = s as Record<string, unknown>;
+            return {
+              id: uid(),
+              text: step.text as string,
+              done: step.done as boolean,
+            };
+          }),
+        };
+      }),
+      createdAt: Date.now(),
+    };
+
+    setGoals((prev) => [newGoal, ...prev]);
+    return newGoal;
+  }, []);
+
   const value = useMemo<StoreValue>(
     () => ({
       goals,
@@ -174,8 +234,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       deleteGoal,
       deleteGroup,
       deleteStep,
+      importGoal,
     }),
-    [goals, hydrated, getGoal, addGoal, addGroup, addStep, toggleStep, deleteGoal, deleteGroup, deleteStep]
+    [goals, hydrated, getGoal, addGoal, addGroup, addStep, toggleStep, deleteGoal, deleteGroup, deleteStep, importGoal]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

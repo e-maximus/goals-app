@@ -13,6 +13,10 @@ Version semantics for this app:
 
 ## [Unreleased]
 
+### Added
+
+- Import goals from JSON (paste JSON to add a goal)
+
 ## [0.1.1] - 2026-07-09
 
 ### Added

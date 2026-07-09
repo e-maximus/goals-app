@@ -12,6 +12,7 @@ import {
 } from "@/lib/types";
 import { Topbar, Crumbs } from "@/components/topbar";
 import { NewGoalDialog } from "@/components/new-goal-dialog";
+import { ImportDialog } from "@/components/import-dialog";
 import { ProgressBar, SectionLabel } from "@/components/ui-bits";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +67,7 @@ function GoalRow({ goal }: { goal: Goal }) {
 export function Dashboard() {
   const { goals, hydrated, addGoal } = useStore();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const router = useRouter();
 
   const inProgress = goals.filter((g) => !isGoalComplete(g));
@@ -78,7 +80,7 @@ export function Dashboard() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <Topbar crumbs={<Crumbs />} onNewGoal={() => setDialogOpen(true)} />
+      <Topbar crumbs={<Crumbs />} onNewGoal={() => setDialogOpen(true)} onImport={() => setImportDialogOpen(true)} />
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-8 sm:px-10">
         {!hydrated ? null : goals.length === 0 ? (
@@ -111,6 +113,7 @@ export function Dashboard() {
       </main>
 
       <NewGoalDialog open={dialogOpen} onOpenChange={setDialogOpen} onCreate={handleCreate} />
+      <ImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
     </div>
   );
 }

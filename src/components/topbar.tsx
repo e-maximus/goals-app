@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Upload } from "lucide-react";
 
 export function Topbar({
   crumbs,
   onNewGoal,
+  onImport = () => {},
   onShare = () => {},
   showShare = false,
 }: {
   crumbs: React.ReactNode;
   onNewGoal: () => void;
+  onImport?: () => void;
   onShare?: () => void;
   showShare?: boolean;
 }) {
@@ -21,6 +24,10 @@ export function Topbar({
             Share
           </Button>
         )}
+        <Button variant="outline" size="sm" onClick={onImport}>
+          <Upload className="h-3.5 w-3.5" />
+          Import
+        </Button>
         <Button size="sm" onClick={onNewGoal}>
           + New Goal
         </Button>
