@@ -15,14 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Pull the matching section out of CHANGELOG.md to use as the release body.
-      - name: Extract changelog section
-        run: node scripts/changelog-section.mjs "${GITHUB_REF_NAME#v}" > release-notes.md
-
+      # Publish a GitHub Release with notes auto-generated from the commits/PRs
+      # since the previous tag.
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
-            --notes-file release-notes.md
+            --generate-notes

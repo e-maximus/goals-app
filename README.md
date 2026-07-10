@@ -91,10 +91,7 @@ static export (computing the base path automatically) and publishes it.
 
 Versions follow [Semantic Versioning](https://semver.org): **MAJOR** for a
 redesign or broken UX, **MINOR** for a new user-facing feature, **PATCH** for
-fixes. Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
-
-During development, add notes under the `## [Unreleased]` heading in
-[CHANGELOG.md](CHANGELOG.md) as you go (`Added` / `Changed` / `Fixed`).
+fixes.
 
 To cut a release, run one command:
 
@@ -107,9 +104,8 @@ npm run release -- minor --push      # also push the commit + tag
 npm run release -- minor --dry-run   # preview, change nothing
 ```
 
-The [release script](scripts/release.mjs) moves the `[Unreleased]` notes into a
-dated `## [x.y.z]` section, refreshes the compare links, bumps
-`package.json` + `package-lock.json`, then commits everything as `release: vx.y.z`
+The [release script](scripts/release.mjs) bumps
+`package.json` + `package-lock.json`, then commits as `release: vx.y.z`
 and tags it. Pushing the tag (`--push`, or `git push --follow-tags`) triggers the
 [Release](.github/workflows/release.yml) workflow, which publishes a GitHub
-Release with notes pulled from that `CHANGELOG.md` section.
+Release with notes auto-generated from the commits since the previous tag.

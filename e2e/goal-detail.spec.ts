@@ -67,12 +67,30 @@ test.describe("Goal detail — toggling and deleting", () => {
     await expect(page.getByText("Buy a microphone")).toHaveCount(0);
   });
 
-  test("deletes a group", async ({ page }) => {
+  test("deletes a group via the options menu", async ({ page }) => {
     await expect(page.getByRole("heading", { name: "Promotion", level: 3 })).toBeVisible();
 
     const card = page.locator("div.group\\/card").filter({ hasText: "Promotion" });
-    await card.getByRole("button", { name: "Delete group" }).click({ force: true });
+    await card.getByRole("button", { name: "Group options" }).click({ force: true });
+    await page.getByRole("menuitem", { name: "Delete group" }).click();
 
+    await expect(page.getByRole("heading", { name: "Promotion", level: 3 })).toHaveCount(0);
+  });
+
+  test("renames a group via the options menu", async ({ page }) => {
+    await expect(page.getByRole("heading", { name: "Promotion", level: 3 })).toBeVisible();
+
+    const card = page.locator("div.group\\/card").filter({ hasText: "Promotion" });
+    await card.getByRole("button", { name: "Group options" }).click({ force: true });
+    await page.getByRole("menuitem", { name: "Rename" }).click();
+
+    // The dialog is prefilled with the current name.
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("Group name")).toHaveValue("Promotion");
+    await dialog.getByLabel("Group name").fill("Marketing");
+    await dialog.getByRole("button", { name: "Save" }).click();
+
+    await expect(page.getByRole("heading", { name: "Marketing", level: 3 })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Promotion", level: 3 })).toHaveCount(0);
   });
 

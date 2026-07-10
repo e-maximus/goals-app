@@ -12,10 +12,11 @@ import {
 import { Topbar, Crumbs } from "@/components/topbar";
 import { NewGoalDialog } from "@/components/new-goal-dialog";
 import { PromptDialog } from "@/components/prompt-dialog";
-import { GroupCard, AddGroupCard } from "@/components/group-card";
-import { ProgressBar, SectionLabel } from "@/components/ui-bits";
+import { GroupCardConnected, AddGroupCard } from "@/components/group-card";
+import { GoalBanner } from "@/components/goal-banner";
+import { SectionLabel } from "@/components/ui-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Check, Trash2 } from "lucide-react";
+import { Check } from "lucide-react";
 import { ShareDialog } from "@/components/share-dialog";
 
 export function GoalDetail({ goalId }: { goalId: string }) {
@@ -73,32 +74,16 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-8 sm:px-10">
         {/* Goal banner */}
-        <div className="mb-7 flex flex-col gap-5 rounded-2xl border border-border bg-card px-7 py-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Goal
-            </div>
-            <h1 className="text-2xl font-bold">{goal.title}</h1>
-            {goal.why && (
-              <p className="mt-2 max-w-xl text-sm text-muted-foreground">{goal.why}</p>
-            )}
-          </div>
-          <div className="flex w-full items-center gap-4 sm:w-[260px] sm:flex-shrink-0">
-            <ProgressBar value={pct} className="h-2.5" />
-            <span className="tabular-nums text-xl font-bold text-primary">{pct}%</span>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
+        <div className="mb-7">
+          <GoalBanner
+            title={goal.title}
+            why={goal.why}
+            pct={pct}
+            onDelete={() => {
               deleteGoal(goal.id);
               router.push("/");
             }}
-            className="text-destructive border-destructive hover:bg-destructive/10"
-          >
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-            Delete
-          </Button>
+          />
         </div>
 
         {/* Completion celebration */}
@@ -129,7 +114,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
             </SectionLabel>
             <div className="grid grid-cols-1 items-stretch gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {goal.groups.map((group) => (
-                <GroupCard key={group.id} goalId={goal.id} group={group} />
+                <GroupCardConnected key={group.id} goalId={goal.id} group={group} />
               ))}
               <AddGroupCard onClick={() => setAddGroupOpen(true)} />
             </div>

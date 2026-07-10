@@ -34,8 +34,6 @@ Guidance for agents making code changes here. Read this before you start.
    npm run test:e2e       # Playwright starts the dev server itself
    ```
    All three must pass. Don't leave a test as `.only` — CI fails on it.
-3. **Record the change** in `CHANGELOG.md` under `## [Unreleased]`
-   (`Added` / `Changed` / `Fixed`). One bullet, user-facing, in English.
 
 ## Branching & PRs
 
@@ -47,17 +45,17 @@ Guidance for agents making code changes here. Read this before you start.
 
 ## Versioning & releases
 
-Semantic Versioning, interpreted for an app (see `CHANGELOG.md` header):
-**PATCH** = fixes, **MINOR** = new user-facing feature, **MAJOR** = redesign /
-broken UX. Do **not** hand-edit the `version` in `package.json`.
+Semantic Versioning, interpreted for an app: **PATCH** = fixes, **MINOR** = new
+user-facing feature, **MAJOR** = redesign / broken UX. Do **not** hand-edit the
+`version` in `package.json`.
 
 ### Releases are automatic on merge
 
 Merging a PR into `main` cuts a release automatically
 ([.github/workflows/auto-release.yml](.github/workflows/auto-release.yml)): it
-bumps the version, updates `CHANGELOG.md`, tags `vx.y.z`, and publishes a GitHub
-Release. **You do not run any release command.** Your job is just to set the
-right bump level via a PR label:
+bumps the version, tags `vx.y.z`, and publishes a GitHub Release. **You do not
+run any release command.** Your job is just to set the right bump level via a PR
+label:
 
 | PR label        | Effect                                  |
 | --------------- | --------------------------------------- |
@@ -66,10 +64,9 @@ right bump level via a PR label:
 | `release:major` | redesign / broken UX                    |
 | `skip-release`  | merge without any release (docs, chore) |
 
-Add the label that matches your change when you open the PR. The changelog line
-is your `## [Unreleased]` notes if you wrote any (preferred — see the checklist),
-otherwise the PR title is used as a fallback. So: **write a clear
-`[Unreleased]` entry and a clear PR title.**
+Add the label that matches your change when you open the PR. The GitHub Release
+notes are auto-generated from the merged PRs since the last tag, so: **write a
+clear PR title.**
 
 ### Manual release (rarely needed)
 
@@ -82,6 +79,8 @@ npm run release -- minor --push      # also push commit + tag
 npm run release -- minor --dry-run   # preview, change nothing
 ```
 
-Pushing the tag triggers
-[.github/workflows/release.yml](.github/workflows/release.yml), which publishes
-the GitHub Release. (Pass script flags after `--` so npm forwards them.)
+It bumps `package.json` + `package-lock.json`, commits as `release: vx.y.z`, and
+creates an annotated `vx.y.z` tag. Pushing the tag triggers
+[.github/workflows/release.yml](.github/workflows/release.yml), which publishes a
+GitHub Release with notes auto-generated from the commits since the previous tag.
+(Pass script flags after `--` so npm forwards them.)
