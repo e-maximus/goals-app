@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { StoreProvider } from "@/lib/store";
 import { Toaster } from "@/components/ui/sonner";
+import packageJson from "../../package.json";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -30,7 +31,12 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <StoreProvider>{children}</StoreProvider>
+        <StoreProvider>
+          {children}
+          <footer className="mt-auto py-2 text-center text-xs text-muted-foreground">
+            v{packageJson.version}
+          </footer>
+        </StoreProvider>
         <Toaster />
       </body>
     </html>
