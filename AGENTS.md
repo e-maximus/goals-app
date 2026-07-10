@@ -42,6 +42,9 @@ Guidance for agents making code changes here. Read this before you start.
 - Pushing to `main` auto-deploys to GitHub Pages
   ([.github/workflows/deploy.yml](.github/workflows/deploy.yml)). Treat `main` as
   always-releasable.
+- Do **not** add AI attribution to git artifacts: no `Co-Authored-By: Claude`
+  trailer in commit messages, and no "Generated with Claude Code" line in PR
+  descriptions. End at the real content.
 
 ## Versioning & releases
 
