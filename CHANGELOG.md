@@ -13,6 +13,14 @@ Version semantics for this app:
 
 ## [Unreleased]
 
+### Added
+
+- Rename a group from a new options (⋮) menu on each group card.
+
+### Changed
+
+- Group cards now gather Rename and Delete under a ⋮ options menu in the corner, so the progress percentage sits flush against the card's right edge. The menu is revealed on hover on desktop and always visible on phones and tablets.
+
 ## [0.1.1] - 2026-07-09
 
 ### Added

@@ -23,6 +23,7 @@ type StoreValue = {
   getGoal: (id: string) => Goal | undefined;
   addGoal: (title: string, why?: string) => Goal;
   addGroup: (goalId: string, title: string) => void;
+  renameGroup: (goalId: string, groupId: string, title: string) => void;
   addStep: (goalId: string, groupId: string, text: string) => void;
   toggleStep: (goalId: string, groupId: string, stepId: string) => void;
   deleteGoal: (goalId: string) => void;
@@ -89,6 +90,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       prev.map((g) =>
         g.id === goalId
           ? { ...g, groups: [...g.groups, { id: uid(), title: title.trim(), steps: [] }] }
+          : g
+      )
+    );
+  }, []);
+
+  const renameGroup = useCallback((goalId: string, groupId: string, title: string) => {
+    const next = title.trim();
+    if (!next) return;
+    setGoals((prev) =>
+      prev.map((g) =>
+        g.id === goalId
+          ? {
+              ...g,
+              groups: g.groups.map((gr) =>
+                gr.id === groupId ? { ...gr, title: next } : gr
+              ),
+            }
           : g
       )
     );
@@ -169,13 +187,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       getGoal,
       addGoal,
       addGroup,
+      renameGroup,
       addStep,
       toggleStep,
       deleteGoal,
       deleteGroup,
       deleteStep,
     }),
-    [goals, hydrated, getGoal, addGoal, addGroup, addStep, toggleStep, deleteGoal, deleteGroup, deleteStep]
+    [goals, hydrated, getGoal, addGoal, addGroup, renameGroup, addStep, toggleStep, deleteGoal, deleteGroup, deleteStep]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

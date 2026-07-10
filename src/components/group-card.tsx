@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { Menu } from "@base-ui/react/menu";
 import { groupProgress, type Group } from "@/lib/types";
 import { ProgressBar } from "@/components/ui-bits";
 import { PromptDialog } from "@/components/prompt-dialog";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { Check, Plus, Trash2 } from "lucide-react";
+import { Check, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
 
 /**
  * Presentational group card. It owns no data — the current `group` and every
@@ -18,15 +19,18 @@ export function GroupCard({
   onToggleStep,
   onAddStep,
   onDeleteStep,
+  onRenameGroup,
   onDeleteGroup,
 }: {
   group: Group;
   onToggleStep: (stepId: string) => void;
   onAddStep: (text: string) => void;
   onDeleteStep: (stepId: string) => void;
+  onRenameGroup: (title: string) => void;
   onDeleteGroup: () => void;
 }) {
   const [addOpen, setAddOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const { pct } = groupProgress(group);
   const complete = pct === 100;
 
@@ -37,28 +41,52 @@ export function GroupCard({
         complete && "border-primary/60"
       )}
     >
-      <div className="border-b border-border px-4 pb-3.5 pt-4">
+      <div className="relative border-b border-border px-4 pb-3.5 pt-4">
         <div className="mb-2.5 flex items-center justify-between gap-2">
           <h3 className="truncate text-[15px] font-bold">{group.title}</h3>
-          <div className="flex flex-shrink-0 items-center gap-1.5">
-            <span
-              className={cn(
-                "rounded-full bg-muted px-2.5 py-0.5 text-xs font-bold tabular-nums text-muted-foreground",
-                complete && "bg-primary text-primary-foreground"
-              )}
-            >
-              {pct === null ? "—" : `${pct}%`}
-            </span>
-            <button
-              onClick={onDeleteGroup}
-              className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/card:opacity-100"
-              aria-label="Delete group"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          <span
+            className={cn(
+              "flex-shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-xs font-bold tabular-nums text-muted-foreground",
+              complete && "bg-primary text-primary-foreground"
+            )}
+          >
+            {pct === null ? "—" : `${pct}%`}
+          </span>
         </div>
         <ProgressBar value={pct ?? 0} className="h-1.5" />
+
+        {/* Options menu floats in the card corner so the percentage badge can
+            sit flush against the right edge. On large screens it's revealed on
+            hover (or focus / while open); on phones and tablets — which have no
+            hover — it stays visible. */}
+        <Menu.Root>
+          <Menu.Trigger
+            aria-label="Group options"
+            className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full border border-border bg-card text-muted-foreground opacity-100 shadow-sm transition-opacity hover:text-foreground focus-visible:opacity-100 data-[popup-open]:opacity-100 lg:opacity-0 lg:group-hover/card:opacity-100"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
+              <Menu.Popup className="min-w-40 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none">
+                <Menu.Item
+                  onClick={() => setRenameOpen(true)}
+                  className="flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] outline-none data-[highlighted]:bg-muted"
+                >
+                  <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                  Rename
+                </Menu.Item>
+                <Menu.Item
+                  onClick={onDeleteGroup}
+                  className="flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-destructive outline-none data-[highlighted]:bg-destructive/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete group
+                </Menu.Item>
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
       </div>
 
       <div className="flex max-h-56 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 py-2">
@@ -126,6 +154,17 @@ export function GroupCard({
         submitLabel="Add step"
         onSubmit={(v) => onAddStep(v)}
       />
+
+      <PromptDialog
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        title="Rename group"
+        label="Group name"
+        placeholder="e.g. Research"
+        submitLabel="Save"
+        initialValue={group.title}
+        onSubmit={(v) => onRenameGroup(v)}
+      />
     </div>
   );
 }
@@ -135,13 +174,14 @@ export function GroupCard({
  * store. This is what the app renders; Storybook renders `GroupCard` directly.
  */
 export function GroupCardConnected({ goalId, group }: { goalId: string; group: Group }) {
-  const { toggleStep, addStep, deleteStep, deleteGroup } = useStore();
+  const { toggleStep, addStep, deleteStep, renameGroup, deleteGroup } = useStore();
   return (
     <GroupCard
       group={group}
       onToggleStep={(stepId) => toggleStep(goalId, group.id, stepId)}
       onAddStep={(text) => addStep(goalId, group.id, text)}
       onDeleteStep={(stepId) => deleteStep(goalId, group.id, stepId)}
+      onRenameGroup={(title) => renameGroup(goalId, group.id, title)}
       onDeleteGroup={() => deleteGroup(goalId, group.id)}
     />
   );

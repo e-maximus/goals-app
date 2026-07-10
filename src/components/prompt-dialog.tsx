@@ -23,6 +23,7 @@ export function PromptDialog({
   placeholder,
   hint,
   submitLabel,
+  initialValue = "",
   onSubmit,
 }: {
   open: boolean;
@@ -33,9 +34,12 @@ export function PromptDialog({
   placeholder?: string;
   hint?: string;
   submitLabel: string;
+  // Prefill the field when the dialog opens (e.g. the current name for a
+  // rename). Defaults to empty for the "add" flows.
+  initialValue?: string;
   onSubmit: (value: string) => void;
 }) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialValue);
 
   // Reset the field each time the dialog transitions to open. Adjusting state
   // during render on a prop change is React's recommended pattern and avoids a
@@ -43,7 +47,7 @@ export function PromptDialog({
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setValue("");
+    if (open) setValue(initialValue);
   }
 
   const submit = () => {
