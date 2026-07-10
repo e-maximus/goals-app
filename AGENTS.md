@@ -34,8 +34,6 @@ Guidance for agents making code changes here. Read this before you start.
    npm run test:e2e       # Playwright starts the dev server itself
    ```
    All three must pass. Don't leave a test as `.only` — CI fails on it.
-3. **Record the change** in `CHANGELOG.md` under `## [Unreleased]`
-   (`Added` / `Changed` / `Fixed`). One bullet, user-facing, in English.
 
 ## Branching & PRs
 
@@ -47,9 +45,9 @@ Guidance for agents making code changes here. Read this before you start.
 
 ## Versioning & releases
 
-Semantic Versioning, interpreted for an app (see `CHANGELOG.md` header):
-**PATCH** = fixes, **MINOR** = new user-facing feature, **MAJOR** = redesign /
-broken UX. Do **not** hand-edit the `version` in `package.json`.
+Semantic Versioning, interpreted for an app: **PATCH** = fixes, **MINOR** = new
+user-facing feature, **MAJOR** = redesign / broken UX. Do **not** hand-edit the
+`version` in `package.json`.
 
 Cutting a release is one command (do this only when asked to release):
 
@@ -61,9 +59,8 @@ npm run release -- minor --push      # also push commit + tag
 npm run release -- minor --dry-run   # preview, change nothing
 ```
 
-It moves `[Unreleased]` notes into a dated `## [x.y.z]` section, bumps
-`package.json` + `package-lock.json`, commits as `release: vx.y.z`, and creates
-an annotated `vx.y.z` tag. Pushing the tag triggers
+It bumps `package.json` + `package-lock.json`, commits as `release: vx.y.z`, and
+creates an annotated `vx.y.z` tag. Pushing the tag triggers
 [.github/workflows/release.yml](.github/workflows/release.yml), which publishes a
-GitHub Release from that changelog section. (Pass script flags after `--` so npm
-forwards them.)
+GitHub Release with notes auto-generated from the commits since the previous tag.
+(Pass script flags after `--` so npm forwards them.)
