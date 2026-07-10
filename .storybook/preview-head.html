@@ -1,0 +1,18 @@
+<!--
+  The app loads Geist via next/font, which @storybook/nextjs-vite does NOT
+  process — so `--font-sans` would be empty and Tailwind's `font-sans` falls
+  back to serif. Load the real Geist here and define the same CSS variables the
+  app relies on, so Storybook matches the site.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap"
+  rel="stylesheet"
+/>
+<style>
+  :root {
+    --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --font-geist-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+  }
+</style>

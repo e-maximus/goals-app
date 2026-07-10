@@ -8,8 +8,24 @@ import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Check, Plus, Trash2 } from "lucide-react";
 
-export function GroupCard({ goalId, group }: { goalId: string; group: Group }) {
-  const { toggleStep, addStep, deleteStep, deleteGroup } = useStore();
+/**
+ * Presentational group card. It owns no data — the current `group` and every
+ * mutation come in as props, so it renders anywhere (Storybook/tests) without a
+ * store. `GroupCardConnected` below wires it to the app store.
+ */
+export function GroupCard({
+  group,
+  onToggleStep,
+  onAddStep,
+  onDeleteStep,
+  onDeleteGroup,
+}: {
+  group: Group;
+  onToggleStep: (stepId: string) => void;
+  onAddStep: (text: string) => void;
+  onDeleteStep: (stepId: string) => void;
+  onDeleteGroup: () => void;
+}) {
   const [addOpen, setAddOpen] = useState(false);
   const { pct } = groupProgress(group);
   const complete = pct === 100;
@@ -34,7 +50,7 @@ export function GroupCard({ goalId, group }: { goalId: string; group: Group }) {
               {pct === null ? "—" : `${pct}%`}
             </span>
             <button
-              onClick={() => deleteGroup(goalId, group.id)}
+              onClick={onDeleteGroup}
               className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/card:opacity-100"
               aria-label="Delete group"
             >
@@ -58,7 +74,7 @@ export function GroupCard({ goalId, group }: { goalId: string; group: Group }) {
               className="group/step flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted/60"
             >
               <button
-                onClick={() => toggleStep(goalId, group.id, step.id)}
+                onClick={() => onToggleStep(step.id)}
                 className={cn(
                   "flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors",
                   step.done
@@ -78,7 +94,7 @@ export function GroupCard({ goalId, group }: { goalId: string; group: Group }) {
                 {step.text}
               </span>
               <button
-                onClick={() => deleteStep(goalId, group.id, step.id)}
+                onClick={() => onDeleteStep(step.id)}
                 className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/step:opacity-100"
                 aria-label="Delete step"
               >
@@ -108,9 +124,26 @@ export function GroupCard({ goalId, group }: { goalId: string; group: Group }) {
         placeholder="e.g. Record ep. 3"
         hint="Keep it small — something you could do in one sitting."
         submitLabel="Add step"
-        onSubmit={(v) => addStep(goalId, group.id, v)}
+        onSubmit={(v) => onAddStep(v)}
       />
     </div>
+  );
+}
+
+/**
+ * Store-connected wrapper: binds the presentational `GroupCard` to the app
+ * store. This is what the app renders; Storybook renders `GroupCard` directly.
+ */
+export function GroupCardConnected({ goalId, group }: { goalId: string; group: Group }) {
+  const { toggleStep, addStep, deleteStep, deleteGroup } = useStore();
+  return (
+    <GroupCard
+      group={group}
+      onToggleStep={(stepId) => toggleStep(goalId, group.id, stepId)}
+      onAddStep={(text) => addStep(goalId, group.id, text)}
+      onDeleteStep={(stepId) => deleteStep(goalId, group.id, stepId)}
+      onDeleteGroup={() => deleteGroup(goalId, group.id)}
+    />
   );
 }
 
