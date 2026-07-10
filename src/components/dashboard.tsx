@@ -64,7 +64,9 @@ function GoalRow({ goal }: { goal: Goal }) {
 }
 
 export function Dashboard() {
-  const { goals, hydrated, addGoal } = useStore();
+  const goals = useStore((s) => s.goals);
+  const hydrated = useStore((s) => s.hydrated);
+  const addGoal = useStore((s) => s.addGoal);
   const [dialogOpen, setDialogOpen] = useState(false);
   const router = useRouter();
 

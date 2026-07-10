@@ -6,6 +6,7 @@ import { groupProgress, type Group } from "@/lib/types";
 import { ProgressBar } from "@/components/ui-bits";
 import { PromptDialog } from "@/components/prompt-dialog";
 import { useStore } from "@/lib/store";
+import { useShallow } from "zustand/shallow";
 import { cn } from "@/lib/utils";
 import { Check, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
 
@@ -174,7 +175,15 @@ export function GroupCard({
  * store. This is what the app renders; Storybook renders `GroupCard` directly.
  */
 export function GroupCardConnected({ goalId, group }: { goalId: string; group: Group }) {
-  const { toggleStep, addStep, deleteStep, renameGroup, deleteGroup } = useStore();
+  const { toggleStep, addStep, deleteStep, renameGroup, deleteGroup } = useStore(
+    useShallow((s) => ({
+      toggleStep: s.toggleStep,
+      addStep: s.addStep,
+      deleteStep: s.deleteStep,
+      renameGroup: s.renameGroup,
+      deleteGroup: s.deleteGroup,
+    }))
+  );
   return (
     <GroupCard
       group={group}

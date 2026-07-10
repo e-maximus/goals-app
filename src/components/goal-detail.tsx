@@ -20,13 +20,15 @@ import { Check } from "lucide-react";
 import { ShareDialog } from "@/components/share-dialog";
 
 export function GoalDetail({ goalId }: { goalId: string }) {
-  const { getGoal, hydrated, addGoal, addGroup, deleteGoal } = useStore();
+  const goal = useStore((s) => s.goals.find((g) => g.id === goalId));
+  const hydrated = useStore((s) => s.hydrated);
+  const addGoal = useStore((s) => s.addGoal);
+  const addGroup = useStore((s) => s.addGroup);
+  const deleteGoal = useStore((s) => s.deleteGoal);
   const router = useRouter();
   const [newGoalOpen, setNewGoalOpen] = useState(false);
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-
-  const goal = getGoal(goalId);
 
   const handleCreateGoal = (title: string, why?: string) => {
     const g = addGoal(title, why);
