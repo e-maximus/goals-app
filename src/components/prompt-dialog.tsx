@@ -12,8 +12,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
-// Single-field modal used for both "Add group" and "Add step".
+// Single-field modal used for "Add group", "Add step" and "Edit comment".
 export function PromptDialog({
   open,
   onOpenChange,
@@ -24,6 +25,7 @@ export function PromptDialog({
   hint,
   submitLabel,
   initialValue = "",
+  multiline = false,
   onSubmit,
 }: {
   open: boolean;
@@ -37,6 +39,9 @@ export function PromptDialog({
   // Prefill the field when the dialog opens (e.g. the current name for a
   // rename). Defaults to empty for the "add" flows.
   initialValue?: string;
+  // Swap the single-line input for a textarea. Names and step titles are one
+  // line; comment bodies are not.
+  multiline?: boolean;
   onSubmit: (value: string) => void;
 }) {
   const [value, setValue] = useState(initialValue);
@@ -72,13 +77,30 @@ export function PromptDialog({
         >
           <div className="space-y-2">
             <Label htmlFor="prompt-input">{label}</Label>
-            <Input
-              id="prompt-input"
-              autoFocus
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder={placeholder}
-            />
+            {multiline ? (
+              <Textarea
+                id="prompt-input"
+                autoFocus
+                rows={4}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder={placeholder}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+              />
+            ) : (
+              <Input
+                id="prompt-input"
+                autoFocus
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder={placeholder}
+              />
+            )}
             {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
           </div>
           <DialogFooter>

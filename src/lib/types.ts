@@ -10,12 +10,21 @@ export type Group = {
   steps: Step[];
 };
 
+export type Comment = {
+  id: string;
+  text: string;
+  createdAt: number;
+};
+
 export type Goal = {
   id: string;
   title: string;
   why?: string;
   groups: Group[];
   createdAt: number;
+  // Optional so payloads written before comments existed still parse. Read it
+  // as `goal.comments ?? []` everywhere rather than bumping the storage key.
+  comments?: Comment[];
 };
 
 // ---- derived progress helpers ----
@@ -45,4 +54,8 @@ export function goalProgress(goal: Goal): number {
 export function isGoalComplete(goal: Goal): boolean {
   const { total } = goalStepCounts(goal);
   return total > 0 && goalProgress(goal) === 100;
+}
+
+export function commentCount(goal: Goal): number {
+  return goal.comments?.length ?? 0;
 }
