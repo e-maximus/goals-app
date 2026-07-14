@@ -1,9 +1,7 @@
-# Shared by the app image (./Dockerfile) and the server image
-# (server/Dockerfile) — both build from the repo root. The app image builds the
-# source tree itself, so nothing under src/ or public/ may be excluded here;
-# keep only build artifacts and local junk out of the context.
+# Build context for ./Dockerfile. The image builds the source tree itself, so
+# nothing under src/ or public/ may be excluded here — keep only build artifacts
+# and local junk out of the context.
 **/node_modules
-**/dist
 .next
 out
 .git

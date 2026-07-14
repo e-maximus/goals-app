@@ -1,19 +1,19 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import assert from "node:assert/strict";
-import { after, before, beforeEach, describe, it } from "node:test";
-import type { Pool } from "../src/db.js";
-import type { Comment, Goal } from "../src/domain.js";
-import { createMcpServer } from "../src/mcp.js";
-import * as repo from "../src/repo.js";
-import { reset, setupPool } from "./helpers.js";
+import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
+import type { Pool } from "../db";
+import type { Comment, Goal } from "../domain";
+import { createMcpServer } from "../mcp";
+import * as repo from "../repo";
+import { reset, setupPool } from "./helpers";
 
 let pool: Pool;
 
-before(async () => {
+beforeAll(async () => {
   pool = await setupPool();
 });
-after(async () => {
+afterAll(async () => {
   await pool.end();
 });
 

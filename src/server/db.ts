@@ -1,7 +1,5 @@
-import { readFile, readdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { migrations } from "./migrations";
 
 // Postgres returns BIGINT as a string by default (it can exceed Number's safe
 // range). Our bigints are epoch-millisecond timestamps, which are nowhere near
@@ -19,9 +17,9 @@ export function createPool(connectionString = process.env.DATABASE_URL): Pool {
 }
 
 /**
- * Run every SQL file in `migrations/` exactly once, in filename order, each in
- * its own transaction. Applied names are recorded in `schema_migrations`, so a
- * restart is a no-op and a new file is picked up automatically.
+ * Apply every migration exactly once, in order, each in its own transaction.
+ * Applied names are recorded in `schema_migrations`, so a restart is a no-op and
+ * a newly appended migration is picked up automatically.
  */
 export async function migrate(pool: Pool): Promise<string[]> {
   await pool.query(`
@@ -31,21 +29,17 @@ export async function migrate(pool: Pool): Promise<string[]> {
     )
   `);
 
-  const dir = join(dirname(fileURLToPath(import.meta.url)), "migrations");
-  const files = (await readdir(dir)).filter((f) => f.endsWith(".sql")).sort();
-
   const { rows } = await pool.query<{ name: string }>("SELECT name FROM schema_migrations");
   const applied = new Set(rows.map((r) => r.name));
   const ran: string[] = [];
 
-  for (const file of files) {
-    if (applied.has(file)) continue;
-    const sql = await readFile(join(dir, file), "utf8");
+  for (const { name, sql } of migrations) {
+    if (applied.has(name)) continue;
     await withTransaction(pool, async (client) => {
       await client.query(sql);
-      await client.query("INSERT INTO schema_migrations (name) VALUES ($1)", [file]);
+      await client.query("INSERT INTO schema_migrations (name) VALUES ($1)", [name]);
     });
-    ran.push(file);
+    ran.push(name);
   }
 
   return ran;
@@ -65,4 +59,24 @@ export async function withTransaction<T>(pool: Pool, fn: (client: Client) => Pro
   } finally {
     client.release();
   }
+}
+
+/**
+ * The pool the route handlers share.
+ *
+ * There is no "server start" hook to migrate from, so the first caller runs the
+ * migrations and everyone else awaits the same promise. It is cached on
+ * `globalThis` because a dev-mode hot reload re-evaluates this module, and a
+ * fresh pool per reload would leak connections until Postgres stopped accepting
+ * them.
+ */
+const globalForDb = globalThis as unknown as { goalsPool?: Promise<Pool> };
+
+export function getPool(): Promise<Pool> {
+  globalForDb.goalsPool ??= (async () => {
+    const pool = createPool();
+    await migrate(pool);
+    return pool;
+  })();
+  return globalForDb.goalsPool;
 }

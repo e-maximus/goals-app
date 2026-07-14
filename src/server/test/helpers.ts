@@ -1,4 +1,4 @@
-import { createPool, migrate, type Pool } from "../src/db.js";
+import { createPool, migrate, type Pool } from "../db";
 
 /**
  * These tests run against a real Postgres rather than a fake — the whole point

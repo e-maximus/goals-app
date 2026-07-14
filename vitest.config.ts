@@ -12,8 +12,24 @@ const dirname =
 
 // More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
 export default defineConfig({
+  resolve: {
+    alias: { '@': path.join(dirname, 'src') },
+  },
   test: {
     projects: [
+      {
+        // The goals server: the repo layer is SQL and transactions, so these run
+        // against a real Postgres (`docker compose up -d db`) rather than a fake,
+        // which would only prove the fake was called. They share one database and
+        // truncate between tests, so the files must not run in parallel.
+        extends: true,
+        test: {
+          name: 'server',
+          environment: 'node',
+          include: ['src/server/test/**/*.test.ts'],
+          fileParallelism: false,
+        },
+      },
       {
         extends: true,
         plugins: [
