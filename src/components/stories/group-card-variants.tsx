@@ -42,6 +42,12 @@ export function GroupCardLive({ title, steps }: GroupCardVariantProps) {
         onAddStep={(text) =>
           setGroup((g) => ({ ...g, steps: [...g.steps, { id: nextId(), text, done: false }] }))
         }
+        onEditStep={(stepId, text) =>
+          setGroup((g) => ({
+            ...g,
+            steps: g.steps.map((s) => (s.id === stepId ? { ...s, text } : s)),
+          }))
+        }
         onDeleteStep={(stepId) =>
           setGroup((g) => ({ ...g, steps: g.steps.filter((s) => s.id !== stepId) }))
         }

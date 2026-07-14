@@ -134,6 +134,44 @@ describe("comments", () => {
   });
 });
 
+describe("editing a goal", () => {
+  beforeEach(async () => {
+    await repo.replaceAll(pool, [sampleGoal()], null);
+  });
+
+  it("renames a goal without disturbing its groups, steps or comments", async () => {
+    const updated = await repo.updateGoal(pool, "goal-podcast", { title: "Launch the show" });
+
+    assert.equal(updated.title, "Launch the show");
+    assert.equal(updated.why, "Ship something creative");
+    assert.equal(updated.groups[0]!.steps.length, 2);
+    assert.equal(updated.comments!.length, 1);
+  });
+
+  it("changes only the field it is given", async () => {
+    const updated = await repo.updateGoal(pool, "goal-podcast", { why: "Because it's fun" });
+
+    assert.equal(updated.title, "Launch my podcast"); // untouched
+    assert.equal(updated.why, "Because it's fun");
+  });
+
+  it("clears the why when given an empty one", async () => {
+    const updated = await repo.updateGoal(pool, "goal-podcast", { why: "" });
+    assert.equal(updated.why, undefined);
+  });
+
+  it("refuses to leave a goal without a title", async () => {
+    await assert.rejects(
+      () => repo.updateGoal(pool, "goal-podcast", { title: "   " }),
+      (err: unknown) => err instanceof repo.ValidationError
+    );
+
+    // The original title survived the rejected write.
+    const goal = await repo.getGoal(pool, "goal-podcast");
+    assert.equal(goal.title, "Launch my podcast");
+  });
+});
+
 describe("groups and steps", () => {
   beforeEach(async () => {
     await repo.replaceAll(pool, [sampleGoal({ groups: [], comments: [] })], null);
@@ -150,6 +188,26 @@ describe("groups and steps", () => {
     // An explicit value wins over a flip.
     const forced = await repo.setStepDone(pool, step.id, true);
     assert.equal(forced.done, true);
+  });
+
+  it("rewrites a step's text without touching whether it is done", async () => {
+    const group = await repo.addGroup(pool, "goal-podcast", "Recording");
+    const step = await repo.addStep(pool, group.id, "Record ep 1");
+    await repo.setStepDone(pool, step.id, true);
+
+    const edited = await repo.editStep(pool, step.id, "Record episode 1");
+    assert.equal(edited.text, "Record episode 1");
+    assert.equal(edited.done, true);
+  });
+
+  it("refuses to blank out a step", async () => {
+    const group = await repo.addGroup(pool, "goal-podcast", "Recording");
+    const step = await repo.addStep(pool, group.id, "Record ep 1");
+
+    await assert.rejects(
+      () => repo.editStep(pool, step.id, "  "),
+      (err: unknown) => err instanceof repo.ValidationError
+    );
   });
 
   it("appends new groups after existing ones", async () => {

@@ -14,17 +14,32 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 
-export function NewGoalDialog({
+/**
+ * The two-field goal form — name and the optional "why". Serves both creating a
+ * goal and editing one; they ask for exactly the same thing, so they share a
+ * dialog rather than having two that drift apart.
+ */
+export function GoalDialog({
   open,
   onOpenChange,
-  onCreate,
+  heading,
+  description,
+  submitLabel,
+  initialTitle = "",
+  initialWhy = "",
+  onSubmit,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate: (title: string, why?: string) => void;
+  heading: string;
+  description: string;
+  submitLabel: string;
+  initialTitle?: string;
+  initialWhy?: string;
+  onSubmit: (title: string, why?: string) => void;
 }) {
-  const [title, setTitle] = useState("");
-  const [why, setWhy] = useState("");
+  const [title, setTitle] = useState(initialTitle);
+  const [why, setWhy] = useState(initialWhy);
 
   // Reset fields each time the dialog transitions to open. Adjusting state during
   // render on a prop change is React's recommended pattern and avoids a
@@ -33,14 +48,14 @@ export function NewGoalDialog({
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
-      setTitle("");
-      setWhy("");
+      setTitle(initialTitle);
+      setWhy(initialWhy);
     }
   }
 
   const submit = () => {
     if (!title.trim()) return;
-    onCreate(title, why);
+    onSubmit(title, why);
     onOpenChange(false);
   };
 
@@ -48,8 +63,8 @@ export function NewGoalDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New goal</DialogTitle>
-          <DialogDescription>What do you want to achieve?</DialogDescription>
+          <DialogTitle>{heading}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -83,11 +98,32 @@ export function NewGoalDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={!title.trim()}>
-              Create goal
+              {submitLabel}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function NewGoalDialog({
+  open,
+  onOpenChange,
+  onCreate,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreate: (title: string, why?: string) => void;
+}) {
+  return (
+    <GoalDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      heading="New goal"
+      description="What do you want to achieve?"
+      submitLabel="Create goal"
+      onSubmit={onCreate}
+    />
   );
 }

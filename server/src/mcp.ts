@@ -80,6 +80,28 @@ export function createMcpServer(pool: Pool): McpServer {
   );
 
   server.registerTool(
+    "update_goal",
+    {
+      title: "Update a goal",
+      description:
+        "Change a goal's title, its 'why', or both. Anything you leave out stays as it is; " +
+        "pass an empty `why` to clear it. Use this rather than deleting and recreating — " +
+        "deleting a goal takes its groups, steps and comments with it.",
+      inputSchema: {
+        goalId: z.string(),
+        title: z.string().min(1).optional().describe("The new title, if it should change"),
+        why: z.string().optional().describe("The new reason; pass an empty string to clear it"),
+      },
+    },
+    async ({ goalId, title, why }) => {
+      if (title === undefined && why === undefined) {
+        throw new Error("Nothing to update — pass a title, a why, or both.");
+      }
+      return json(await repo.updateGoal(pool, goalId, { title, why }));
+    }
+  );
+
+  server.registerTool(
     "delete_goal",
     {
       title: "Delete a goal",
@@ -142,6 +164,16 @@ export function createMcpServer(pool: Pool): McpServer {
       inputSchema: { groupId: z.string(), text: z.string().min(1) },
     },
     async ({ groupId, text }) => json(await repo.addStep(pool, groupId, text))
+  );
+
+  server.registerTool(
+    "edit_step",
+    {
+      title: "Edit a step",
+      description: "Rewrite a step's text. Its done/not-done state is left alone.",
+      inputSchema: { stepId: z.string(), text: z.string().min(1) },
+    },
+    async ({ stepId, text }) => json(await repo.editStep(pool, stepId, text))
   );
 
   server.registerTool(

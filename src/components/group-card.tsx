@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Menu } from "@base-ui/react/menu";
-import { groupProgress, type Group } from "@/lib/types";
+import { groupProgress, type Group, type Step } from "@/lib/types";
 import { ProgressBar } from "@/components/ui-bits";
 import { PromptDialog } from "@/components/prompt-dialog";
 import { useStore } from "@/lib/store";
@@ -19,6 +19,7 @@ export function GroupCard({
   group,
   onToggleStep,
   onAddStep,
+  onEditStep,
   onDeleteStep,
   onRenameGroup,
   onDeleteGroup,
@@ -26,12 +27,15 @@ export function GroupCard({
   group: Group;
   onToggleStep: (stepId: string) => void;
   onAddStep: (text: string) => void;
+  onEditStep: (stepId: string, text: string) => void;
   onDeleteStep: (stepId: string) => void;
   onRenameGroup: (title: string) => void;
   onDeleteGroup: () => void;
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  // The step currently being edited — also drives the edit dialog's open state.
+  const [editingStep, setEditingStep] = useState<Step | null>(null);
   const { pct } = groupProgress(group);
   const complete = pct === 100;
 
@@ -123,6 +127,13 @@ export function GroupCard({
                 {step.text}
               </span>
               <button
+                onClick={() => setEditingStep(step)}
+                className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/step:opacity-100"
+                aria-label="Edit step"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
                 onClick={() => onDeleteStep(step.id)}
                 className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/step:opacity-100"
                 aria-label="Delete step"
@@ -166,6 +177,23 @@ export function GroupCard({
         initialValue={group.title}
         onSubmit={(v) => onRenameGroup(v)}
       />
+
+      <PromptDialog
+        // Keyed by step so the dialog remounts with the right prefill when a
+        // different step is picked.
+        key={editingStep?.id}
+        open={editingStep !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingStep(null);
+        }}
+        title="Edit step"
+        label="Step"
+        submitLabel="Save"
+        initialValue={editingStep?.text ?? ""}
+        onSubmit={(v) => {
+          if (editingStep) onEditStep(editingStep.id, v);
+        }}
+      />
     </div>
   );
 }
@@ -175,10 +203,11 @@ export function GroupCard({
  * store. This is what the app renders; Storybook renders `GroupCard` directly.
  */
 export function GroupCardConnected({ goalId, group }: { goalId: string; group: Group }) {
-  const { toggleStep, addStep, deleteStep, renameGroup, deleteGroup } = useStore(
+  const { toggleStep, addStep, editStep, deleteStep, renameGroup, deleteGroup } = useStore(
     useShallow((s) => ({
       toggleStep: s.toggleStep,
       addStep: s.addStep,
+      editStep: s.editStep,
       deleteStep: s.deleteStep,
       renameGroup: s.renameGroup,
       deleteGroup: s.deleteGroup,
@@ -189,6 +218,7 @@ export function GroupCardConnected({ goalId, group }: { goalId: string; group: G
       group={group}
       onToggleStep={(stepId) => toggleStep(goalId, group.id, stepId)}
       onAddStep={(text) => addStep(goalId, group.id, text)}
+      onEditStep={(stepId, text) => editStep(goalId, group.id, stepId, text)}
       onDeleteStep={(stepId) => deleteStep(goalId, group.id, stepId)}
       onRenameGroup={(title) => renameGroup(goalId, group.id, title)}
       onDeleteGroup={() => deleteGroup(goalId, group.id)}

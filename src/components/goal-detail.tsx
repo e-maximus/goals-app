@@ -10,7 +10,7 @@ import {
   isGoalComplete,
 } from "@/lib/types";
 import { Topbar, Crumbs } from "@/components/topbar";
-import { NewGoalDialog } from "@/components/new-goal-dialog";
+import { GoalDialog, NewGoalDialog } from "@/components/new-goal-dialog";
 import { PromptDialog } from "@/components/prompt-dialog";
 import { GroupCardConnected, AddGroupCard } from "@/components/group-card";
 import { GoalBanner } from "@/components/goal-banner";
@@ -24,10 +24,12 @@ export function GoalDetail({ goalId }: { goalId: string }) {
   const goal = useStore((s) => s.goals.find((g) => g.id === goalId));
   const hydrated = useStore((s) => s.hydrated);
   const addGoal = useStore((s) => s.addGoal);
+  const updateGoal = useStore((s) => s.updateGoal);
   const addGroup = useStore((s) => s.addGroup);
   const deleteGoal = useStore((s) => s.deleteGoal);
   const router = useRouter();
   const [newGoalOpen, setNewGoalOpen] = useState(false);
+  const [editGoalOpen, setEditGoalOpen] = useState(false);
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
 
@@ -82,6 +84,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
             title={goal.title}
             why={goal.why}
             pct={pct}
+            onEdit={() => setEditGoalOpen(true)}
             onDelete={() => {
               deleteGoal(goal.id);
               router.push("/");
@@ -141,6 +144,16 @@ export function GoalDetail({ goalId }: { goalId: string }) {
       </main>
 
       <NewGoalDialog open={newGoalOpen} onOpenChange={setNewGoalOpen} onCreate={handleCreateGoal} />
+      <GoalDialog
+        open={editGoalOpen}
+        onOpenChange={setEditGoalOpen}
+        heading="Edit goal"
+        description="Rename this goal, or change why it matters."
+        submitLabel="Save goal"
+        initialTitle={goal.title}
+        initialWhy={goal.why ?? ""}
+        onSubmit={(title, why) => updateGoal(goal.id, title, why)}
+      />
       <PromptDialog
         open={addGroupOpen}
         onOpenChange={setAddGroupOpen}

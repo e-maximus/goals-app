@@ -20,6 +20,14 @@ export class NotFoundError extends Error {
   }
 }
 
+/** Raised when a write is well-formed but asks for something nonsensical. Mapped to 400. */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}
+
 /** Raised when a PUT is based on a state older than what the server already has. */
 export class ConflictError extends Error {
   constructor(readonly serverUpdatedAt: number) {
@@ -198,6 +206,37 @@ export async function createGoal(pool: Pool, title: string, why?: string): Promi
   });
 }
 
+/**
+ * Change a goal's title and/or its "why". Fields left undefined are untouched;
+ * passing an empty `why` clears it, matching how the app treats the field.
+ */
+export async function updateGoal(
+  pool: Pool,
+  goalId: string,
+  changes: { title?: string; why?: string }
+): Promise<Goal> {
+  await withTransaction(pool, async (client) => {
+    await requireGoal(client, goalId);
+
+    if (changes.title !== undefined) {
+      const title = changes.title.trim();
+      if (!title) throw new ValidationError("A goal needs a title");
+      await client.query("UPDATE goals SET title = $2 WHERE id = $1", [goalId, title]);
+    }
+
+    if (changes.why !== undefined) {
+      await client.query("UPDATE goals SET why = $2 WHERE id = $1", [
+        goalId,
+        changes.why.trim() || null,
+      ]);
+    }
+
+    await touch(client);
+  });
+
+  return getGoal(pool, goalId);
+}
+
 export async function deleteGoal(pool: Pool, goalId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
     const { rowCount } = await client.query("DELETE FROM goals WHERE id = $1", [goalId]);
@@ -250,6 +289,23 @@ export async function addStep(pool: Pool, groupId: string, text: string): Promis
        VALUES ($1, $2, $3, FALSE, (SELECT COALESCE(MAX(position) + 1, 0) FROM steps WHERE group_id = $2))`,
       [step.id, groupId, step.text]
     );
+    await touch(client);
+    return step;
+  });
+}
+
+/** Rewrite a step's text, leaving its done flag alone. */
+export async function editStep(pool: Pool, stepId: string, text: string): Promise<Step> {
+  const next = text.trim();
+  if (!next) throw new ValidationError("A step needs some text");
+
+  return withTransaction(pool, async (client) => {
+    const { rows } = await client.query<{ id: string; text: string; done: boolean }>(
+      "UPDATE steps SET text = $2 WHERE id = $1 RETURNING id, text, done",
+      [stepId, next]
+    );
+    const step = rows[0];
+    if (!step) throw new NotFoundError("Step", stepId);
     await touch(client);
     return step;
   });

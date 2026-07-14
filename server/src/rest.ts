@@ -91,6 +91,10 @@ export function errorHandler(
     res.status(404).json({ error: err.message });
     return;
   }
+  if (err instanceof repo.ValidationError) {
+    res.status(400).json({ error: err.message });
+    return;
+  }
   console.error("Unhandled server error:", err);
   res.status(500).json({ error: "Internal server error" });
 }
