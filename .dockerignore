@@ -1,17 +1,15 @@
-# The server image is built from the repo root, but it only needs server/ plus
-# the shared domain types (src/lib/types.ts). Keep everything else — the whole
-# web app, its dependencies and build output — out of the build context.
+# Shared by the app image (./Dockerfile) and the server image
+# (server/Dockerfile) — both build from the repo root. The app image builds the
+# source tree itself, so nothing under src/ or public/ may be excluded here;
+# keep only build artifacts and local junk out of the context.
 **/node_modules
 **/dist
 .next
 out
 .git
 .github
-e2e
-public
 test-results
 playwright-report
 storybook-static
-.storybook
-src/app
-src/components
+*.log
+.DS_Store
