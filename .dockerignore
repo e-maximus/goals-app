@@ -1,0 +1,17 @@
+# The server image is built from the repo root, but it only needs server/ plus
+# the shared domain types (src/lib/types.ts). Keep everything else — the whole
+# web app, its dependencies and build output — out of the build context.
+**/node_modules
+**/dist
+.next
+out
+.git
+.github
+e2e
+public
+test-results
+playwright-report
+storybook-static
+.storybook
+src/app
+src/components

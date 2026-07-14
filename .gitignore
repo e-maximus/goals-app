@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
+# dependencies (any workspace, not just the root — server/ has its own)
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -25,6 +25,9 @@
 
 # production
 /build
+
+# server build output
+/server/dist/
 
 # misc
 .DS_Store

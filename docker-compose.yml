@@ -1,0 +1,47 @@
+# The goals backend: Postgres plus a single Node service that exposes both the
+# sync REST API (for the web app) and the MCP endpoint (for Claude / an IDE).
+#
+#   docker compose up -d --build
+#   curl localhost:8787/api/health
+#
+# The web app itself is not in here — it stays a static export and talks to this
+# stack only if you point it at the API in Settings.
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: goals
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-goals}
+      POSTGRES_DB: goals
+    volumes:
+      - goals-db:/var/lib/postgresql/data
+      - ./server/scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    # Exposed so you can psql into it while developing. Drop this in a shared
+    # deployment — the server reaches it over the compose network regardless.
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goals -d goals"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      DATABASE_URL: postgres://goals:${POSTGRES_PASSWORD:-goals}@db:5432/goals
+      PORT: 8787
+      # Origins allowed to call the sync API from a browser. Comma-separated.
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    ports:
+      - "${SERVER_PORT:-8787}:8787"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  goals-db:

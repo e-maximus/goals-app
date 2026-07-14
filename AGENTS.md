@@ -10,13 +10,38 @@ Guidance for agents making code changes here. Read this before you start.
 
 ## Project shape
 
-- Client-side Next.js 16 (App Router) + React 19, TypeScript, Tailwind v4,
-  shadcn/ui on Base UI. Fully static export → GitHub Pages. No backend; state
-  lives in `localStorage` via `StoreProvider` ([src/lib/store.tsx](src/lib/store.tsx)).
-- Keep it static-export friendly: no server actions, no route handlers, no
-  runtime env reads. Derived data (progress, counts) is computed by pure helpers
-  in [src/lib/types.ts](src/lib/types.ts) — don't store what you can derive.
-- All committed and user-facing text is in **English**.
+Two pieces, deliberately kept apart.
+
+**The web app** — Client-side Next.js 16 (App Router) + React 19, TypeScript,
+Tailwind v4, shadcn/ui on Base UI. Fully static export → GitHub Pages. State
+lives in `localStorage` via a Zustand store ([src/lib/store.ts](src/lib/store.ts)).
+
+- **Keep it static-export friendly: no server actions, no route handlers, no
+  runtime env reads.** This still holds — see the note on sync below.
+- Derived data (progress, counts) is computed by pure helpers in
+  [src/lib/types.ts](src/lib/types.ts) — don't store what you can derive.
+
+**The goals server** ([server/](server/)) — a separate Node workspace with its
+own `package.json`, exposing two surfaces over one port: a REST API the web app
+optionally syncs against, and an **MCP** endpoint (Streamable HTTP) so an agent
+can read and edit goals. Data lives in Postgres. Both run in Docker
+([docker-compose.yml](docker-compose.yml)); the web app does **not**.
+
+### How those two coexist without breaking the static export
+
+Sync is **opt-in and entirely client-side**: the user types the server address
+into Settings and it's kept in `localStorage` ([src/lib/sync.ts](src/lib/sync.ts)).
+There is no build-time backend, no env var baked into the bundle, and nothing
+server-rendered. With no address configured — which includes the public GitHub
+Pages deployment — the app is the offline, localStorage-only app it always was.
+**Don't "simplify" this by adding a route handler or reading `process.env` at
+runtime; that would break the deploy.**
+
+The domain types are shared, not duplicated: the server compiles
+[src/lib/types.ts](src/lib/types.ts) into its own build. Change a type there and
+both sides move together.
+
+All committed and user-facing text is in **English**.
 
 ## Before you finish a change — the checklist
 
@@ -27,6 +52,9 @@ Guidance for agents making code changes here. Read this before you start.
      [e2e/create-goal.spec.ts](e2e/create-goal.spec.ts).
    - Each test starts from a fresh browser context — `localStorage` is empty and
      the app reseeds its example goals, so every test has the same known state.
+   - Server changes are covered by [server/test/](server/test/) (`node:test`),
+     which run against a **real Postgres** — the repo layer is SQL and
+     transactions, and a mock would only prove the mock was called.
 2. **Run the same checks CI runs** ([.github/workflows/ci.yml](.github/workflows/ci.yml)):
    ```bash
    npm run lint
@@ -34,6 +62,12 @@ Guidance for agents making code changes here. Read this before you start.
    npm run test:e2e       # Playwright starts the dev server itself
    ```
    All three must pass. Don't leave a test as `.only` — CI fails on it.
+
+   If you touched [server/](server/):
+   ```bash
+   docker compose up -d db      # the tests need Postgres
+   cd server && npm test        # typecheck + tests
+   ```
 
 ## Branching & PRs
 
