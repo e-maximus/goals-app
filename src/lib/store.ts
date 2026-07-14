@@ -30,6 +30,9 @@ type StoreState = {
   deleteGoal: (goalId: string) => void;
   deleteGroup: (goalId: string, groupId: string) => void;
   deleteStep: (goalId: string, groupId: string, stepId: string) => void;
+  addComment: (goalId: string, text: string) => void;
+  editComment: (goalId: string, commentId: string, text: string) => void;
+  deleteComment: (goalId: string, commentId: string) => void;
 };
 
 export const useStore = create<StoreState>((set, get) => ({
@@ -145,6 +148,51 @@ export const useStore = create<StoreState>((set, get) => ({
                   : gr
               ),
             }
+          : g
+      ),
+    })),
+
+  addComment: (goalId, text) => {
+    const next = text.trim();
+    if (!next) return;
+    set((s) => ({
+      goals: s.goals.map((g) =>
+        g.id === goalId
+          ? {
+              ...g,
+              // Newest first, so the latest thought is the one you see.
+              comments: [
+                { id: uid(), text: next, createdAt: Date.now() },
+                ...(g.comments ?? []),
+              ],
+            }
+          : g
+      ),
+    }));
+  },
+
+  editComment: (goalId, commentId, text) => {
+    const next = text.trim();
+    if (!next) return;
+    set((s) => ({
+      goals: s.goals.map((g) =>
+        g.id === goalId
+          ? {
+              ...g,
+              comments: (g.comments ?? []).map((c) =>
+                c.id === commentId ? { ...c, text: next } : c
+              ),
+            }
+          : g
+      ),
+    }));
+  },
+
+  deleteComment: (goalId, commentId) =>
+    set((s) => ({
+      goals: s.goals.map((g) =>
+        g.id === goalId
+          ? { ...g, comments: (g.comments ?? []).filter((c) => c.id !== commentId) }
           : g
       ),
     })),

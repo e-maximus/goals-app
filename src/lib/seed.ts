@@ -1,4 +1,4 @@
-import type { Goal, Step } from "./types";
+import type { Comment, Goal, Step } from "./types";
 
 let counter = 0;
 function id(prefix: string): string {
@@ -10,6 +10,18 @@ function steps(pairs: [string, boolean][]): Step[] {
   return pairs.map(([text, done]) => ({ id: id("s"), text, done }));
 }
 
+const DAY = 1000 * 60 * 60 * 24;
+
+// Comment ids are written out rather than generated so the example data is
+// identical on every fresh visit — the e2e suite relies on that.
+function comments(pairs: [string, string, number][]): Comment[] {
+  return pairs.map(([commentId, text, daysAgo]) => ({
+    id: commentId,
+    text,
+    createdAt: Date.now() - daysAgo * DAY,
+  }));
+}
+
 // Example data mirroring the design sketches. Only used on first visit,
 // after which the user's own edits live in localStorage.
 export function seedGoals(): Goal[] {
@@ -19,6 +31,18 @@ export function seedGoals(): Goal[] {
       title: "Launch my podcast",
       why: "Prove to myself I can ship something creative from start to finish.",
       createdAt: Date.now() - 1000 * 60 * 60 * 24 * 20,
+      comments: comments([
+        [
+          "c-podcast-1",
+          "Editing is taking way longer than recording. Next episode I should script tighter so there's less to cut.",
+          1,
+        ],
+        [
+          "c-podcast-2",
+          "Settled on the name after two weeks of going back and forth. Not perfect, but shipping beats perfect.",
+          12,
+        ],
+      ]),
       groups: [
         {
           id: id("g"),
@@ -54,6 +78,9 @@ export function seedGoals(): Goal[] {
       id: "goal-marathon",
       title: "Run a half marathon",
       createdAt: Date.now() - 1000 * 60 * 60 * 24 * 40,
+      comments: comments([
+        ["c-marathon-1", "The 16k long run is the one I keep putting off. It's the wall.", 3],
+      ]),
       groups: [
         {
           id: id("g"),

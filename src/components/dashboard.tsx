@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import {
+  commentCount,
   goalProgress,
   goalStepCounts,
   isGoalComplete,
@@ -17,10 +18,22 @@ import { cn } from "@/lib/utils";
 
 function goalMeta(goal: Goal): string {
   const { total } = goalStepCounts(goal);
-  if (goal.groups.length === 0) return "No groups yet";
-  const stepWord = total === 1 ? "step" : "steps";
-  const groupWord = goal.groups.length === 1 ? "group" : "groups";
-  return `${goal.groups.length} ${groupWord} · ${total} ${stepWord}`;
+  const comments = commentCount(goal);
+  const segments: string[] = [];
+
+  if (goal.groups.length === 0) {
+    segments.push("No groups yet");
+  } else {
+    const groupWord = goal.groups.length === 1 ? "group" : "groups";
+    const stepWord = total === 1 ? "step" : "steps";
+    segments.push(`${goal.groups.length} ${groupWord}`, `${total} ${stepWord}`);
+  }
+
+  if (comments > 0) {
+    segments.push(`${comments} ${comments === 1 ? "comment" : "comments"}`);
+  }
+
+  return segments.join(" · ");
 }
 
 function statusLabel(goal: Goal): { text: string; complete: boolean } {

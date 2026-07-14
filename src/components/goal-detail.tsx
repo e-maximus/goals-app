@@ -14,6 +14,7 @@ import { NewGoalDialog } from "@/components/new-goal-dialog";
 import { PromptDialog } from "@/components/prompt-dialog";
 import { GroupCardConnected, AddGroupCard } from "@/components/group-card";
 import { GoalBanner } from "@/components/goal-banner";
+import { CommentsSection } from "@/components/comments-section";
 import { SectionLabel } from "@/components/ui-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Check } from "lucide-react";
@@ -135,6 +136,8 @@ export function GoalDetail({ goalId }: { goalId: string }) {
             </Button>
           </div>
         )}
+
+        <CommentsSection goalId={goal.id} comments={goal.comments ?? []} />
       </main>
 
       <NewGoalDialog open={newGoalOpen} onOpenChange={setNewGoalOpen} onCreate={handleCreateGoal} />
