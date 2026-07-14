@@ -62,12 +62,55 @@ describe("MCP surface", () => {
       "delete_group",
       "delete_step",
       "edit_comment",
+      "edit_step",
       "get_goal",
       "list_comments",
       "list_goals",
       "rename_group",
       "toggle_step",
+      "update_goal",
     ]);
+    await client.close();
+  });
+
+  it("renames a goal in place, keeping everything under it", async () => {
+    const client = await connect();
+    const updated = payload<Goal>(
+      await client.callTool({
+        name: "update_goal",
+        arguments: { goalId: "goal-podcast", title: "Launch the show" },
+      })
+    );
+
+    assert.equal(updated.title, "Launch the show");
+    // The point of having this tool at all: no collateral damage.
+    assert.equal(updated.groups[0]!.steps[0]!.text, "Pick a name");
+    assert.equal(updated.comments!.length, 1);
+    await client.close();
+  });
+
+  it("rejects an update that asks for no change", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "update_goal",
+      arguments: { goalId: "goal-podcast" },
+    });
+
+    assert.equal((result as { isError?: boolean }).isError, true);
+    await client.close();
+  });
+
+  it("edits a step's text and leaves it done", async () => {
+    const client = await connect();
+    const edited = payload<{ text: string; done: boolean }>(
+      await client.callTool({
+        name: "edit_step",
+        arguments: { stepId: "s-1", text: "Pick a name for the show" },
+      })
+    );
+
+    assert.equal(edited.text, "Pick a name for the show");
+    assert.equal(edited.done, true);
     await client.close();
   });
 

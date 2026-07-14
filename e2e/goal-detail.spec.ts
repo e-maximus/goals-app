@@ -94,6 +94,43 @@ test.describe("Goal detail — toggling and deleting", () => {
     await expect(page.getByRole("heading", { name: "Promotion", level: 3 })).toHaveCount(0);
   });
 
+  test("edits a step's text without unticking it", async ({ page }) => {
+    const row = page.locator("div.group\\/step").filter({ hasText: "Pick a name" });
+    // Seeded as done.
+    await expect(row.getByRole("button", { name: "Mark step incomplete" })).toBeVisible();
+
+    await row.getByRole("button", { name: "Edit step" }).click({ force: true });
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("Step")).toHaveValue("Pick a name");
+    await dialog.getByLabel("Step").fill("Pick a name for the show");
+    await dialog.getByRole("button", { name: "Save" }).click();
+
+    const edited = page.locator("div.group\\/step").filter({ hasText: "Pick a name for the show" });
+    await expect(edited).toBeVisible();
+    // Editing the text must not change whether the step is done.
+    await expect(edited.getByRole("button", { name: "Mark step incomplete" })).toBeVisible();
+  });
+
+  test("renames the goal and changes why it matters", async ({ page }) => {
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("Goal name")).toHaveValue("Launch my podcast");
+    await dialog.getByLabel("Goal name").fill("Launch the show");
+    await dialog.getByLabel("Why it matters (optional)").fill("Because I keep not finishing things");
+    await dialog.getByRole("button", { name: "Save goal" }).click();
+
+    // Scoped to the page body: the closing dialog still holds the same text in
+    // its fields for a beat, so an unscoped match would be ambiguous.
+    const body = page.getByRole("main");
+    await expect(body.getByRole("heading", { name: "Launch the show", level: 1 })).toBeVisible();
+    await expect(body.getByText("Because I keep not finishing things")).toBeVisible();
+
+    // The goal kept its groups and steps — this is not a delete-and-recreate.
+    await expect(body.getByRole("heading", { name: "Promotion", level: 3 })).toBeVisible();
+    await expect(body.getByText("Pick a name")).toBeVisible();
+  });
+
   test("deletes the whole goal and returns to the dashboard", async ({ page }) => {
     await page.getByRole("button", { name: "Delete", exact: true }).click();
 

@@ -1,21 +1,23 @@
-import { Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProgressBar } from "@/components/ui-bits";
 
 /**
  * The goal header card shown at the top of a goal page. Presentational: the
- * page ([goal-detail.tsx](goal-detail.tsx)) owns the data and the delete
- * handler, which keeps this renderable in isolation (Storybook/tests).
+ * page ([goal-detail.tsx](goal-detail.tsx)) owns the data and the edit/delete
+ * handlers, which keeps this renderable in isolation (Storybook/tests).
  */
 export function GoalBanner({
   title,
   why,
   pct,
+  onEdit,
   onDelete,
 }: {
   title: string;
   why?: string;
   pct: number;
+  onEdit?: () => void;
   onDelete?: () => void;
 }) {
   return (
@@ -31,15 +33,21 @@ export function GoalBanner({
         <ProgressBar value={pct} className="h-2.5" />
         <span className="tabular-nums text-xl font-bold text-primary">{pct}%</span>
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onDelete}
-        className="border-destructive text-destructive hover:bg-destructive/10"
-      >
-        <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-        Delete
-      </Button>
+      <div className="flex flex-shrink-0 items-center gap-2.5">
+        <Button variant="outline" size="sm" onClick={onEdit}>
+          <Pencil className="mr-1.5 h-3.5 w-3.5" />
+          Edit
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onDelete}
+          className="border-destructive text-destructive hover:bg-destructive/10"
+        >
+          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+          Delete
+        </Button>
+      </div>
     </div>
   );
 }

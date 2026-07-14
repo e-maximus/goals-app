@@ -39,9 +39,11 @@ type StoreState = {
    */
   hydrate: () => void;
   addGoal: (title: string, why?: string) => Goal;
+  updateGoal: (goalId: string, title: string, why?: string) => void;
   addGroup: (goalId: string, title: string) => void;
   renameGroup: (goalId: string, groupId: string, title: string) => void;
   addStep: (goalId: string, groupId: string, text: string) => void;
+  editStep: (goalId: string, groupId: string, stepId: string, text: string) => void;
   toggleStep: (goalId: string, groupId: string, stepId: string) => void;
   deleteGoal: (goalId: string) => void;
   deleteGroup: (goalId: string, groupId: string) => void;
@@ -89,6 +91,17 @@ export const useStore = create<StoreState>((set, get) => ({
     return goal;
   },
 
+  updateGoal: (goalId, title, why) => {
+    const next = title.trim();
+    if (!next) return;
+    set((s) => ({
+      goals: s.goals.map((g) =>
+        // An empty `why` clears it, matching addGoal's treatment of the field.
+        g.id === goalId ? { ...g, title: next, why: why?.trim() || undefined } : g
+      ),
+    }));
+  },
+
   addGroup: (goalId, title) =>
     set((s) => ({
       goals: s.goals.map((g) =>
@@ -130,6 +143,30 @@ export const useStore = create<StoreState>((set, get) => ({
           : g
       ),
     })),
+
+  editStep: (goalId, groupId, stepId, text) => {
+    const next = text.trim();
+    if (!next) return;
+    set((s) => ({
+      goals: s.goals.map((g) =>
+        g.id === goalId
+          ? {
+              ...g,
+              groups: g.groups.map((gr) =>
+                gr.id === groupId
+                  ? {
+                      ...gr,
+                      steps: gr.steps.map((step) =>
+                        step.id === stepId ? { ...step, text: next } : step
+                      ),
+                    }
+                  : gr
+              ),
+            }
+          : g
+      ),
+    }));
+  },
 
   toggleStep: (goalId, groupId, stepId) =>
     set((s) => ({
