@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    // ESNext + Bundler rather than NodeNext on purpose. Under NodeNext, tsc
+    // picks each file's module format from the nearest package.json — and the
+    // shared src/lib/types.ts sits under the web app's package.json, which is
+    // not `type: module`. It would compile to CommonJS while the rest of the
+    // build (and the runtime, under server/package.json) is ESM. Forcing ESNext
+    // emits one consistent module system for every file in the program.
+    // Relative imports keep their .js extensions so Node can resolve them.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "rootDir": "..",
+    "outDir": "dist",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": true
+  },
+  // The domain types are shared with the web app rather than duplicated —
+  // src/lib/types.ts is the single source of truth for Goal/Group/Step/Comment.
+  // It has no relative imports of its own, so it compiles cleanly under NodeNext.
+  "include": ["src/**/*.ts", "test/**/*.ts", "../src/lib/types.ts"]
+}
