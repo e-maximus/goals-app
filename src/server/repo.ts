@@ -1,5 +1,5 @@
-import { withTransaction, type Client, type Pool } from "./db.js";
-import { uid, type Comment, type Goal, type Group, type Step } from "./domain.js";
+import { withTransaction, type Client, type Pool } from "./db";
+import { uid, type Comment, type Goal, type Group, type Step } from "./domain";
 
 export type StoreState = {
   /**

@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { Pool } from "./db.js";
-import { goalProgress, goalStepCounts, type Goal } from "./domain.js";
-import * as repo from "./repo.js";
+import type { Pool } from "./db";
+import { goalProgress, goalStepCounts, type Goal } from "./domain";
+import * as repo from "./repo";
 
 /** Every tool answers with JSON text — agents parse it, humans can read it. */
 function json(value: unknown) {

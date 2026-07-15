@@ -31,9 +31,9 @@ jobs:
       - name: Build
         run: npm run build
 
-  # The goals server (REST + MCP) is a separate workspace with its own
-  # dependencies, and its tests run against a real Postgres — the repo layer is
-  # SQL and transactions, which a fake would not exercise.
+  # The server (REST + MCP) lives in the app now, but its tests still run against
+  # a real Postgres — the repo layer is SQL and transactions, which a fake would
+  # not exercise.
   server:
     runs-on: ubuntu-latest
 
@@ -59,19 +59,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: server/package-lock.json
 
-      - name: Install
-        run: npm ci
-        working-directory: server
+      - run: npm ci
 
       - name: Typecheck
         run: npm run typecheck
-        working-directory: server
 
       - name: Test
-        run: npm test
-        working-directory: server
+        run: npm run test:server
         env:
           TEST_DATABASE_URL: postgres://goals:goals@localhost:5432/goals_test
 

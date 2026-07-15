@@ -1,17 +1,17 @@
 /**
  * The server speaks exactly the same domain language as the web app. Rather
  * than redeclaring Goal/Group/Step/Comment (and letting the two drift), we
- * re-export the app's types verbatim. `src/lib/types.ts` is dependency-free, so
- * it compiles into the server build untouched.
+ * re-export the app's types verbatim — `src/lib/types.ts` is the one source of
+ * truth for the domain, shared by both sides of the same build.
  */
-export type { Comment, Goal, Group, Step } from "../../src/lib/types.js";
+export type { Comment, Goal, Group, Step } from "@/lib/types";
 export {
   commentCount,
   goalProgress,
   goalStepCounts,
   groupProgress,
   isGoalComplete,
-} from "../../src/lib/types.js";
+} from "@/lib/types";
 
 /** Mirrors the id shape the web app generates, so ids look alike everywhere. */
 export function uid(): string {
