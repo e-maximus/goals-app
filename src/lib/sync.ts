@@ -3,24 +3,15 @@
 import type { Goal } from "./types";
 
 /**
- * Optional sync against the goals server (see server/ and docker-compose.yml).
- *
- * The app stays a static export with no build-time backend: the API address is
- * something the user types into Settings, and it lives in localStorage next to
- * the goals. With no address configured — which includes the public GitHub Pages
- * deployment — none of this code runs and the app is exactly the offline,
- * localStorage-only app it has always been.
+ * The client half of talking to the goals server. The API is same-origin now
+ * (the app and the server are one deployment), so these just hit `/api/goals`.
  */
-
-const SYNC_KEY = "goals-app:sync";
-
-export type SyncSettings = { apiUrl: string };
 
 export type ServerState = {
   /**
-   * False when the server has never been written to. On first connect the app
-   * pushes its local goals up rather than pulling — adopting an empty store
-   * would silently throw away whatever the user already has.
+   * False when the server has never been written to. The server seeds the
+   * example goals on first run, so in practice the app always sees an
+   * initialized store — the flag is kept for the write path's conflict logic.
    */
   initialized: boolean;
   updatedAt: number;
@@ -35,55 +26,17 @@ export class SyncConflictError extends Error {
   }
 }
 
-/** Trim the trailing slash so `${apiUrl}/api/goals` never doubles up. */
-export function normalizeApiUrl(raw: string): string {
-  return raw.trim().replace(/\/+$/, "");
-}
-
-export function readSyncSettings(): SyncSettings | null {
-  try {
-    const raw = localStorage.getItem(SYNC_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<SyncSettings>;
-    return parsed.apiUrl ? { apiUrl: parsed.apiUrl } : null;
-  } catch {
-    return null;
-  }
-}
-
-export function writeSyncSettings(settings: SyncSettings | null): void {
-  try {
-    if (settings) localStorage.setItem(SYNC_KEY, JSON.stringify(settings));
-    else localStorage.removeItem(SYNC_KEY);
-  } catch {
-    /* ignore quota errors */
-  }
-}
-
-/** Is there a server at this address, and is it ours? */
-export async function checkHealth(apiUrl: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${normalizeApiUrl(apiUrl)}/api/health`);
-    if (!res.ok) return false;
-    const body = (await res.json()) as { ok?: boolean; service?: string };
-    return body.ok === true && body.service === "goals-app";
-  } catch {
-    return false;
-  }
-}
-
-export async function fetchState(apiUrl: string): Promise<ServerState> {
-  const res = await fetch(`${normalizeApiUrl(apiUrl)}/api/goals`);
+export async function fetchState(): Promise<ServerState> {
+  const res = await fetch("/api/goals");
   if (!res.ok) throw new Error(`Server responded ${res.status}`);
   return (await res.json()) as ServerState;
 }
 
 export async function pushGoals(
-  apiUrl: string,
   goals: Goal[],
   baseUpdatedAt: number | null
 ): Promise<ServerState> {
-  const res = await fetch(`${normalizeApiUrl(apiUrl)}/api/goals`, {
+  const res = await fetch("/api/goals", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ goals, baseUpdatedAt }),

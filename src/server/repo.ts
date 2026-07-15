@@ -1,5 +1,6 @@
 import { withTransaction, type Client, type Pool } from "./db";
 import { uid, type Comment, type Goal, type Group, type Step } from "./domain";
+import { seedGoals } from "./seed";
 
 export type StoreState = {
   /**
@@ -52,6 +53,67 @@ async function readUpdatedAt(client: Client | Pool): Promise<number | null> {
 }
 
 /** Assemble the whole store: three flat queries, stitched together in memory. */
+/**
+ * Seed the example goals if the store has never been written to. Runs once at
+ * startup (see getPool). The lock + re-check make a concurrent first request
+ * safe: whoever gets the lock second sees `initialized` and does nothing, so the
+ * examples can't be inserted twice.
+ */
+export async function ensureSeeded(pool: Pool): Promise<void> {
+  await withTransaction(pool, async (client) => {
+    await client.query("LOCK TABLE goals IN EXCLUSIVE MODE");
+    if ((await readUpdatedAt(client)) !== null) return;
+
+    await insertGoals(client, seedGoals());
+    await touch(client);
+  });
+}
+
+/**
+ * Wipe the store back to the seeded example goals. For end-to-end tests, which
+ * need each test to start from the same known state; never call this in
+ * production (the test route that does is env-gated).
+ */
+export async function resetToSeed(pool: Pool): Promise<void> {
+  await withTransaction(pool, async (client) => {
+    await client.query("LOCK TABLE goals IN EXCLUSIVE MODE");
+    await client.query("TRUNCATE goals, meta RESTART IDENTITY CASCADE");
+    await insertGoals(client, seedGoals());
+    await touch(client);
+  });
+}
+
+/** Insert a whole goals tree (goals → groups → steps, plus comments) in order. */
+async function insertGoals(client: Client, goals: Goal[]): Promise<void> {
+  for (const [goalIndex, goal] of goals.entries()) {
+    await client.query(
+      "INSERT INTO goals (id, title, why, created_at, position) VALUES ($1, $2, $3, $4, $5)",
+      [goal.id, goal.title, goal.why ?? null, goal.createdAt, goalIndex]
+    );
+
+    for (const [groupIndex, group] of goal.groups.entries()) {
+      await client.query(
+        "INSERT INTO groups (id, goal_id, title, position) VALUES ($1, $2, $3, $4)",
+        [group.id, goal.id, group.title, groupIndex]
+      );
+
+      for (const [stepIndex, step] of group.steps.entries()) {
+        await client.query(
+          "INSERT INTO steps (id, group_id, text, done, position) VALUES ($1, $2, $3, $4, $5)",
+          [step.id, group.id, step.text, step.done, stepIndex]
+        );
+      }
+    }
+
+    for (const comment of goal.comments ?? []) {
+      await client.query(
+        "INSERT INTO comments (id, goal_id, text, created_at) VALUES ($1, $2, $3, $4)",
+        [comment.id, goal.id, comment.text, comment.createdAt]
+      );
+    }
+  }
+}
+
 export async function getState(pool: Pool): Promise<StoreState> {
   const updatedAt = await readUpdatedAt(pool);
 
@@ -144,34 +206,7 @@ export async function replaceAll(
     }
 
     await client.query("DELETE FROM goals");
-
-    for (const [goalIndex, goal] of goals.entries()) {
-      await client.query(
-        "INSERT INTO goals (id, title, why, created_at, position) VALUES ($1, $2, $3, $4, $5)",
-        [goal.id, goal.title, goal.why ?? null, goal.createdAt, goalIndex]
-      );
-
-      for (const [groupIndex, group] of goal.groups.entries()) {
-        await client.query(
-          "INSERT INTO groups (id, goal_id, title, position) VALUES ($1, $2, $3, $4)",
-          [group.id, goal.id, group.title, groupIndex]
-        );
-
-        for (const [stepIndex, step] of group.steps.entries()) {
-          await client.query(
-            "INSERT INTO steps (id, group_id, text, done, position) VALUES ($1, $2, $3, $4, $5)",
-            [step.id, group.id, step.text, step.done, stepIndex]
-          );
-        }
-      }
-
-      for (const comment of goal.comments ?? []) {
-        await client.query(
-          "INSERT INTO comments (id, goal_id, text, created_at) VALUES ($1, $2, $3, $4)",
-          [comment.id, goal.id, comment.text, comment.createdAt]
-        );
-      }
-    }
+    await insertGoals(client, goals);
 
     const updatedAt = await touch(client);
     return { initialized: true, updatedAt, goals };

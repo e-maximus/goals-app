@@ -1,5 +1,5 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { getPool } from "@/server/db";
+import { getPool } from "@/server/pool";
 import { createMcpServer } from "@/server/mcp";
 
 /**

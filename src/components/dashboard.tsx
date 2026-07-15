@@ -12,6 +12,7 @@ import {
   type Goal,
 } from "@/lib/types";
 import { Topbar, Crumbs } from "@/components/topbar";
+import { LoadError } from "@/components/load-error";
 import { NewGoalDialog } from "@/components/new-goal-dialog";
 import { ProgressBar, SectionLabel } from "@/components/ui-bits";
 import { cn } from "@/lib/utils";
@@ -78,7 +79,7 @@ function GoalRow({ goal }: { goal: Goal }) {
 
 export function Dashboard() {
   const goals = useStore((s) => s.goals);
-  const hydrated = useStore((s) => s.hydrated);
+  const loadStatus = useStore((s) => s.loadStatus);
   const addGoal = useStore((s) => s.addGoal);
   const [dialogOpen, setDialogOpen] = useState(false);
   const router = useRouter();
@@ -96,7 +97,9 @@ export function Dashboard() {
       <Topbar crumbs={<Crumbs />} onNewGoal={() => setDialogOpen(true)} />
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-8 sm:px-10">
-        {!hydrated ? null : goals.length === 0 ? (
+        {loadStatus === "loading" ? null : loadStatus === "error" ? (
+          <LoadError />
+        ) : goals.length === 0 ? (
           <EmptyState onNewGoal={() => setDialogOpen(true)} />
         ) : (
           <div className="space-y-8">

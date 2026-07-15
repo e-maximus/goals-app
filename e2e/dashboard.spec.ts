@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 // The dashboard shows the seeded example goals on a fresh visit (empty
 // localStorage), split into "In progress" and "Completed" sections.
@@ -26,7 +26,7 @@ test.describe("Dashboard", () => {
   test("navigates to a goal's detail page", async ({ page }) => {
     await page.getByRole("link", { name: /Launch my podcast/ }).click();
 
-    await expect(page).toHaveURL(/\/goal\/\?id=goal-podcast/);
+    await expect(page).toHaveURL(/\/goal\?id=goal-podcast/);
     await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
   });
 });

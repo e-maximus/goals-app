@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test.describe("Creating a goal", () => {
   test("creates a goal from the dialog and opens its detail page", async ({ page }) => {
@@ -14,7 +14,7 @@ test.describe("Creating a goal", () => {
     await dialog.getByRole("button", { name: "Create goal" }).click();
 
     // A new goal has no steps, so it lands on the detail page in its empty state.
-    await expect(page).toHaveURL(/\/goal\/\?id=/);
+    await expect(page).toHaveURL(/\/goal\?id=/);
     await expect(page.getByRole("heading", { name: "Learn to juggle", level: 1 })).toBeVisible();
     await expect(page.getByText("For fun at parties")).toBeVisible();
     await expect(page.getByText("No groups yet")).toBeVisible();

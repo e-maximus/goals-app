@@ -10,6 +10,7 @@ import {
   isGoalComplete,
 } from "@/lib/types";
 import { Topbar, Crumbs } from "@/components/topbar";
+import { LoadError } from "@/components/load-error";
 import { GoalDialog, NewGoalDialog } from "@/components/new-goal-dialog";
 import { PromptDialog } from "@/components/prompt-dialog";
 import { GroupCardConnected, AddGroupCard } from "@/components/group-card";
@@ -22,7 +23,7 @@ import { ShareDialog } from "@/components/share-dialog";
 
 export function GoalDetail({ goalId }: { goalId: string }) {
   const goal = useStore((s) => s.goals.find((g) => g.id === goalId));
-  const hydrated = useStore((s) => s.hydrated);
+  const loadStatus = useStore((s) => s.loadStatus);
   const addGoal = useStore((s) => s.addGoal);
   const updateGoal = useStore((s) => s.updateGoal);
   const addGroup = useStore((s) => s.addGroup);
@@ -40,10 +41,19 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
   const openNewGoal = () => setNewGoalOpen(true);
 
-  if (!hydrated) {
+  if (loadStatus === "loading") {
     return (
       <div className="flex flex-1 flex-col">
         <Topbar crumbs={<Crumbs goalTitle="…" />} onNewGoal={openNewGoal} showShare />
+      </div>
+    );
+  }
+
+  if (loadStatus === "error") {
+    return (
+      <div className="flex flex-1 flex-col">
+        <Topbar crumbs={<Crumbs />} onNewGoal={openNewGoal} />
+        <LoadError />
       </div>
     );
   }
