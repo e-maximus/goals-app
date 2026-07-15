@@ -3,7 +3,7 @@ import { test, expect } from "./fixtures";
 test.describe("settings", () => {
   test("shows the account id and MCP connection details", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("link", { name: "Settings" }).click();
+    await page.getByRole("button", { name: "Settings" }).click();
 
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.getByText("User ID")).toBeVisible();
