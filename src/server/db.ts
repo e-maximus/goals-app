@@ -61,22 +61,3 @@ export async function withTransaction<T>(pool: Pool, fn: (client: Client) => Pro
   }
 }
 
-/**
- * The pool the route handlers share.
- *
- * There is no "server start" hook to migrate from, so the first caller runs the
- * migrations and everyone else awaits the same promise. It is cached on
- * `globalThis` because a dev-mode hot reload re-evaluates this module, and a
- * fresh pool per reload would leak connections until Postgres stopped accepting
- * them.
- */
-const globalForDb = globalThis as unknown as { goalsPool?: Promise<Pool> };
-
-export function getPool(): Promise<Pool> {
-  globalForDb.goalsPool ??= (async () => {
-    const pool = createPool();
-    await migrate(pool);
-    return pool;
-  })();
-  return globalForDb.goalsPool;
-}

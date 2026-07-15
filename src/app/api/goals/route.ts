@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getPool } from "@/server/db";
+import { getPool } from "@/server/pool";
 import * as repo from "@/server/repo";
 
 const stepSchema = z.object({

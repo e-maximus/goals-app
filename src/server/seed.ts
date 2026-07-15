@@ -1,4 +1,4 @@
-import type { Comment, Goal, Step } from "./types";
+import type { Comment, Goal, Step } from "@/lib/types";
 
 let counter = 0;
 function id(prefix: string): string {
@@ -22,8 +22,8 @@ function comments(pairs: [string, string, number][]): Comment[] {
   }));
 }
 
-// Example data mirroring the design sketches. Only used on first visit,
-// after which the user's own edits live in localStorage.
+// Example data mirroring the design sketches. The server inserts this once, the
+// first time it starts against an empty store (see repo.ensureSeeded).
 export function seedGoals(): Goal[] {
   return [
     {
