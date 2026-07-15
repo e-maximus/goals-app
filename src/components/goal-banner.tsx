@@ -1,5 +1,5 @@
-import { Pencil, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Menu } from "@base-ui/react/menu";
+import { MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { ProgressBar } from "@/components/ui-bits";
 
 /**
@@ -33,20 +33,35 @@ export function GoalBanner({
         <ProgressBar value={pct} className="h-2.5" />
         <span className="tabular-nums text-xl font-bold text-primary">{pct}%</span>
       </div>
-      <div className="flex flex-shrink-0 items-center gap-2.5">
-        <Button variant="outline" size="sm" onClick={onEdit}>
-          <Pencil className="mr-1.5 h-3.5 w-3.5" />
-          Edit
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onDelete}
-          className="border-destructive text-destructive hover:bg-destructive/10"
-        >
-          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-          Delete
-        </Button>
+      <div className="flex flex-shrink-0 items-center">
+        <Menu.Root>
+          <Menu.Trigger
+            aria-label="Goal options"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground data-[popup-open]:text-foreground"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
+              <Menu.Popup className="min-w-40 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none">
+                <Menu.Item
+                  onClick={onEdit}
+                  className="flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] outline-none data-[highlighted]:bg-muted"
+                >
+                  <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                  Edit
+                </Menu.Item>
+                <Menu.Item
+                  onClick={onDelete}
+                  className="flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-destructive outline-none data-[highlighted]:bg-destructive/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </Menu.Item>
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
       </div>
     </div>
   );

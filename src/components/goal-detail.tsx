@@ -16,7 +16,7 @@ import { PromptDialog } from "@/components/prompt-dialog";
 import { GroupCardConnected, AddGroupCard } from "@/components/group-card";
 import { GoalBanner } from "@/components/goal-banner";
 import { CommentsSection } from "@/components/comments-section";
-import { SectionLabel } from "@/components/ui-bits";
+import { LoadingState, SectionLabel } from "@/components/ui-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Check } from "lucide-react";
 import { ShareDialog } from "@/components/share-dialog";
@@ -45,6 +45,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
     return (
       <div className="flex flex-1 flex-col">
         <Topbar crumbs={<Crumbs goalTitle="…" />} onNewGoal={openNewGoal} showShare />
+        <LoadingState label="Loading goal…" />
       </div>
     );
   }
