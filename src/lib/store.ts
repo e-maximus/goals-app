@@ -35,8 +35,14 @@ type StoreState = {
   updateGoal: (goalId: string, title: string, why?: string) => void;
   addGroup: (goalId: string, title: string) => void;
   renameGroup: (goalId: string, groupId: string, title: string) => void;
-  addStep: (goalId: string, groupId: string, text: string) => void;
-  editStep: (goalId: string, groupId: string, stepId: string, text: string) => void;
+  addStep: (goalId: string, groupId: string, text: string, description?: string) => void;
+  editStep: (
+    goalId: string,
+    groupId: string,
+    stepId: string,
+    text: string,
+    description?: string
+  ) => void;
   toggleStep: (goalId: string, groupId: string, stepId: string) => void;
   deleteGoal: (goalId: string) => void;
   deleteGroup: (goalId: string, groupId: string) => void;
@@ -115,7 +121,8 @@ export const useStore = create<StoreState>((set) => ({
     }));
   },
 
-  addStep: (goalId, groupId, text) =>
+  addStep: (goalId, groupId, text, description) => {
+    const desc = description?.trim() || undefined;
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
@@ -123,17 +130,26 @@ export const useStore = create<StoreState>((set) => ({
               ...g,
               groups: g.groups.map((gr) =>
                 gr.id === groupId
-                  ? { ...gr, steps: [...gr.steps, { id: uid(), text: text.trim(), done: false }] }
+                  ? {
+                      ...gr,
+                      steps: [
+                        ...gr.steps,
+                        { id: uid(), text: text.trim(), ...(desc ? { description: desc } : {}), done: false },
+                      ],
+                    }
                   : gr
               ),
             }
           : g
       ),
-    })),
+    }));
+  },
 
-  editStep: (goalId, groupId, stepId, text) => {
+  editStep: (goalId, groupId, stepId, text, description) => {
     const next = text.trim();
     if (!next) return;
+    // An empty description clears it, matching addStep's treatment of the field.
+    const desc = description?.trim() || undefined;
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
@@ -144,7 +160,7 @@ export const useStore = create<StoreState>((set) => ({
                   ? {
                       ...gr,
                       steps: gr.steps.map((step) =>
-                        step.id === stepId ? { ...step, text: next } : step
+                        step.id === stepId ? { ...step, text: next, description: desc } : step
                       ),
                     }
                   : gr

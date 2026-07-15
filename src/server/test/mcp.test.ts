@@ -116,6 +116,36 @@ describe("MCP surface", () => {
     await client.close();
   });
 
+  it("adds a step with a description and can clear it", async () => {
+    const client = await connect();
+    const added = payload<{ id: string; text: string; description?: string }>(
+      await client.callTool({
+        name: "add_step",
+        arguments: { groupId: "g-1", text: "Record ep. 2", description: "Guest: Alex" },
+      })
+    );
+    assert.equal(added.text, "Record ep. 2");
+    assert.equal(added.description, "Guest: Alex");
+
+    // An empty description clears it, leaving the title alone.
+    const cleared = payload<{ text: string; description?: string }>(
+      await client.callTool({
+        name: "edit_step",
+        arguments: { stepId: added.id, description: "" },
+      })
+    );
+    assert.equal(cleared.text, "Record ep. 2");
+    assert.equal(cleared.description, undefined);
+    await client.close();
+  });
+
+  it("rejects an edit_step that asks for no change", async () => {
+    const client = await connect();
+    const result = await client.callTool({ name: "edit_step", arguments: { stepId: "s-1" } });
+    assert.equal((result as { isError?: boolean }).isError, true);
+    await client.close();
+  });
+
   it("lists goals with progress and a comment count", async () => {
     const client = await connect();
     const result = await client.callTool({ name: "list_goals", arguments: {} });

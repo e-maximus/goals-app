@@ -1,6 +1,10 @@
 export type Step = {
   id: string;
   text: string;
+  // A step's title is `text`; `description` is an optional longer note beneath
+  // it. Optional so steps written before descriptions existed still parse — read
+  // it as `step.description ?? ""` in inputs and guard rendering on its presence.
+  description?: string;
   done: boolean;
 };
 

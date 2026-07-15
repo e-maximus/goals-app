@@ -7,8 +7,15 @@ function id(prefix: string): string {
   return `${prefix}-${counter}`;
 }
 
-function steps(pairs: [string, boolean][]): Step[] {
-  return pairs.map(([text, done]) => ({ id: id("s"), text, done }));
+// Each step is [text, done] or [text, done, description]. The optional third
+// element fills in Step.description — extra context shown when a step is opened.
+function steps(pairs: ([string, boolean] | [string, boolean, string])[]): Step[] {
+  return pairs.map(([text, done, description]) => ({
+    id: id("s"),
+    text,
+    done,
+    ...(description ? { description } : {}),
+  }));
 }
 
 const DAY = 1000 * 60 * 60 * 24;
@@ -70,9 +77,17 @@ export function seedGoals(): Goal[] {
           id: id("g"),
           title: "Preparation",
           steps: steps([
-            ["Pick a name", true],
+            [
+              "Pick a name",
+              true,
+              "Short, easy to spell, and not already taken on the main podcast directories or social handles.",
+            ],
             ["Choose a platform", true],
-            ["Buy a microphone", true],
+            [
+              "Buy a microphone",
+              true,
+              "A USB condenser mic is plenty to start — no need for an audio interface yet. Budget around $100.",
+            ],
           ]),
         },
         {
@@ -81,7 +96,11 @@ export function seedGoals(): Goal[] {
           steps: steps([
             ["Write ep. 1 script", true],
             ["Record ep. 1", true],
-            ["Edit ep. 1", false],
+            [
+              "Edit ep. 1",
+              false,
+              "Cut the dead air and the worst of the ums, add the intro/outro music, and export at -16 LUFS.",
+            ],
             ["Record ep. 2", false],
           ]),
         },
@@ -119,7 +138,11 @@ export function seedGoals(): Goal[] {
           steps: steps([
             ["Run 8k long run", true],
             ["Run 12k long run", true],
-            ["Run 16k long run", false],
+            [
+              "Run 16k long run",
+              false,
+              "Keep it slow — conversational pace the whole way. The point is time on feet, not speed.",
+            ],
           ]),
         },
         {
@@ -127,7 +150,11 @@ export function seedGoals(): Goal[] {
           title: "Race prep",
           steps: steps([
             ["Register for the race", true],
-            ["Plan race-day fuel", false],
+            [
+              "Plan race-day fuel",
+              false,
+              "Practice with gels on the long runs first — test what my stomach tolerates before race day.",
+            ],
           ]),
         },
       ],

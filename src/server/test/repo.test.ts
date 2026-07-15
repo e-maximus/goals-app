@@ -197,17 +197,36 @@ describe("groups and steps", () => {
     const step = await repo.addStep(pool, owner, group.id, "Record ep 1");
     await repo.setStepDone(pool, owner, step.id, true);
 
-    const edited = await repo.editStep(pool, owner, step.id, "Record episode 1");
+    const edited = await repo.editStep(pool, owner, step.id, { text: "Record episode 1" });
     assert.equal(edited.text, "Record episode 1");
     assert.equal(edited.done, true);
   });
 
-  it("refuses to blank out a step", async () => {
+  it("carries a step's description through add, read and edit", async () => {
+    const group = await repo.addGroup(pool, owner, "goal-podcast", "Recording");
+    const step = await repo.addStep(pool, owner, group.id, "Record ep 1", "  In the home studio  ");
+    assert.equal(step.description, "In the home studio");
+
+    // It survives a reload from the database.
+    const goal = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.equal(goal.groups[0]!.steps[0]!.description, "In the home studio");
+
+    // Editing only the title leaves the description alone…
+    const titled = await repo.editStep(pool, owner, step.id, { text: "Record episode 1" });
+    assert.equal(titled.description, "In the home studio");
+
+    // …and an empty description clears it.
+    const cleared = await repo.editStep(pool, owner, step.id, { description: "" });
+    assert.equal(cleared.description, undefined);
+    assert.equal(cleared.text, "Record episode 1");
+  });
+
+  it("refuses to blank out a step's title", async () => {
     const group = await repo.addGroup(pool, owner, "goal-podcast", "Recording");
     const step = await repo.addStep(pool, owner, group.id, "Record ep 1");
 
     await assert.rejects(
-      () => repo.editStep(pool, owner, step.id, "  "),
+      () => repo.editStep(pool, owner, step.id, { text: "  " }),
       (err: unknown) => err instanceof repo.ValidationError
     );
   });
@@ -256,7 +275,7 @@ describe("per-user isolation", () => {
     await assert.rejects(() => repo.deleteGoal(pool, other, "goal-podcast"));
     await assert.rejects(() => repo.renameGroup(pool, other, groupId, "x"));
     await assert.rejects(() => repo.addStep(pool, other, groupId, "x"));
-    await assert.rejects(() => repo.editStep(pool, other, stepId, "x"));
+    await assert.rejects(() => repo.editStep(pool, other, stepId, { text: "x" }));
     await assert.rejects(() => repo.deleteStep(pool, other, stepId));
     await assert.rejects(() => repo.editComment(pool, other, commentId, "x"));
     await assert.rejects(() => repo.deleteComment(pool, other, commentId));
