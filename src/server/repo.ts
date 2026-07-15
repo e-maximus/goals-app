@@ -38,6 +38,16 @@ export class ConflictError extends Error {
   }
 }
 
+/** Shape a step row into a domain Step, omitting an absent description. */
+function toStep(row: { id: string; text: string; description: string | null; done: boolean }): Step {
+  return {
+    id: row.id,
+    text: row.text,
+    ...(row.description ? { description: row.description } : {}),
+    done: row.done,
+  };
+}
+
 // Every read and write below is scoped to one owner (a user id). Goals carry
 // `owner_id`; groups, steps and comments reach it through their goal, so those
 // queries join up to `goals` and filter there. This is what keeps one user from
@@ -79,8 +89,8 @@ export async function insertGoals(client: Client, ownerId: string, goals: Goal[]
 
       for (const [stepIndex, step] of group.steps.entries()) {
         await client.query(
-          "INSERT INTO steps (id, group_id, text, done, position) VALUES ($1, $2, $3, $4, $5)",
-          [step.id, group.id, step.text, step.done, stepIndex]
+          "INSERT INTO steps (id, group_id, text, description, done, position) VALUES ($1, $2, $3, $4, $5, $6)",
+          [step.id, group.id, step.text, step.description ?? null, step.done, stepIndex]
         );
       }
     }
@@ -120,9 +130,10 @@ export async function getState(pool: Pool, ownerId: string): Promise<StoreState>
     id: string;
     group_id: string;
     text: string;
+    description: string | null;
     done: boolean;
   }>(
-    `SELECT s.id, s.group_id, s.text, s.done
+    `SELECT s.id, s.group_id, s.text, s.description, s.done
        FROM steps s
        JOIN groups gr ON s.group_id = gr.id
        JOIN goals g ON gr.goal_id = g.id
@@ -147,7 +158,7 @@ export async function getState(pool: Pool, ownerId: string): Promise<StoreState>
   const stepsByGroup = new Map<string, Step[]>();
   for (const s of stepRows.rows) {
     const list = stepsByGroup.get(s.group_id) ?? [];
-    list.push({ id: s.id, text: s.text, done: s.done });
+    list.push(toStep(s));
     stepsByGroup.set(s.group_id, list);
   }
 
@@ -372,16 +383,18 @@ export async function addStep(
   pool: Pool,
   ownerId: string,
   groupId: string,
-  text: string
+  text: string,
+  description?: string
 ): Promise<Step> {
   return withTransaction(pool, async (client) => {
     if (!(await groupOwnedBy(client, ownerId, groupId))) throw new NotFoundError("Group", groupId);
 
-    const step: Step = { id: uid(), text: text.trim(), done: false };
+    const desc = description?.trim() || null;
+    const step: Step = { id: uid(), text: text.trim(), ...(desc ? { description: desc } : {}), done: false };
     await client.query(
-      `INSERT INTO steps (id, group_id, text, done, position)
-       VALUES ($1, $2, $3, FALSE, (SELECT COALESCE(MAX(position) + 1, 0) FROM steps WHERE group_id = $2))`,
-      [step.id, groupId, step.text]
+      `INSERT INTO steps (id, group_id, text, description, done, position)
+       VALUES ($1, $2, $3, $4, FALSE, (SELECT COALESCE(MAX(position) + 1, 0) FROM steps WHERE group_id = $2))`,
+      [step.id, groupId, step.text, desc]
     );
     await touch(client, ownerId);
     return step;
@@ -393,25 +406,45 @@ const OWNED_STEP = `id = $1 AND group_id IN (
   SELECT gr.id FROM groups gr JOIN goals g ON gr.goal_id = g.id WHERE g.owner_id = $2
 )`;
 
-/** Rewrite a step's text, leaving its done flag alone. */
+const STEP_COLS = "id, text, description, done";
+
+/**
+ * Edit a step's title and/or description, leaving its done flag alone. Fields
+ * left undefined are untouched; passing an empty `description` clears it,
+ * mirroring how updateGoal treats a goal's `why`.
+ */
 export async function editStep(
   pool: Pool,
   ownerId: string,
   stepId: string,
-  text: string
+  changes: { text?: string; description?: string }
 ): Promise<Step> {
-  const next = text.trim();
-  if (!next) throw new ValidationError("A step needs some text");
-
   return withTransaction(pool, async (client) => {
-    const { rows } = await client.query<{ id: string; text: string; done: boolean }>(
-      `UPDATE steps SET text = $3 WHERE ${OWNED_STEP} RETURNING id, text, done`,
-      [stepId, ownerId, next]
-    );
-    const step = rows[0];
-    if (!step) throw new NotFoundError("Step", stepId);
+    const owned = await client.query(`SELECT 1 FROM steps WHERE ${OWNED_STEP}`, [stepId, ownerId]);
+    if (!owned.rowCount) throw new NotFoundError("Step", stepId);
+
+    if (changes.text !== undefined) {
+      const next = changes.text.trim();
+      if (!next) throw new ValidationError("A step needs some text");
+      await client.query(`UPDATE steps SET text = $3 WHERE ${OWNED_STEP}`, [stepId, ownerId, next]);
+    }
+
+    if (changes.description !== undefined) {
+      await client.query(`UPDATE steps SET description = $3 WHERE ${OWNED_STEP}`, [
+        stepId,
+        ownerId,
+        changes.description.trim() || null,
+      ]);
+    }
+
+    const { rows } = await client.query<{
+      id: string;
+      text: string;
+      description: string | null;
+      done: boolean;
+    }>(`SELECT ${STEP_COLS} FROM steps WHERE ${OWNED_STEP}`, [stepId, ownerId]);
     await touch(client, ownerId);
-    return step;
+    return toStep(rows[0]!);
   });
 }
 
@@ -423,14 +456,19 @@ export async function setStepDone(
   done?: boolean
 ): Promise<Step> {
   return withTransaction(pool, async (client) => {
-    const { rows } = await client.query<{ id: string; text: string; done: boolean }>(
-      `UPDATE steps SET done = COALESCE($3, NOT done) WHERE ${OWNED_STEP} RETURNING id, text, done`,
+    const { rows } = await client.query<{
+      id: string;
+      text: string;
+      description: string | null;
+      done: boolean;
+    }>(
+      `UPDATE steps SET done = COALESCE($3, NOT done) WHERE ${OWNED_STEP} RETURNING ${STEP_COLS}`,
       [stepId, ownerId, done ?? null]
     );
     const step = rows[0];
     if (!step) throw new NotFoundError("Step", stepId);
     await touch(client, ownerId);
-    return step;
+    return toStep(step);
   });
 }
 

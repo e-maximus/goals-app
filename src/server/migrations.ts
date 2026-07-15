@@ -100,4 +100,13 @@ export const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS goals_owner_id_idx ON goals (owner_id);
     `,
   },
+  {
+    name: "003_step_description",
+    sql: `
+      -- A step gains an optional longer note beneath its title. \`text\` stays the
+      -- title; \`description\` is nullable because existing steps have none and it
+      -- is optional going forward (see Step.description in src/lib/types.ts).
+      ALTER TABLE steps ADD COLUMN description TEXT;
+    `,
+  },
 ];

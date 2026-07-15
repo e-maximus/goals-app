@@ -163,20 +163,41 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     "add_step",
     {
       title: "Add a step",
-      description: "Add a step to a group. Keep it small — one sitting's worth of work.",
-      inputSchema: { groupId: z.string(), text: z.string().min(1) },
+      description:
+        "Add a step to a group. Keep the title small — one sitting's worth of work. " +
+        "`description` is an optional longer note beneath it.",
+      inputSchema: {
+        groupId: z.string(),
+        text: z.string().min(1).describe("The step's title"),
+        description: z.string().optional().describe("An optional longer note — details, links, context"),
+      },
     },
-    async ({ groupId, text }) => json(await repo.addStep(pool, ownerId, groupId, text))
+    async ({ groupId, text, description }) =>
+      json(await repo.addStep(pool, ownerId, groupId, text, description))
   );
 
   server.registerTool(
     "edit_step",
     {
       title: "Edit a step",
-      description: "Rewrite a step's text. Its done/not-done state is left alone.",
-      inputSchema: { stepId: z.string(), text: z.string().min(1) },
+      description:
+        "Change a step's title and/or its description. Anything you leave out stays as it is; " +
+        "pass an empty `description` to clear it. Its done/not-done state is left alone.",
+      inputSchema: {
+        stepId: z.string(),
+        text: z.string().min(1).optional().describe("The new title, if it should change"),
+        description: z
+          .string()
+          .optional()
+          .describe("The new note; pass an empty string to clear it"),
+      },
     },
-    async ({ stepId, text }) => json(await repo.editStep(pool, ownerId, stepId, text))
+    async ({ stepId, text, description }) => {
+      if (text === undefined && description === undefined) {
+        throw new Error("Nothing to update — pass a title, a description, or both.");
+      }
+      return json(await repo.editStep(pool, ownerId, stepId, { text, description }));
+    }
   );
 
   server.registerTool(

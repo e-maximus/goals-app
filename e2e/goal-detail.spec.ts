@@ -39,6 +39,44 @@ test.describe("Goal detail — groups and steps", () => {
     await page.getByRole("button", { name: "Mark step complete" }).click();
     await expect(page.getByRole("button", { name: "Mark step incomplete" })).toBeVisible();
   });
+
+  test("adds a step with a description and edits it", async ({ page }) => {
+    await page.getByRole("button", { name: "+ Add first group" }).click();
+    let dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Group name").fill("Fundamentals");
+    await dialog.getByRole("button", { name: "Add group" }).click();
+
+    const group = page.locator("div.group\\/card").filter({ hasText: "Fundamentals" });
+    await group.getByRole("button", { name: "Add step" }).click();
+
+    dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Step").fill("Buy brushes");
+    await dialog.getByLabel("Description (optional)").fill("Round sizes 6 and 10");
+
+    // The store saves on a debounce; wait for that PUT so it can't land mid-edit
+    // and race the dialog we open next.
+    const saved = page.waitForResponse(
+      (r) => r.url().includes("/api/goals") && r.request().method() === "PUT"
+    );
+    await dialog.getByRole("button", { name: "Add step" }).click();
+    await saved;
+
+    // Both the title and its description are shown on the card. Scope to the
+    // step row so we don't also match the (animating-out) dialog textarea.
+    const row = page.locator("div.group\\/step").filter({ hasText: "Buy brushes" });
+    await expect(row.getByText("Buy brushes")).toBeVisible();
+    await expect(row.getByText("Round sizes 6 and 10")).toBeVisible();
+
+    // The edit dialog is prefilled with both fields, and edits persist.
+    await row.getByRole("button", { name: "Edit step" }).click({ force: true });
+    dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("Step")).toHaveValue("Buy brushes");
+    await expect(dialog.getByLabel("Description (optional)")).toHaveValue("Round sizes 6 and 10");
+    await dialog.getByLabel("Description (optional)").fill("Round sizes 6, 10 and 14");
+    await dialog.getByRole("button", { name: "Save" }).click();
+
+    await expect(row.getByText("Round sizes 6, 10 and 14")).toBeVisible();
+  });
 });
 
 // The podcast goal ships with steps already, so it's a good fixture for toggling

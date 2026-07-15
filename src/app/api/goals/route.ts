@@ -6,6 +6,7 @@ import { resolveWebUser } from "@/server/users";
 const stepSchema = z.object({
   id: z.string(),
   text: z.string(),
+  description: z.string().optional(),
   done: z.boolean(),
 });
 

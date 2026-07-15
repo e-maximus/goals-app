@@ -129,7 +129,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
                 </span>
               )}
             </SectionLabel>
-            <div className="grid grid-cols-1 items-stretch gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
               {goal.groups.map((group) => (
                 <GroupCardConnected key={group.id} goalId={goal.id} group={group} />
               ))}

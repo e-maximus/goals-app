@@ -5,6 +5,7 @@ import { Menu } from "@base-ui/react/menu";
 import { groupProgress, type Group, type Step } from "@/lib/types";
 import { ProgressBar } from "@/components/ui-bits";
 import { PromptDialog } from "@/components/prompt-dialog";
+import { StepDialog } from "@/components/step-dialog";
 import { useStore } from "@/lib/store";
 import { useShallow } from "zustand/shallow";
 import { cn } from "@/lib/utils";
@@ -26,8 +27,8 @@ export function GroupCard({
 }: {
   group: Group;
   onToggleStep: (stepId: string) => void;
-  onAddStep: (text: string) => void;
-  onEditStep: (stepId: string, text: string) => void;
+  onAddStep: (text: string, description?: string) => void;
+  onEditStep: (stepId: string, text: string, description?: string) => void;
   onDeleteStep: (stepId: string) => void;
   onRenameGroup: (title: string) => void;
   onDeleteGroup: () => void;
@@ -94,7 +95,7 @@ export function GroupCard({
         </Menu.Root>
       </div>
 
-      <div className="flex max-h-56 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 py-2">
+      <div className="flex max-h-72 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 py-2">
         {group.steps.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-4 py-7 text-center">
             <div className="text-[13px] font-semibold text-foreground">No steps yet</div>
@@ -104,12 +105,12 @@ export function GroupCard({
           group.steps.map((step) => (
             <div
               key={step.id}
-              className="group/step flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted/60"
+              className="group/step flex items-start gap-2.5 rounded-lg px-2 py-2 hover:bg-muted/60"
             >
               <button
                 onClick={() => onToggleStep(step.id)}
                 className={cn(
-                  "flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+                  "mt-0.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors",
                   step.done
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border-strong hover:border-primary"
@@ -118,24 +119,36 @@ export function GroupCard({
               >
                 {step.done && <Check className="h-3 w-3" strokeWidth={3} />}
               </button>
-              <span
-                className={cn(
-                  "flex-1 text-[13.5px]",
-                  step.done && "text-muted-foreground line-through decoration-border-strong"
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn(
+                    "text-[13.5px] font-medium",
+                    step.done && "text-muted-foreground line-through decoration-border-strong"
+                  )}
+                >
+                  {step.text}
+                </div>
+                {step.description && (
+                  <p
+                    className={cn(
+                      "mt-0.5 whitespace-pre-line text-xs leading-snug text-muted-foreground",
+                      step.done && "line-through decoration-border-strong"
+                    )}
+                  >
+                    {step.description}
+                  </p>
                 )}
-              >
-                {step.text}
-              </span>
+              </div>
               <button
                 onClick={() => setEditingStep(step)}
-                className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/step:opacity-100"
+                className="mt-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/step:opacity-100"
                 aria-label="Edit step"
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => onDeleteStep(step.id)}
-                className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/step:opacity-100"
+                className="mt-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/step:opacity-100"
                 aria-label="Delete step"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -155,16 +168,13 @@ export function GroupCard({
         </button>
       </div>
 
-      <PromptDialog
+      <StepDialog
         open={addOpen}
         onOpenChange={setAddOpen}
         title="Add step"
         description={<>Add a step to &ldquo;{group.title}&rdquo;</>}
-        label="Step"
-        placeholder="e.g. Record ep. 3"
-        hint="Keep it small — something you could do in one sitting."
         submitLabel="Add step"
-        onSubmit={(v) => onAddStep(v)}
+        onSubmit={(text, description) => onAddStep(text, description)}
       />
 
       <PromptDialog
@@ -178,7 +188,7 @@ export function GroupCard({
         onSubmit={(v) => onRenameGroup(v)}
       />
 
-      <PromptDialog
+      <StepDialog
         // Keyed by step so the dialog remounts with the right prefill when a
         // different step is picked.
         key={editingStep?.id}
@@ -187,11 +197,11 @@ export function GroupCard({
           if (!open) setEditingStep(null);
         }}
         title="Edit step"
-        label="Step"
         submitLabel="Save"
-        initialValue={editingStep?.text ?? ""}
-        onSubmit={(v) => {
-          if (editingStep) onEditStep(editingStep.id, v);
+        initialText={editingStep?.text ?? ""}
+        initialDescription={editingStep?.description ?? ""}
+        onSubmit={(text, description) => {
+          if (editingStep) onEditStep(editingStep.id, text, description);
         }}
       />
     </div>
@@ -217,8 +227,10 @@ export function GroupCardConnected({ goalId, group }: { goalId: string; group: G
     <GroupCard
       group={group}
       onToggleStep={(stepId) => toggleStep(goalId, group.id, stepId)}
-      onAddStep={(text) => addStep(goalId, group.id, text)}
-      onEditStep={(stepId, text) => editStep(goalId, group.id, stepId, text)}
+      onAddStep={(text, description) => addStep(goalId, group.id, text, description)}
+      onEditStep={(stepId, text, description) =>
+        editStep(goalId, group.id, stepId, text, description)
+      }
       onDeleteStep={(stepId) => deleteStep(goalId, group.id, stepId)}
       onRenameGroup={(title) => renameGroup(goalId, group.id, title)}
       onDeleteGroup={() => deleteGroup(goalId, group.id)}
