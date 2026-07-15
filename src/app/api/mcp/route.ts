@@ -2,6 +2,29 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { getPool } from "@/server/pool";
 import { createMcpServer } from "@/server/mcp";
 import { bearerUser } from "@/server/users";
+import { logRequest } from "@/server/log";
+
+/**
+ * Peek at the JSON-RPC body to name what's being invoked, for logging only.
+ * Reads a *clone* so the transport still gets an untouched request; never
+ * throws — a body we can't parse just yields no extra context.
+ */
+async function describeRpc(request: Request): Promise<Record<string, string>> {
+  try {
+    const body = (await request.clone().json()) as {
+      method?: unknown;
+      params?: { name?: unknown };
+    };
+    const rpcMethod = typeof body.method === "string" ? body.method : undefined;
+    const tool =
+      rpcMethod === "tools/call" && typeof body.params?.name === "string"
+        ? body.params.name
+        : undefined;
+    return { ...(rpcMethod ? { rpcMethod } : {}), ...(tool ? { tool } : {}) };
+  } catch {
+    return {};
+  }
+}
 
 /**
  * MCP over Streamable HTTP, stateless: a fresh server and transport per request.
@@ -17,6 +40,8 @@ import { bearerUser } from "@/server/users";
  * reused across requests (the SDK throws if you try), hence one per call.
  */
 export async function POST(request: Request) {
+  const startedAt = Date.now();
+  const rpc = await describeRpc(request);
   const pool = await getPool();
 
   // The MCP surface is per-user: a request must carry a valid personal access
@@ -25,6 +50,7 @@ export async function POST(request: Request) {
   // endpoint to the public now that it's internet-reachable.
   const user = await bearerUser(pool, request);
   if (!user) {
+    logRequest(request, 401, startedAt, rpc);
     return Response.json(
       {
         jsonrpc: "2.0",
@@ -42,9 +68,15 @@ export async function POST(request: Request) {
 
   try {
     await server.connect(transport);
-    return await transport.handleRequest(request);
+    const res = await transport.handleRequest(request);
+    logRequest(request, res.status, startedAt, { userId: user.id, ...rpc });
+    return res;
   } catch (err) {
-    console.error("MCP request failed:", err);
+    logRequest(request, 500, startedAt, {
+      userId: user.id,
+      ...rpc,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return Response.json(
       {
         jsonrpc: "2.0",

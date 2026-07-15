@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getPool } from "@/server/pool";
 import * as repo from "@/server/repo";
 import { resolveWebUser } from "@/server/users";
+import { logRequest } from "@/server/log";
 
 const stepSchema = z.object({
   id: z.string(),
@@ -51,19 +52,27 @@ const putBodySchema = z.object({
  * so GET doubles as "sign me in".
  */
 export async function GET(request: Request) {
+  const startedAt = Date.now();
+  let userId: string | undefined;
   try {
     const pool = await getPool();
     const { user, setCookie } = await resolveWebUser(pool, request);
-    return json(await repo.getState(pool, user.id), setCookie);
+    userId = user.id;
+    const res = json(await repo.getState(pool, user.id), setCookie);
+    logRequest(request, res.status, startedAt, { userId });
+    return res;
   } catch (err) {
-    return toErrorResponse(err);
+    return toErrorResponse(err, request, startedAt, userId);
   }
 }
 
 export async function PUT(request: Request) {
+  const startedAt = Date.now();
+  let userId: string | undefined;
   try {
     const parsed = putBodySchema.safeParse(await request.json());
     if (!parsed.success) {
+      logRequest(request, 400, startedAt);
       return Response.json(
         { error: "Invalid body", details: parsed.error.flatten() },
         { status: 400 }
@@ -73,9 +82,12 @@ export async function PUT(request: Request) {
     const { goals, baseUpdatedAt } = parsed.data;
     const pool = await getPool();
     const { user, setCookie } = await resolveWebUser(pool, request);
-    return json(await repo.replaceAll(pool, user.id, goals, baseUpdatedAt ?? null), setCookie);
+    userId = user.id;
+    const res = json(await repo.replaceAll(pool, user.id, goals, baseUpdatedAt ?? null), setCookie);
+    logRequest(request, res.status, startedAt, { userId });
+    return res;
   } catch (err) {
-    return toErrorResponse(err);
+    return toErrorResponse(err, request, startedAt, userId);
   }
 }
 
@@ -87,7 +99,21 @@ function json(body: unknown, setCookie: string | null): Response {
 }
 
 /** The repo's domain errors, mapped onto status codes. Anything else is a 500. */
-function toErrorResponse(err: unknown): Response {
+function toErrorResponse(
+  err: unknown,
+  request: Request,
+  startedAt: number,
+  userId?: string
+): Response {
+  const res = errorResponse(err);
+  logRequest(request, res.status, startedAt, {
+    userId,
+    ...(res.status >= 500 ? { error: err instanceof Error ? err.message : String(err) } : {}),
+  });
+  return res;
+}
+
+function errorResponse(err: unknown): Response {
   if (err instanceof repo.ConflictError) {
     return Response.json(
       { error: err.message, serverUpdatedAt: err.serverUpdatedAt },
@@ -100,6 +126,5 @@ function toErrorResponse(err: unknown): Response {
   if (err instanceof repo.ValidationError) {
     return Response.json({ error: err.message }, { status: 400 });
   }
-  console.error("Unhandled server error:", err);
   return Response.json({ error: "Internal server error" }, { status: 500 });
 }
