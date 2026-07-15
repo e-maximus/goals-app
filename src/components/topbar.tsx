@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Settings } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { SaveStatus } from "@/components/save-status";
@@ -28,6 +29,15 @@ export function Topbar({
             Share
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          nativeButton={false}
+          render={<Link href="/settings" />}
+          aria-label="Settings"
+        >
+          <Settings />
+        </Button>
         <Button size="sm" onClick={onNewGoal}>
           + New Goal
         </Button>

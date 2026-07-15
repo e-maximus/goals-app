@@ -24,10 +24,13 @@ function summarize(goal: Goal) {
 }
 
 /**
- * Build the MCP surface over the goals store. The tool names deliberately match
- * the web app's store actions, so there's one vocabulary rather than two.
+ * Build the MCP surface over one user's goals store. `ownerId` is the user the
+ * request authenticated as (see the /api/mcp route); every tool operates only
+ * on their goals, so an agent can never reach across accounts. The tool names
+ * deliberately match the web app's store actions, so there's one vocabulary
+ * rather than two.
  */
-export function createMcpServer(pool: Pool): McpServer {
+export function createMcpServer(pool: Pool, ownerId: string): McpServer {
   const server = new McpServer(
     { name: "goals-app", version: "1.0.0" },
     {
@@ -49,7 +52,7 @@ export function createMcpServer(pool: Pool): McpServer {
       inputSchema: {},
     },
     async () => {
-      const { goals } = await repo.getState(pool);
+      const { goals } = await repo.getState(pool, ownerId);
       return json(goals.map(summarize));
     }
   );
@@ -61,7 +64,7 @@ export function createMcpServer(pool: Pool): McpServer {
       description: "One goal in full: its groups, their steps, and its comments.",
       inputSchema: { goalId: z.string().describe("The goal's id, from list_goals") },
     },
-    async ({ goalId }) => json(await repo.getGoal(pool, goalId))
+    async ({ goalId }) => json(await repo.getGoal(pool, ownerId, goalId))
   );
 
   // ---- goals ----
@@ -76,7 +79,7 @@ export function createMcpServer(pool: Pool): McpServer {
         why: z.string().optional().describe("Why it matters to them — optional but motivating"),
       },
     },
-    async ({ title, why }) => json(await repo.createGoal(pool, title, why))
+    async ({ title, why }) => json(await repo.createGoal(pool, ownerId, title, why))
   );
 
   server.registerTool(
@@ -97,7 +100,7 @@ export function createMcpServer(pool: Pool): McpServer {
       if (title === undefined && why === undefined) {
         throw new Error("Nothing to update — pass a title, a why, or both.");
       }
-      return json(await repo.updateGoal(pool, goalId, { title, why }));
+      return json(await repo.updateGoal(pool, ownerId, goalId, { title, why }));
     }
   );
 
@@ -110,7 +113,7 @@ export function createMcpServer(pool: Pool): McpServer {
       annotations: { destructiveHint: true },
     },
     async ({ goalId }) => {
-      await repo.deleteGoal(pool, goalId);
+      await repo.deleteGoal(pool, ownerId, goalId);
       return json({ deleted: goalId });
     }
   );
@@ -124,7 +127,7 @@ export function createMcpServer(pool: Pool): McpServer {
       description: "Add a group of steps to a goal, e.g. 'Recording' or 'Promotion'.",
       inputSchema: { goalId: z.string(), title: z.string().min(1) },
     },
-    async ({ goalId, title }) => json(await repo.addGroup(pool, goalId, title))
+    async ({ goalId, title }) => json(await repo.addGroup(pool, ownerId, goalId, title))
   );
 
   server.registerTool(
@@ -135,7 +138,7 @@ export function createMcpServer(pool: Pool): McpServer {
       inputSchema: { groupId: z.string(), title: z.string().min(1) },
     },
     async ({ groupId, title }) => {
-      await repo.renameGroup(pool, groupId, title);
+      await repo.renameGroup(pool, ownerId, groupId, title);
       return json({ groupId, title });
     }
   );
@@ -149,7 +152,7 @@ export function createMcpServer(pool: Pool): McpServer {
       annotations: { destructiveHint: true },
     },
     async ({ groupId }) => {
-      await repo.deleteGroup(pool, groupId);
+      await repo.deleteGroup(pool, ownerId, groupId);
       return json({ deleted: groupId });
     }
   );
@@ -163,7 +166,7 @@ export function createMcpServer(pool: Pool): McpServer {
       description: "Add a step to a group. Keep it small — one sitting's worth of work.",
       inputSchema: { groupId: z.string(), text: z.string().min(1) },
     },
-    async ({ groupId, text }) => json(await repo.addStep(pool, groupId, text))
+    async ({ groupId, text }) => json(await repo.addStep(pool, ownerId, groupId, text))
   );
 
   server.registerTool(
@@ -173,7 +176,7 @@ export function createMcpServer(pool: Pool): McpServer {
       description: "Rewrite a step's text. Its done/not-done state is left alone.",
       inputSchema: { stepId: z.string(), text: z.string().min(1) },
     },
-    async ({ stepId, text }) => json(await repo.editStep(pool, stepId, text))
+    async ({ stepId, text }) => json(await repo.editStep(pool, ownerId, stepId, text))
   );
 
   server.registerTool(
@@ -186,7 +189,7 @@ export function createMcpServer(pool: Pool): McpServer {
         done: z.boolean().optional().describe("Set explicitly, or omit to toggle"),
       },
     },
-    async ({ stepId, done }) => json(await repo.setStepDone(pool, stepId, done))
+    async ({ stepId, done }) => json(await repo.setStepDone(pool, ownerId, stepId, done))
   );
 
   server.registerTool(
@@ -198,7 +201,7 @@ export function createMcpServer(pool: Pool): McpServer {
       annotations: { destructiveHint: true },
     },
     async ({ stepId }) => {
-      await repo.deleteStep(pool, stepId);
+      await repo.deleteStep(pool, ownerId, stepId);
       return json({ deleted: stepId });
     }
   );
@@ -214,7 +217,7 @@ export function createMcpServer(pool: Pool): McpServer {
         "about the goal — read it before giving advice.",
       inputSchema: { goalId: z.string() },
     },
-    async ({ goalId }) => json(await repo.listComments(pool, goalId))
+    async ({ goalId }) => json(await repo.listComments(pool, ownerId, goalId))
   );
 
   server.registerTool(
@@ -224,7 +227,7 @@ export function createMcpServer(pool: Pool): McpServer {
       description: "Leave a comment on a goal — an observation, a note, a next thought.",
       inputSchema: { goalId: z.string(), text: z.string().min(1) },
     },
-    async ({ goalId, text }) => json(await repo.addComment(pool, goalId, text))
+    async ({ goalId, text }) => json(await repo.addComment(pool, ownerId, goalId, text))
   );
 
   server.registerTool(
@@ -234,7 +237,7 @@ export function createMcpServer(pool: Pool): McpServer {
       description: "Rewrite an existing comment's text.",
       inputSchema: { commentId: z.string(), text: z.string().min(1) },
     },
-    async ({ commentId, text }) => json(await repo.editComment(pool, commentId, text))
+    async ({ commentId, text }) => json(await repo.editComment(pool, ownerId, commentId, text))
   );
 
   server.registerTool(
@@ -246,7 +249,7 @@ export function createMcpServer(pool: Pool): McpServer {
       annotations: { destructiveHint: true },
     },
     async ({ commentId }) => {
-      await repo.deleteComment(pool, commentId);
+      await repo.deleteComment(pool, ownerId, commentId);
       return json({ deleted: commentId });
     }
   );
@@ -261,7 +264,7 @@ export function createMcpServer(pool: Pool): McpServer {
       mimeType: "application/json",
     },
     async (uri) => {
-      const state = await repo.getState(pool);
+      const state = await repo.getState(pool, ownerId);
       return {
         contents: [
           {

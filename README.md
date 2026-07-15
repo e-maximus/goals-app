@@ -13,8 +13,11 @@ time — with an MCP endpoint so an agent can read and edit those goals too.
 - Watch progress roll up automatically — per group and per goal — with progress
   bars and status labels (Just started / Active / Done).
 - Keep a comment feed on each goal for thinking out loud about what's working.
-- The goals live on the server (Postgres); a seeded set of example goals shows up
-  the first time the server starts against an empty database.
+- The goals live on the server (Postgres) and are **private to each visitor** —
+  a first-time visitor is given an anonymous account (a token in an httpOnly
+  cookie) and their own copy of the example goals. No sign-up, no password.
+- Point an agent at your goals over **MCP**, authenticated with a personal
+  access token you manage in **Settings** (view, copy, rotate).
 
 ## Tech stack
 
@@ -37,24 +40,27 @@ src/
     layout.tsx          # root layout, fonts, store hydration, Toaster
     page.tsx            # dashboard route (goal list)
     goal/page.tsx       # single-goal detail route (?id=…)
+    settings/page.tsx   # account id + MCP access (token, rotate)
     api/
-      goals/route.ts    # GET/PUT the whole store — what the app reads and writes
+      goals/route.ts    # GET/PUT the whole store — scoped to the cookie's user
+      me/route.ts       # the current user's id + MCP token (+ rotate-token/)
       health/route.ts   # health probe
-      mcp/route.ts      # MCP endpoint (Streamable HTTP) for agents
+      mcp/route.ts      # MCP endpoint (Streamable HTTP), Bearer-authenticated
   components/           # UI: dashboard, goal-detail, group-card, dialogs, topbar
     ui/                 # shadcn/Base UI primitives (button, card, dialog, …)
   lib/
     types.ts            # Goal / Group / Step types + progress helpers (shared)
     store.ts            # Zustand store — loads from and writes to the server
-    sync.ts             # the client's fetch/push against /api/goals
+    sync.ts             # the client's fetch/push against /api/goals + /api/me
     utils.ts            # cn() and helpers
   server/
     db.ts               # pool + migrations runner
-    pool.ts             # the shared, migrated-and-seeded pool
-    repo.ts             # the SQL repo (all reads and writes)
+    pool.ts             # the shared, migrated pool
+    repo.ts             # the SQL repo (all reads and writes, scoped by owner)
+    users.ts            # accounts: tokens, per-user seeding, cookie/bearer auth
     mcp.ts              # the MCP server (tools map to the store's actions)
     domain.ts           # re-exports the shared types
-    seed.ts             # example data, inserted once on first run
+    seed.ts             # example data, seeded per user on first visit
     migrations.ts       # schema migrations, inlined as strings
 ```
 
@@ -64,6 +70,13 @@ src/
   whole store back. If the server moved on since the load (an agent editing over
   MCP), the write comes back a conflict and the client reloads. There is no
   offline cache.
+- **Every visitor is their own account.** A first request without a session
+  cookie mints a user, seeds them their own example goals, and sets an httpOnly
+  cookie; every read and write is scoped to that user in the SQL
+  ([src/server/repo.ts](src/server/repo.ts)). The MCP endpoint is the same store
+  from an agent's side: it requires `Authorization: Bearer <token>`, where the
+  token is the user's personal access token from Settings, and operates only on
+  that user's goals.
 - **Derived progress** (percentages, counts, completion) is computed by pure
   helpers in [src/lib/types.ts](src/lib/types.ts) rather than stored.
 - **The domain types are shared, not duplicated** — both the UI and the server
@@ -90,8 +103,17 @@ curl localhost:3000/api/health
 
 ### Point an agent at it
 
-The MCP endpoint is at `/api/mcp`. See [.mcp.json](.mcp.json) for a local
-Streamable-HTTP client config (`http://localhost:3000/api/mcp`).
+The MCP endpoint is at `/api/mcp` and is authenticated: a request must carry
+`Authorization: Bearer <token>`, and it operates only on that token's goals.
+Grab your token from **Settings** in the app (the gear in the top bar — reveal,
+copy, or rotate it there), then drop it into your client config.
+[.mcp.json](.mcp.json) is a local Streamable-HTTP example — replace the
+placeholder token. Or with Claude Code:
+
+```bash
+claude mcp add --transport http goals http://localhost:3000/api/mcp \
+  --header "Authorization: Bearer <your-token>"
+```
 
 ## Tests
 

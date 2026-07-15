@@ -1,12 +1,13 @@
 import { withTransaction, type Client, type Pool } from "./db";
 import { uid, type Comment, type Goal, type Group, type Step } from "./domain";
-import { seedGoals } from "./seed";
 
 export type StoreState = {
   /**
    * False until the store has been written for the first time. The web app uses
    * this to decide, on first connect, whether to adopt the server's goals or to
-   * push its own up — pulling an empty store would silently wipe local work.
+   * push its own up — pulling an empty store would silently wipe local work. In
+   * practice a user is seeded the moment they're created, so an existing user is
+   * always initialized; the flag stays for the write path's conflict logic.
    */
   initialized: boolean;
   updatedAt: number;
@@ -37,58 +38,37 @@ export class ConflictError extends Error {
   }
 }
 
-async function touch(client: Client): Promise<number> {
+// Every read and write below is scoped to one owner (a user id). Goals carry
+// `owner_id`; groups, steps and comments reach it through their goal, so those
+// queries join up to `goals` and filter there. This is what keeps one user from
+// seeing or touching another's data even though ids are globally unique.
+
+/** Bump the owner's last-write stamp and return it. */
+async function touch(client: Client, ownerId: string): Promise<number> {
   const now = Date.now();
-  await client.query(
-    `INSERT INTO meta (only_row, updated_at) VALUES (TRUE, $1)
-     ON CONFLICT (only_row) DO UPDATE SET updated_at = EXCLUDED.updated_at`,
-    [now]
-  );
+  await client.query("UPDATE users SET goals_updated_at = $2 WHERE id = $1", [ownerId, now]);
   return now;
 }
 
-async function readUpdatedAt(client: Client | Pool): Promise<number | null> {
-  const { rows } = await client.query<{ updated_at: number }>("SELECT updated_at FROM meta");
-  return rows[0]?.updated_at ?? null;
-}
-
-/** Assemble the whole store: three flat queries, stitched together in memory. */
-/**
- * Seed the example goals if the store has never been written to. Runs once at
- * startup (see getPool). The lock + re-check make a concurrent first request
- * safe: whoever gets the lock second sees `initialized` and does nothing, so the
- * examples can't be inserted twice.
- */
-export async function ensureSeeded(pool: Pool): Promise<void> {
-  await withTransaction(pool, async (client) => {
-    await client.query("LOCK TABLE goals IN EXCLUSIVE MODE");
-    if ((await readUpdatedAt(client)) !== null) return;
-
-    await insertGoals(client, seedGoals());
-    await touch(client);
-  });
+/** The owner's last-write stamp, or null if they've never been written to. */
+async function readUpdatedAt(client: Client | Pool, ownerId: string): Promise<number | null> {
+  const { rows } = await client.query<{ goals_updated_at: number | null }>(
+    "SELECT goals_updated_at FROM users WHERE id = $1",
+    [ownerId]
+  );
+  return rows[0]?.goals_updated_at ?? null;
 }
 
 /**
- * Wipe the store back to the seeded example goals. For end-to-end tests, which
- * need each test to start from the same known state; never call this in
- * production (the test route that does is env-gated).
+ * Insert a whole goals tree (goals → groups → steps, plus comments) in order,
+ * all owned by `ownerId`. Exported so user creation can seed a new owner in the
+ * same transaction that inserts the user row.
  */
-export async function resetToSeed(pool: Pool): Promise<void> {
-  await withTransaction(pool, async (client) => {
-    await client.query("LOCK TABLE goals IN EXCLUSIVE MODE");
-    await client.query("TRUNCATE goals, meta RESTART IDENTITY CASCADE");
-    await insertGoals(client, seedGoals());
-    await touch(client);
-  });
-}
-
-/** Insert a whole goals tree (goals → groups → steps, plus comments) in order. */
-async function insertGoals(client: Client, goals: Goal[]): Promise<void> {
+export async function insertGoals(client: Client, ownerId: string, goals: Goal[]): Promise<void> {
   for (const [goalIndex, goal] of goals.entries()) {
     await client.query(
-      "INSERT INTO goals (id, title, why, created_at, position) VALUES ($1, $2, $3, $4, $5)",
-      [goal.id, goal.title, goal.why ?? null, goal.createdAt, goalIndex]
+      "INSERT INTO goals (id, owner_id, title, why, created_at, position) VALUES ($1, $2, $3, $4, $5, $6)",
+      [goal.id, ownerId, goal.title, goal.why ?? null, goal.createdAt, goalIndex]
     );
 
     for (const [groupIndex, group] of goal.groups.entries()) {
@@ -114,18 +94,26 @@ async function insertGoals(client: Client, goals: Goal[]): Promise<void> {
   }
 }
 
-export async function getState(pool: Pool): Promise<StoreState> {
-  const updatedAt = await readUpdatedAt(pool);
+/** Assemble one owner's whole store: four flat queries, stitched together in memory. */
+export async function getState(pool: Pool, ownerId: string): Promise<StoreState> {
+  const updatedAt = await readUpdatedAt(pool, ownerId);
 
   const goalRows = await pool.query<{
     id: string;
     title: string;
     why: string | null;
     created_at: number;
-  }>("SELECT id, title, why, created_at FROM goals ORDER BY position, id");
+  }>(
+    "SELECT id, title, why, created_at FROM goals WHERE owner_id = $1 ORDER BY position, id",
+    [ownerId]
+  );
 
   const groupRows = await pool.query<{ id: string; goal_id: string; title: string }>(
-    "SELECT id, goal_id, title FROM groups ORDER BY position, id"
+    `SELECT gr.id, gr.goal_id, gr.title
+       FROM groups gr JOIN goals g ON gr.goal_id = g.id
+      WHERE g.owner_id = $1
+      ORDER BY gr.position, gr.id`,
+    [ownerId]
   );
 
   const stepRows = await pool.query<{
@@ -133,14 +121,28 @@ export async function getState(pool: Pool): Promise<StoreState> {
     group_id: string;
     text: string;
     done: boolean;
-  }>("SELECT id, group_id, text, done FROM steps ORDER BY position, id");
+  }>(
+    `SELECT s.id, s.group_id, s.text, s.done
+       FROM steps s
+       JOIN groups gr ON s.group_id = gr.id
+       JOIN goals g ON gr.goal_id = g.id
+      WHERE g.owner_id = $1
+      ORDER BY s.position, s.id`,
+    [ownerId]
+  );
 
   const commentRows = await pool.query<{
     id: string;
     goal_id: string;
     text: string;
     created_at: number;
-  }>("SELECT id, goal_id, text, created_at FROM comments ORDER BY created_at DESC, id");
+  }>(
+    `SELECT c.id, c.goal_id, c.text, c.created_at
+       FROM comments c JOIN goals g ON c.goal_id = g.id
+      WHERE g.owner_id = $1
+      ORDER BY c.created_at DESC, c.id`,
+    [ownerId]
+  );
 
   const stepsByGroup = new Map<string, Step[]>();
   for (const s of stepRows.rows) {
@@ -175,16 +177,17 @@ export async function getState(pool: Pool): Promise<StoreState> {
   return { initialized: updatedAt !== null, updatedAt: updatedAt ?? 0, goals };
 }
 
-export async function getGoal(pool: Pool, goalId: string): Promise<Goal> {
-  const { goals } = await getState(pool);
+export async function getGoal(pool: Pool, ownerId: string, goalId: string): Promise<Goal> {
+  const { goals } = await getState(pool, ownerId);
   const goal = goals.find((g) => g.id === goalId);
   if (!goal) throw new NotFoundError("Goal", goalId);
   return goal;
 }
 
 /**
- * Replace the entire store with `goals` — the write path for the web app's
- * sync. Runs in one transaction, so a reader never sees a half-applied state.
+ * Replace one owner's entire store with `goals` — the write path for the web
+ * app's sync. Runs in one transaction, so a reader never sees a half-applied
+ * state.
  *
  * `baseUpdatedAt` is the version the client believed it was editing. If the
  * server has moved on since (an MCP tool wrote in the meantime), we reject
@@ -192,35 +195,53 @@ export async function getGoal(pool: Pool, goalId: string): Promise<Goal> {
  */
 export async function replaceAll(
   pool: Pool,
+  ownerId: string,
   goals: Goal[],
   baseUpdatedAt: number | null
 ): Promise<StoreState> {
   return withTransaction(pool, async (client) => {
-    // Lock the store for the duration so a concurrent writer can't slip between
-    // the version check and the rewrite.
-    await client.query("LOCK TABLE goals IN EXCLUSIVE MODE");
+    // Lock this owner's row for the duration so a concurrent writer for the same
+    // user can't slip between the version check and the rewrite. Other users are
+    // unaffected — their rows aren't touched.
+    const { rows } = await client.query<{ goals_updated_at: number | null }>(
+      "SELECT goals_updated_at FROM users WHERE id = $1 FOR UPDATE",
+      [ownerId]
+    );
+    if (rows.length === 0) throw new NotFoundError("User", ownerId);
+    const current = rows[0]!.goals_updated_at;
 
-    const current = await readUpdatedAt(client);
     if (baseUpdatedAt !== null && current !== null && current > baseUpdatedAt) {
       throw new ConflictError(current);
     }
 
-    await client.query("DELETE FROM goals");
-    await insertGoals(client, goals);
+    await client.query("DELETE FROM goals WHERE owner_id = $1", [ownerId]);
+    await insertGoals(client, ownerId, goals);
 
-    const updatedAt = await touch(client);
+    const updatedAt = await touch(client, ownerId);
     return { initialized: true, updatedAt, goals };
   });
 }
 
 // ---- targeted mutations (what the MCP tools call) ----
+//
+// Each resolves the target through its owner, so a stray id from another user's
+// store simply isn't found — the ownership check and the "does it exist" check
+// are the same query.
 
-async function requireGoal(client: Client, goalId: string): Promise<void> {
-  const { rowCount } = await client.query("SELECT 1 FROM goals WHERE id = $1", [goalId]);
+async function requireGoal(client: Client, ownerId: string, goalId: string): Promise<void> {
+  const { rowCount } = await client.query(
+    "SELECT 1 FROM goals WHERE id = $1 AND owner_id = $2",
+    [goalId, ownerId]
+  );
   if (!rowCount) throw new NotFoundError("Goal", goalId);
 }
 
-export async function createGoal(pool: Pool, title: string, why?: string): Promise<Goal> {
+export async function createGoal(
+  pool: Pool,
+  ownerId: string,
+  title: string,
+  why?: string
+): Promise<Goal> {
   return withTransaction(pool, async (client) => {
     const goal: Goal = {
       id: uid(),
@@ -230,13 +251,13 @@ export async function createGoal(pool: Pool, title: string, why?: string): Promi
       groups: [],
       comments: [],
     };
-    // New goals go to the top of the list, matching the app's addGoal.
-    await client.query("UPDATE goals SET position = position + 1");
+    // New goals go to the top of this owner's list, matching the app's addGoal.
+    await client.query("UPDATE goals SET position = position + 1 WHERE owner_id = $1", [ownerId]);
     await client.query(
-      "INSERT INTO goals (id, title, why, created_at, position) VALUES ($1, $2, $3, $4, 0)",
-      [goal.id, goal.title, goal.why ?? null, goal.createdAt]
+      "INSERT INTO goals (id, owner_id, title, why, created_at, position) VALUES ($1, $2, $3, $4, $5, 0)",
+      [goal.id, ownerId, goal.title, goal.why ?? null, goal.createdAt]
     );
-    await touch(client);
+    await touch(client, ownerId);
     return goal;
   });
 }
@@ -247,76 +268,114 @@ export async function createGoal(pool: Pool, title: string, why?: string): Promi
  */
 export async function updateGoal(
   pool: Pool,
+  ownerId: string,
   goalId: string,
   changes: { title?: string; why?: string }
 ): Promise<Goal> {
   await withTransaction(pool, async (client) => {
-    await requireGoal(client, goalId);
+    await requireGoal(client, ownerId, goalId);
 
     if (changes.title !== undefined) {
       const title = changes.title.trim();
       if (!title) throw new ValidationError("A goal needs a title");
-      await client.query("UPDATE goals SET title = $2 WHERE id = $1", [goalId, title]);
-    }
-
-    if (changes.why !== undefined) {
-      await client.query("UPDATE goals SET why = $2 WHERE id = $1", [
+      await client.query("UPDATE goals SET title = $2 WHERE id = $1 AND owner_id = $3", [
         goalId,
-        changes.why.trim() || null,
+        title,
+        ownerId,
       ]);
     }
 
-    await touch(client);
+    if (changes.why !== undefined) {
+      await client.query("UPDATE goals SET why = $2 WHERE id = $1 AND owner_id = $3", [
+        goalId,
+        changes.why.trim() || null,
+        ownerId,
+      ]);
+    }
+
+    await touch(client, ownerId);
   });
 
-  return getGoal(pool, goalId);
+  return getGoal(pool, ownerId, goalId);
 }
 
-export async function deleteGoal(pool: Pool, goalId: string): Promise<void> {
+export async function deleteGoal(pool: Pool, ownerId: string, goalId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query("DELETE FROM goals WHERE id = $1", [goalId]);
+    const { rowCount } = await client.query(
+      "DELETE FROM goals WHERE id = $1 AND owner_id = $2",
+      [goalId, ownerId]
+    );
     if (!rowCount) throw new NotFoundError("Goal", goalId);
-    await touch(client);
+    await touch(client, ownerId);
   });
 }
 
-export async function addGroup(pool: Pool, goalId: string, title: string): Promise<Group> {
+export async function addGroup(
+  pool: Pool,
+  ownerId: string,
+  goalId: string,
+  title: string
+): Promise<Group> {
   return withTransaction(pool, async (client) => {
-    await requireGoal(client, goalId);
+    await requireGoal(client, ownerId, goalId);
     const group: Group = { id: uid(), title: title.trim(), steps: [] };
     await client.query(
       `INSERT INTO groups (id, goal_id, title, position)
        VALUES ($1, $2, $3, (SELECT COALESCE(MAX(position) + 1, 0) FROM groups WHERE goal_id = $2))`,
       [group.id, goalId, group.title]
     );
-    await touch(client);
+    await touch(client, ownerId);
     return group;
   });
 }
 
-export async function renameGroup(pool: Pool, groupId: string, title: string): Promise<void> {
+export async function renameGroup(
+  pool: Pool,
+  ownerId: string,
+  groupId: string,
+  title: string
+): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query("UPDATE groups SET title = $2 WHERE id = $1", [
-      groupId,
-      title.trim(),
-    ]);
+    const { rowCount } = await client.query(
+      `UPDATE groups SET title = $2
+        WHERE id = $1 AND goal_id IN (SELECT id FROM goals WHERE owner_id = $3)`,
+      [groupId, title.trim(), ownerId]
+    );
     if (!rowCount) throw new NotFoundError("Group", groupId);
-    await touch(client);
+    await touch(client, ownerId);
   });
 }
 
-export async function deleteGroup(pool: Pool, groupId: string): Promise<void> {
+export async function deleteGroup(pool: Pool, ownerId: string, groupId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query("DELETE FROM groups WHERE id = $1", [groupId]);
+    const { rowCount } = await client.query(
+      `DELETE FROM groups
+        WHERE id = $1 AND goal_id IN (SELECT id FROM goals WHERE owner_id = $2)`,
+      [groupId, ownerId]
+    );
     if (!rowCount) throw new NotFoundError("Group", groupId);
-    await touch(client);
+    await touch(client, ownerId);
   });
 }
 
-export async function addStep(pool: Pool, groupId: string, text: string): Promise<Step> {
+/** True if `groupId` belongs to `ownerId`. Used to guard step inserts. */
+async function groupOwnedBy(client: Client, ownerId: string, groupId: string): Promise<boolean> {
+  const { rowCount } = await client.query(
+    `SELECT 1 FROM groups gr JOIN goals g ON gr.goal_id = g.id
+      WHERE gr.id = $1 AND g.owner_id = $2`,
+    [groupId, ownerId]
+  );
+  return Boolean(rowCount);
+}
+
+export async function addStep(
+  pool: Pool,
+  ownerId: string,
+  groupId: string,
+  text: string
+): Promise<Step> {
   return withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query("SELECT 1 FROM groups WHERE id = $1", [groupId]);
-    if (!rowCount) throw new NotFoundError("Group", groupId);
+    if (!(await groupOwnedBy(client, ownerId, groupId))) throw new NotFoundError("Group", groupId);
 
     const step: Step = { id: uid(), text: text.trim(), done: false };
     await client.query(
@@ -324,85 +383,123 @@ export async function addStep(pool: Pool, groupId: string, text: string): Promis
        VALUES ($1, $2, $3, FALSE, (SELECT COALESCE(MAX(position) + 1, 0) FROM steps WHERE group_id = $2))`,
       [step.id, groupId, step.text]
     );
-    await touch(client);
+    await touch(client, ownerId);
     return step;
   });
 }
 
+// Steps reach their owner through group → goal; this fragment scopes a step id.
+const OWNED_STEP = `id = $1 AND group_id IN (
+  SELECT gr.id FROM groups gr JOIN goals g ON gr.goal_id = g.id WHERE g.owner_id = $2
+)`;
+
 /** Rewrite a step's text, leaving its done flag alone. */
-export async function editStep(pool: Pool, stepId: string, text: string): Promise<Step> {
+export async function editStep(
+  pool: Pool,
+  ownerId: string,
+  stepId: string,
+  text: string
+): Promise<Step> {
   const next = text.trim();
   if (!next) throw new ValidationError("A step needs some text");
 
   return withTransaction(pool, async (client) => {
     const { rows } = await client.query<{ id: string; text: string; done: boolean }>(
-      "UPDATE steps SET text = $2 WHERE id = $1 RETURNING id, text, done",
-      [stepId, next]
+      `UPDATE steps SET text = $3 WHERE ${OWNED_STEP} RETURNING id, text, done`,
+      [stepId, ownerId, next]
     );
     const step = rows[0];
     if (!step) throw new NotFoundError("Step", stepId);
-    await touch(client);
+    await touch(client, ownerId);
     return step;
   });
 }
 
 /** Flip a step's done flag, or set it explicitly. Returns the resulting state. */
-export async function setStepDone(pool: Pool, stepId: string, done?: boolean): Promise<Step> {
+export async function setStepDone(
+  pool: Pool,
+  ownerId: string,
+  stepId: string,
+  done?: boolean
+): Promise<Step> {
   return withTransaction(pool, async (client) => {
     const { rows } = await client.query<{ id: string; text: string; done: boolean }>(
-      "UPDATE steps SET done = COALESCE($2, NOT done) WHERE id = $1 RETURNING id, text, done",
-      [stepId, done ?? null]
+      `UPDATE steps SET done = COALESCE($3, NOT done) WHERE ${OWNED_STEP} RETURNING id, text, done`,
+      [stepId, ownerId, done ?? null]
     );
     const step = rows[0];
     if (!step) throw new NotFoundError("Step", stepId);
-    await touch(client);
+    await touch(client, ownerId);
     return step;
   });
 }
 
-export async function deleteStep(pool: Pool, stepId: string): Promise<void> {
+export async function deleteStep(pool: Pool, ownerId: string, stepId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query("DELETE FROM steps WHERE id = $1", [stepId]);
+    const { rowCount } = await client.query(`DELETE FROM steps WHERE ${OWNED_STEP}`, [
+      stepId,
+      ownerId,
+    ]);
     if (!rowCount) throw new NotFoundError("Step", stepId);
-    await touch(client);
+    await touch(client, ownerId);
   });
 }
 
-export async function listComments(pool: Pool, goalId: string): Promise<Comment[]> {
-  const goal = await getGoal(pool, goalId);
+export async function listComments(
+  pool: Pool,
+  ownerId: string,
+  goalId: string
+): Promise<Comment[]> {
+  const goal = await getGoal(pool, ownerId, goalId);
   return goal.comments ?? [];
 }
 
-export async function addComment(pool: Pool, goalId: string, text: string): Promise<Comment> {
+export async function addComment(
+  pool: Pool,
+  ownerId: string,
+  goalId: string,
+  text: string
+): Promise<Comment> {
   return withTransaction(pool, async (client) => {
-    await requireGoal(client, goalId);
+    await requireGoal(client, ownerId, goalId);
     const comment: Comment = { id: uid(), text: text.trim(), createdAt: Date.now() };
     await client.query(
       "INSERT INTO comments (id, goal_id, text, created_at) VALUES ($1, $2, $3, $4)",
       [comment.id, goalId, comment.text, comment.createdAt]
     );
-    await touch(client);
+    await touch(client, ownerId);
     return comment;
   });
 }
 
-export async function editComment(pool: Pool, commentId: string, text: string): Promise<Comment> {
+// Comments reach their owner through goal; this fragment scopes a comment id.
+const OWNED_COMMENT = "id = $1 AND goal_id IN (SELECT id FROM goals WHERE owner_id = $2)";
+
+export async function editComment(
+  pool: Pool,
+  ownerId: string,
+  commentId: string,
+  text: string
+): Promise<Comment> {
   return withTransaction(pool, async (client) => {
     const { rows } = await client.query<{ id: string; text: string; created_at: number }>(
-      "UPDATE comments SET text = $2 WHERE id = $1 RETURNING id, text, created_at",
-      [commentId, text.trim()]
+      `UPDATE comments SET text = $3 WHERE ${OWNED_COMMENT} RETURNING id, text, created_at`,
+      [commentId, ownerId, text.trim()]
     );
     const row = rows[0];
     if (!row) throw new NotFoundError("Comment", commentId);
-    await touch(client);
+    await touch(client, ownerId);
     return { id: row.id, text: row.text, createdAt: row.created_at };
   });
 }
 
-export async function deleteComment(pool: Pool, commentId: string): Promise<void> {
+export async function deleteComment(pool: Pool, ownerId: string, commentId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query("DELETE FROM comments WHERE id = $1", [commentId]);
+    const { rowCount } = await client.query(`DELETE FROM comments WHERE ${OWNED_COMMENT}`, [
+      commentId,
+      ownerId,
+    ]);
     if (!rowCount) throw new NotFoundError("Comment", commentId);
-    await touch(client);
+    await touch(client, ownerId);
   });
 }
