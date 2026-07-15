@@ -3,7 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import assert from "node:assert/strict";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import type { Pool } from "../db";
-import type { Comment, Goal } from "../domain";
+import type { Note, Goal } from "../domain";
 import { createMcpServer } from "../mcp";
 import * as repo from "../repo";
 import { createOwner, reset, setupPool } from "./helpers";
@@ -39,7 +39,7 @@ const goal: Goal = {
   title: "Launch my podcast",
   createdAt: 1_700_000_000_000,
   groups: [{ id: "g-1", title: "Preparation", steps: [{ id: "s-1", text: "Pick a name", done: true }] }],
-  comments: [{ id: "c-1", text: "Editing takes longer than recording.", createdAt: 1_700_000_100_000 }],
+  notes: [{ id: "c-1", text: "Editing takes longer than recording.", createdAt: 1_700_000_100_000 }],
 };
 
 beforeEach(async () => {
@@ -49,25 +49,25 @@ beforeEach(async () => {
 });
 
 describe("MCP surface", () => {
-  it("advertises the goal and comment tools", async () => {
+  it("advertises the goal and note tools", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
 
     assert.deepEqual(names, [
-      "add_comment",
       "add_group",
+      "add_note",
       "add_step",
       "create_goal",
-      "delete_comment",
       "delete_goal",
       "delete_group",
+      "delete_note",
       "delete_step",
-      "edit_comment",
+      "edit_note",
       "edit_step",
       "get_goal",
-      "list_comments",
       "list_goals",
+      "list_notes",
       "rename_group",
       "toggle_step",
       "update_goal",
@@ -87,7 +87,7 @@ describe("MCP surface", () => {
     assert.equal(updated.title, "Launch the show");
     // The point of having this tool at all: no collateral damage.
     assert.equal(updated.groups[0]!.steps[0]!.text, "Pick a name");
-    assert.equal(updated.comments!.length, 1);
+    assert.equal(updated.notes!.length, 1);
     await client.close();
   });
 
@@ -146,19 +146,19 @@ describe("MCP surface", () => {
     await client.close();
   });
 
-  it("lists goals with progress and a comment count", async () => {
+  it("lists goals with progress and a note count", async () => {
     const client = await connect();
     const result = await client.callTool({ name: "list_goals", arguments: {} });
-    const goals = payload<{ id: string; progressPct: number; comments: number }[]>(result);
+    const goals = payload<{ id: string; progressPct: number; notes: number }[]>(result);
 
     assert.equal(goals.length, 1);
     assert.equal(goals[0]!.id, "goal-podcast");
     assert.equal(goals[0]!.progressPct, 100); // the one step is done
-    assert.equal(goals[0]!.comments, 1);
+    assert.equal(goals[0]!.notes, 1);
     await client.close();
   });
 
-  it("reads a goal in full, comments included", async () => {
+  it("reads a goal in full, notes included", async () => {
     const client = await connect();
     const result = await client.callTool({
       name: "get_goal",
@@ -168,25 +168,45 @@ describe("MCP surface", () => {
 
     assert.equal(fetched.title, "Launch my podcast");
     assert.equal(fetched.groups[0]!.steps[0]!.text, "Pick a name");
-    assert.equal(fetched.comments![0]!.text, "Editing takes longer than recording.");
+    assert.equal(fetched.notes![0]!.text, "Editing takes longer than recording.");
     await client.close();
   });
 
-  it("adds a comment that lands in the store", async () => {
+  it("adds a note that lands in the store", async () => {
     const client = await connect();
     const result = await client.callTool({
-      name: "add_comment",
+      name: "add_note",
       arguments: { goalId: "goal-podcast", text: "Try a shorter script next time." },
     });
-    const added = payload<Comment>(result);
+    const added = payload<Note>(result);
     assert.equal(added.text, "Try a shorter script next time.");
 
     // The real assertion: it's in Postgres, where the web app will read it.
-    const stored = await repo.listComments(pool, owner, "goal-podcast");
-    assert.deepEqual(stored.map((c) => c.text), [
+    const stored = await repo.listNotes(pool, owner, "goal-podcast");
+    assert.deepEqual(stored.map((n) => n.text), [
       "Try a shorter script next time.",
       "Editing takes longer than recording.",
     ]);
+    await client.close();
+  });
+
+  it("links a note to a step, then unlinks it", async () => {
+    const client = await connect();
+    const added = payload<{ id: string; stepId?: string }>(
+      await client.callTool({
+        name: "add_note",
+        arguments: { goalId: "goal-podcast", text: "About the name", stepId: "s-1" },
+      })
+    );
+    assert.equal(added.stepId, "s-1");
+
+    const unlinked = payload<{ id: string; stepId?: string }>(
+      await client.callTool({
+        name: "edit_note",
+        arguments: { noteId: added.id, stepId: "" },
+      })
+    );
+    assert.equal(unlinked.stepId, undefined);
     await client.close();
   });
 

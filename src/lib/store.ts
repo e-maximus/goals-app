@@ -47,9 +47,9 @@ type StoreState = {
   deleteGoal: (goalId: string) => void;
   deleteGroup: (goalId: string, groupId: string) => void;
   deleteStep: (goalId: string, groupId: string, stepId: string) => void;
-  addComment: (goalId: string, text: string) => void;
-  editComment: (goalId: string, commentId: string, text: string) => void;
-  deleteComment: (goalId: string, commentId: string) => void;
+  addNote: (goalId: string, text: string, stepId?: string) => void;
+  editNote: (goalId: string, noteId: string, text: string, stepId?: string) => void;
+  deleteNote: (goalId: string, noteId: string) => void;
 };
 
 export const useStore = create<StoreState>((set) => ({
@@ -218,7 +218,7 @@ export const useStore = create<StoreState>((set) => ({
       ),
     })),
 
-  addComment: (goalId, text) => {
+  addNote: (goalId, text, stepId) => {
     const next = text.trim();
     if (!next) return;
     set((s) => ({
@@ -227,9 +227,9 @@ export const useStore = create<StoreState>((set) => ({
           ? {
               ...g,
               // Newest first, so the latest thought is the one you see.
-              comments: [
-                { id: uid(), text: next, createdAt: Date.now() },
-                ...(g.comments ?? []),
+              notes: [
+                { id: uid(), text: next, createdAt: Date.now(), ...(stepId ? { stepId } : {}) },
+                ...(g.notes ?? []),
               ],
             }
           : g
@@ -237,7 +237,7 @@ export const useStore = create<StoreState>((set) => ({
     }));
   },
 
-  editComment: (goalId, commentId, text) => {
+  editNote: (goalId, noteId, text, stepId) => {
     const next = text.trim();
     if (!next) return;
     set((s) => ({
@@ -245,8 +245,9 @@ export const useStore = create<StoreState>((set) => ({
         g.id === goalId
           ? {
               ...g,
-              comments: (g.comments ?? []).map((c) =>
-                c.id === commentId ? { ...c, text: next } : c
+              notes: (g.notes ?? []).map((n) =>
+                // An empty/absent stepId unlinks the note from any step.
+                n.id === noteId ? { ...n, text: next, stepId: stepId || undefined } : n
               ),
             }
           : g
@@ -254,11 +255,11 @@ export const useStore = create<StoreState>((set) => ({
     }));
   },
 
-  deleteComment: (goalId, commentId) =>
+  deleteNote: (goalId, noteId) =>
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? { ...g, comments: (g.comments ?? []).filter((c) => c.id !== commentId) }
+          ? { ...g, notes: (g.notes ?? []).filter((n) => n.id !== noteId) }
           : g
       ),
     })),

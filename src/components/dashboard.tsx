@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import {
-  commentCount,
+  noteCount,
   goalProgress,
   goalStepCounts,
   isGoalComplete,
@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 
 function goalMeta(goal: Goal): string {
   const { total } = goalStepCounts(goal);
-  const comments = commentCount(goal);
+  const notes = noteCount(goal);
   const segments: string[] = [];
 
   if (goal.groups.length === 0) {
@@ -30,8 +30,8 @@ function goalMeta(goal: Goal): string {
     segments.push(`${goal.groups.length} ${groupWord}`, `${total} ${stepWord}`);
   }
 
-  if (comments > 0) {
-    segments.push(`${comments} ${comments === 1 ? "comment" : "comments"}`);
+  if (notes > 0) {
+    segments.push(`${notes} ${notes === 1 ? "note" : "notes"}`);
   }
 
   return segments.join(" · ");

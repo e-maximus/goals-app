@@ -41,11 +41,19 @@ export function ProgressBar({
   );
 }
 
-export function SectionLabel({ children }: { children: React.ReactNode }) {
+export function SectionLabel({
+  children,
+  action,
+}: {
+  children: React.ReactNode;
+  // Optional control rendered after the divider, e.g. an "Add note" button.
+  action?: React.ReactNode;
+}) {
   return (
     <div className="mb-3.5 flex items-center gap-2.5 text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
       <span className="whitespace-nowrap">{children}</span>
       <span className="h-px flex-1 bg-border" />
+      {action}
     </div>
   );
 }

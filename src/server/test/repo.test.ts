@@ -35,7 +35,7 @@ function sampleGoal(overrides: Partial<Goal> = {}): Goal {
         ],
       },
     ],
-    comments: [{ id: "c-1", text: "Editing takes longer than recording.", createdAt: 1_700_000_100_000 }],
+    notes: [{ id: "c-1", text: "Editing takes longer than recording.", createdAt: 1_700_000_100_000 }],
     ...overrides,
   };
 }
@@ -57,8 +57,8 @@ describe("store state", () => {
   });
 
   it("keeps goal order across a rewrite", async () => {
-    const a = sampleGoal({ id: "a", title: "A", groups: [], comments: [] });
-    const b = sampleGoal({ id: "b", title: "B", groups: [], comments: [] });
+    const a = sampleGoal({ id: "a", title: "A", groups: [], notes: [] });
+    const b = sampleGoal({ id: "b", title: "B", groups: [], notes: [] });
     await repo.replaceAll(pool, owner, [a, b], null);
     assert.deepEqual((await repo.getState(pool, owner)).goals.map((g) => g.id), ["a", "b"]);
 
@@ -66,14 +66,14 @@ describe("store state", () => {
     assert.deepEqual((await repo.getState(pool, owner)).goals.map((g) => g.id), ["b", "a"]);
   });
 
-  it("drops a goal's groups, steps and comments when the goal is deleted", async () => {
+  it("drops a goal's groups, steps and notes when the goal is deleted", async () => {
     await repo.replaceAll(pool, owner, [sampleGoal()], null);
     await repo.deleteGoal(pool, owner, "goal-podcast");
 
     const { rows } = await pool.query("SELECT COUNT(*)::int AS n FROM steps");
     assert.equal(rows[0].n, 0);
-    const comments = await pool.query("SELECT COUNT(*)::int AS n FROM comments");
-    assert.equal(comments.rows[0].n, 0);
+    const notes = await pool.query("SELECT COUNT(*)::int AS n FROM notes");
+    assert.equal(notes.rows[0].n, 0);
   });
 });
 
@@ -81,8 +81,8 @@ describe("concurrent writes", () => {
   it("rejects a push built on a stale read", async () => {
     const first = await repo.replaceAll(pool, owner, [sampleGoal()], null);
 
-    // Something else writes — say, an MCP tool adding a comment.
-    await repo.addComment(pool, owner, "goal-podcast", "Written by an agent");
+    // Something else writes — say, an MCP tool adding a note.
+    await repo.addNote(pool, owner, "goal-podcast", "Written by an agent");
 
     // The browser, still holding the older state, tries to push over it.
     await assert.rejects(
@@ -90,9 +90,9 @@ describe("concurrent writes", () => {
       (err: unknown) => err instanceof repo.ConflictError
     );
 
-    // ...and the agent's comment survived.
-    const comments = await repo.listComments(pool, owner, "goal-podcast");
-    assert.equal(comments.length, 2);
+    // ...and the agent's note survived.
+    const notes = await repo.listNotes(pool, owner, "goal-podcast");
+    assert.equal(notes.length, 2);
   });
 
   it("allows a push that is up to date with the server", async () => {
@@ -102,37 +102,72 @@ describe("concurrent writes", () => {
   });
 });
 
-describe("comments", () => {
+describe("notes", () => {
   beforeEach(async () => {
-    await repo.replaceAll(pool, owner, [sampleGoal({ comments: [] })], null);
+    await repo.replaceAll(pool, owner, [sampleGoal({ notes: [] })], null);
   });
 
-  it("adds, edits and deletes a comment", async () => {
-    const added = await repo.addComment(pool, owner, "goal-podcast", "  Booked the studio.  ");
+  it("adds, edits and deletes a note", async () => {
+    const added = await repo.addNote(pool, owner, "goal-podcast", "  Booked the studio.  ");
     assert.equal(added.text, "Booked the studio.");
 
-    const edited = await repo.editComment(pool, owner, added.id, "Booked the studio for Friday.");
+    const edited = await repo.editNote(pool, owner, added.id, { text: "Booked the studio for Friday." });
     assert.equal(edited.text, "Booked the studio for Friday.");
     assert.equal(edited.id, added.id);
 
-    await repo.deleteComment(pool, owner, added.id);
-    assert.deepEqual(await repo.listComments(pool, owner, "goal-podcast"), []);
+    await repo.deleteNote(pool, owner, added.id);
+    assert.deepEqual(await repo.listNotes(pool, owner, "goal-podcast"), []);
   });
 
-  it("returns comments newest first", async () => {
-    const older = await repo.addComment(pool, owner, "goal-podcast", "First thought");
+  it("returns notes newest first", async () => {
+    const older = await repo.addNote(pool, owner, "goal-podcast", "First thought");
     await new Promise((r) => setTimeout(r, 2));
-    const newer = await repo.addComment(pool, owner, "goal-podcast", "Second thought");
+    const newer = await repo.addNote(pool, owner, "goal-podcast", "Second thought");
 
-    const comments = await repo.listComments(pool, owner, "goal-podcast");
-    assert.deepEqual(comments.map((c) => c.id), [newer.id, older.id]);
+    const notes = await repo.listNotes(pool, owner, "goal-podcast");
+    assert.deepEqual(notes.map((n) => n.id), [newer.id, older.id]);
   });
 
-  it("refuses to comment on a goal that does not exist", async () => {
+  it("refuses to add a note to a goal that does not exist", async () => {
     await assert.rejects(
-      () => repo.addComment(pool, owner, "nope", "hello"),
+      () => repo.addNote(pool, owner, "nope", "hello"),
       (err: unknown) => err instanceof repo.NotFoundError
     );
+  });
+
+  it("links a note to a step, and can unlink it", async () => {
+    // sampleGoal has a step s-1 under g-1.
+    await repo.replaceAll(pool, owner, [sampleGoal({ notes: [] })], null);
+
+    const linked = await repo.addNote(pool, owner, "goal-podcast", "About the name", "s-1");
+    assert.equal(linked.stepId, "s-1");
+
+    const reloaded = (await repo.listNotes(pool, owner, "goal-podcast"))[0]!;
+    assert.equal(reloaded.stepId, "s-1");
+
+    // An empty stepId unlinks it, leaving the text alone.
+    const unlinked = await repo.editNote(pool, owner, linked.id, { stepId: "" });
+    assert.equal(unlinked.stepId, undefined);
+    assert.equal(unlinked.text, "About the name");
+  });
+
+  it("rejects a note linked to a step from another goal", async () => {
+    await repo.replaceAll(pool, owner, [sampleGoal({ notes: [] })], null);
+    await assert.rejects(
+      () => repo.addNote(pool, owner, "goal-podcast", "bad link", "no-such-step"),
+      (err: unknown) => err instanceof repo.ValidationError
+    );
+  });
+
+  it("unlinks a note when its linked step is deleted, keeping the note", async () => {
+    await repo.replaceAll(pool, owner, [sampleGoal({ notes: [] })], null);
+    const linked = await repo.addNote(pool, owner, "goal-podcast", "About the name", "s-1");
+
+    await repo.deleteStep(pool, owner, "s-1");
+
+    const note = (await repo.listNotes(pool, owner, "goal-podcast")).find((n) => n.id === linked.id)!;
+    assert.equal(note.text, "About the name");
+    assert.equal(note.stepId, undefined);
   });
 });
 
@@ -141,13 +176,13 @@ describe("editing a goal", () => {
     await repo.replaceAll(pool, owner, [sampleGoal()], null);
   });
 
-  it("renames a goal without disturbing its groups, steps or comments", async () => {
+  it("renames a goal without disturbing its groups, steps or notes", async () => {
     const updated = await repo.updateGoal(pool, owner, "goal-podcast", { title: "Launch the show" });
 
     assert.equal(updated.title, "Launch the show");
     assert.equal(updated.why, "Ship something creative");
     assert.equal(updated.groups[0]!.steps.length, 2);
-    assert.equal(updated.comments!.length, 1);
+    assert.equal(updated.notes!.length, 1);
   });
 
   it("changes only the field it is given", async () => {
@@ -176,7 +211,7 @@ describe("editing a goal", () => {
 
 describe("groups and steps", () => {
   beforeEach(async () => {
-    await repo.replaceAll(pool, owner, [sampleGoal({ groups: [], comments: [] })], null);
+    await repo.replaceAll(pool, owner, [sampleGoal({ groups: [], notes: [] })], null);
   });
 
   it("adds a group with a step and toggles it", async () => {
@@ -248,13 +283,13 @@ describe("per-user isolation", () => {
     await repo.replaceAll(
       pool,
       owner,
-      [sampleGoal({ id: "mine", title: "Mine", groups: [], comments: [] })],
+      [sampleGoal({ id: "mine", title: "Mine", groups: [], notes: [] })],
       null
     );
     await repo.replaceAll(
       pool,
       other,
-      [sampleGoal({ id: "theirs", title: "Theirs", groups: [], comments: [] })],
+      [sampleGoal({ id: "theirs", title: "Theirs", groups: [], notes: [] })],
       null
     );
 
@@ -262,13 +297,13 @@ describe("per-user isolation", () => {
     assert.deepEqual((await repo.getState(pool, other)).goals.map((g) => g.id), ["theirs"]);
   });
 
-  it("won't let one owner touch another's goal, group, step or comment", async () => {
+  it("won't let one owner touch another's goal, group, step or note", async () => {
     const other = await createOwner(pool, "owner-2");
     await repo.replaceAll(pool, owner, [sampleGoal()], null);
     const goal = await repo.getGoal(pool, owner, "goal-podcast");
     const groupId = goal.groups[0]!.id;
     const stepId = goal.groups[0]!.steps[0]!.id;
-    const commentId = goal.comments![0]!.id;
+    const noteId = goal.notes![0]!.id;
 
     // Every cross-owner write is a NotFound, as if the target didn't exist.
     await assert.rejects(() => repo.updateGoal(pool, other, "goal-podcast", { title: "x" }));
@@ -277,8 +312,8 @@ describe("per-user isolation", () => {
     await assert.rejects(() => repo.addStep(pool, other, groupId, "x"));
     await assert.rejects(() => repo.editStep(pool, other, stepId, { text: "x" }));
     await assert.rejects(() => repo.deleteStep(pool, other, stepId));
-    await assert.rejects(() => repo.editComment(pool, other, commentId, "x"));
-    await assert.rejects(() => repo.deleteComment(pool, other, commentId));
+    await assert.rejects(() => repo.editNote(pool, other, noteId, { text: "x" }));
+    await assert.rejects(() => repo.deleteNote(pool, other, noteId));
 
     // ...and the original is untouched.
     const after = await repo.getGoal(pool, owner, "goal-podcast");
@@ -293,7 +328,7 @@ describe("per-user isolation", () => {
     await repo.replaceAll(
       pool,
       other,
-      [sampleGoal({ id: "theirs", groups: [], comments: [] })],
+      [sampleGoal({ id: "theirs", groups: [], notes: [] })],
       null
     );
 

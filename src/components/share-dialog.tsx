@@ -55,7 +55,10 @@ export function ShareDialog({
             id="share-json-textarea"
             value={json}
             readOnly
-            className="min-h-[200px] resize-y font-mono text-xs"
+            // The base Textarea grows to fit its content (field-sizing-content),
+            // which the long JSON would blow past the viewport. Pin it to a
+            // fixed, scrollable box instead.
+            className="h-[50vh] w-full resize-none overflow-auto font-mono text-xs [field-sizing:fixed]"
           />
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
