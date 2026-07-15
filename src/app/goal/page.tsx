@@ -10,7 +10,8 @@ function GoalPageInner() {
 }
 
 export default function GoalPage() {
-  // useSearchParams requires a Suspense boundary under static export.
+  // useSearchParams needs a Suspense boundary, or it opts the whole route into
+  // client rendering.
   return (
     <Suspense>
       <GoalPageInner />

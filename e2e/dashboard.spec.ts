@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures";
 
-// The dashboard shows the seeded example goals on a fresh visit (empty
-// localStorage), split into "In progress" and "Completed" sections.
+// The dashboard shows the seeded example goals (the fixture resets the store to
+// them before each test), split into "In progress" and "Completed" sections.
 test.describe("Dashboard", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
