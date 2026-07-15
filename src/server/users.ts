@@ -144,7 +144,7 @@ export async function bearerUser(pool: Pool, request: Request): Promise<User | n
 // ---- e2e test user ----
 //
 // The e2e suite needs a deterministic user with the canonical fixed-id seed so
-// it can navigate straight to `/goal?id=goal-podcast`. These are only ever used
+// it can navigate straight to `/goal/goal-podcast`. These are only ever used
 // through the env-gated /api/test/reset route.
 
 const TEST_USER = {

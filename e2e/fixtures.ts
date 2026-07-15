@@ -6,7 +6,7 @@ import { test as base, expect } from "@playwright/test";
  * Instead, an automatic fixture resets a fixed e2e test user to the canonical
  * seeded goals before each test, then drops that user's session cookie into the
  * browser — so every test runs as the same known user with the same known
- * starting state, and can navigate straight to `/goal?id=goal-podcast`.
+ * starting state, and can navigate straight to `/goal/goal-podcast`.
  *
  * Because the store is shared, the suite runs serially (see playwright.config).
  * The reset hits an env-gated test-only endpoint; see /api/test/reset.
