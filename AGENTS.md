@@ -22,17 +22,29 @@ alongside.
   computed by pure helpers in [src/lib/types.ts](src/lib/types.ts) — don't store
   what you can derive.
 - **The API** — route handlers under [src/app/api/](src/app/api/): `/api/goals`
-  (the REST surface the store reads and writes), `/api/health`, and `/api/mcp`
-  (an **MCP** endpoint over Streamable HTTP, so an agent can read and edit goals).
-- **The server internals** — [src/server/](src/server/): the SQL repo, the MCP
-  server, migrations (inlined as strings), and the shared, migrated-and-seeded
-  pool ([src/server/pool.ts](src/server/pool.ts)). Data lives in **Postgres**.
+  (the REST surface the store reads and writes), `/api/me` (the current user's id
+  and MCP token, plus `rotate-token`), `/api/health`, and `/api/mcp` (an **MCP**
+  endpoint over Streamable HTTP, so an agent can read and edit goals).
+- **The server internals** — [src/server/](src/server/): the SQL repo, accounts
+  ([src/server/users.ts](src/server/users.ts)), the MCP server, migrations
+  (inlined as strings), and the shared, migrated pool
+  ([src/server/pool.ts](src/server/pool.ts)). Data lives in **Postgres**.
 
 The goals live on the server and it is the source of truth. The store is
 optimistic — a mutation updates goals in place and a debounced `PUT` writes the
 whole store back; a `409` means an agent edited over MCP since the load, so the
 client reloads rather than clobber the newer copy. There is **no offline cache**:
 no network means a load-error state with a retry, not a stale local copy.
+
+Everything is **per user**. There is no login: a first-time visitor is minted a
+user, seeded their own copy of the example goals, and handed an httpOnly session
+cookie ([src/server/users.ts](src/server/users.ts)). Every repo read and write is
+scoped by `owner_id`, so ids are globally unique but never cross accounts — mind
+this when writing SQL or seeding (the example seed's fixed ids are remapped to
+fresh ones per user; only the e2e test user keeps them). The **MCP** endpoint is
+the same store for an agent: it requires `Authorization: Bearer <pat>`, resolves
+the user from that personal access token, and 401s without a valid one. A user
+manages their token (view / copy / rotate) on the **Settings** page.
 
 The domain types are the single source of truth for both sides: the UI and the
 server both import [src/lib/types.ts](src/lib/types.ts) directly (the server via

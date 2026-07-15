@@ -23,5 +23,19 @@ export async function setupPool(): Promise<Pool> {
 
 /** Wipe every table between tests. Cascades take care of the child rows. */
 export async function reset(pool: Pool): Promise<void> {
-  await pool.query("TRUNCATE goals, meta RESTART IDENTITY CASCADE");
+  await pool.query("TRUNCATE users, goals RESTART IDENTITY CASCADE");
+}
+
+/**
+ * Insert a bare user (no seeded goals, `goals_updated_at` null so its store
+ * reads as uninitialized) and return its id. Goals are per-user now, so a repo
+ * test needs an owner to hang its goals off. Pass distinct ids to test isolation
+ * between two users.
+ */
+export async function createOwner(pool: Pool, id = "owner-1"): Promise<string> {
+  await pool.query(
+    "INSERT INTO users (id, session_token, pat, created_at) VALUES ($1, $2, $3, $4)",
+    [id, `${id}-session`, `${id}-pat`, Date.now()]
+  );
+  return id;
 }

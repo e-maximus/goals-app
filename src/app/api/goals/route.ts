@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getPool } from "@/server/pool";
 import * as repo from "@/server/repo";
+import { resolveWebUser } from "@/server/users";
 
 const stepSchema = z.object({
   id: z.string(),
@@ -43,11 +44,16 @@ const putBodySchema = z.object({
  * owns the whole store client-side, so it pulls all of it and pushes all of it.
  * The fine-grained operations live on the MCP side, where an agent acts one
  * edit at a time.
+ *
+ * Both verbs are scoped to the current user, resolved from the session cookie.
+ * A first-time visitor is created here and handed a cookie (see resolveWebUser),
+ * so GET doubles as "sign me in".
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const pool = await getPool();
-    return Response.json(await repo.getState(pool));
+    const { user, setCookie } = await resolveWebUser(pool, request);
+    return json(await repo.getState(pool, user.id), setCookie);
   } catch (err) {
     return toErrorResponse(err);
   }
@@ -65,10 +71,18 @@ export async function PUT(request: Request) {
 
     const { goals, baseUpdatedAt } = parsed.data;
     const pool = await getPool();
-    return Response.json(await repo.replaceAll(pool, goals, baseUpdatedAt ?? null));
+    const { user, setCookie } = await resolveWebUser(pool, request);
+    return json(await repo.replaceAll(pool, user.id, goals, baseUpdatedAt ?? null), setCookie);
   } catch (err) {
     return toErrorResponse(err);
   }
+}
+
+/** JSON response that also sets the session cookie when a new user was minted. */
+function json(body: unknown, setCookie: string | null): Response {
+  const headers = new Headers({ "content-type": "application/json" });
+  if (setCookie) headers.append("set-cookie", setCookie);
+  return new Response(JSON.stringify(body), { headers });
 }
 
 /** The repo's domain errors, mapped onto status codes. Anything else is a 500. */

@@ -65,4 +65,39 @@ export const migrations: Migration[] = [
       );
     `,
   },
+  {
+    name: "002_per_user_accounts",
+    sql: `
+      -- Goals become per-user. A user is identified by two opaque tokens:
+      -- \`session_token\` rides in an httpOnly cookie for the web app, and \`pat\`
+      -- is a personal access token the user pastes into an MCP client. Neither is
+      -- the identity — \`id\` is — so either can be rotated without losing goals.
+      --
+      -- \`goals_updated_at\` is the per-user last-write stamp the old single-row
+      -- \`meta\` table used to hold globally; the web app compares it against its
+      -- own to detect a write that raced it (see repo.replaceAll).
+
+      CREATE TABLE IF NOT EXISTS users (
+        id               TEXT   PRIMARY KEY,
+        session_token    TEXT   NOT NULL UNIQUE,
+        pat              TEXT   NOT NULL UNIQUE,
+        goals_updated_at BIGINT,
+        created_at       BIGINT NOT NULL
+      );
+
+      -- Goals predating this migration were global and ownerless. Ownership is
+      -- required now and there is no user to attribute them to, so drop them
+      -- (CASCADE clears groups, steps and comments with them). New users are
+      -- seeded their own copy of the example goals on first visit.
+      TRUNCATE goals CASCADE;
+
+      -- The conflict stamp is per-user now, on users.goals_updated_at.
+      DROP TABLE IF EXISTS meta;
+
+      ALTER TABLE goals
+        ADD COLUMN owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE;
+
+      CREATE INDEX IF NOT EXISTS goals_owner_id_idx ON goals (owner_id);
+    `,
+  },
 ];

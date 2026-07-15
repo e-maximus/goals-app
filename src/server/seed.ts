@@ -1,4 +1,5 @@
 import type { Comment, Goal, Step } from "@/lib/types";
+import { uid } from "./domain";
 
 let counter = 0;
 function id(prefix: string): string {
@@ -22,8 +23,29 @@ function comments(pairs: [string, string, number][]): Comment[] {
   }));
 }
 
-// Example data mirroring the design sketches. The server inserts this once, the
-// first time it starts against an empty store (see repo.ensureSeeded).
+/**
+ * Give a seed tree a fresh set of ids, top to bottom. The canonical seed uses
+ * fixed ids (`goal-podcast`, …) so the e2e suite can navigate to them, but goal
+ * ids are a global primary key — every real user seeded with the same fixed ids
+ * would collide. So real users are seeded through this, which remaps every id to
+ * a unique one; only the single e2e test user keeps the canonical ids.
+ */
+export function withFreshIds(goals: Goal[]): Goal[] {
+  return goals.map((goal) => ({
+    ...goal,
+    id: uid(),
+    groups: goal.groups.map((group) => ({
+      ...group,
+      id: uid(),
+      steps: group.steps.map((step) => ({ ...step, id: uid() })),
+    })),
+    comments: goal.comments?.map((comment) => ({ ...comment, id: uid() })),
+  }));
+}
+
+// Example data mirroring the design sketches. A fresh-id copy is inserted into
+// each new user's store on first visit; the canonical fixed-id copy is what the
+// e2e test user gets (see users.seedForOwner / repo.resetTestUser).
 export function seedGoals(): Goal[] {
   return [
     {

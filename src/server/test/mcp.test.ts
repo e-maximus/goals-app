@@ -6,9 +6,10 @@ import type { Pool } from "../db";
 import type { Comment, Goal } from "../domain";
 import { createMcpServer } from "../mcp";
 import * as repo from "../repo";
-import { reset, setupPool } from "./helpers";
+import { createOwner, reset, setupPool } from "./helpers";
 
 let pool: Pool;
+let owner: string;
 
 beforeAll(async () => {
   pool = await setupPool();
@@ -20,7 +21,7 @@ afterAll(async () => {
 /** A client wired straight to the MCP server — same code path a real agent hits. */
 async function connect(): Promise<Client> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = createMcpServer(pool);
+  const server = createMcpServer(pool, owner);
   const client = new Client({ name: "test", version: "1.0.0" });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
   return client;
@@ -43,7 +44,8 @@ const goal: Goal = {
 
 beforeEach(async () => {
   await reset(pool);
-  await repo.replaceAll(pool, [goal], null);
+  owner = await createOwner(pool);
+  await repo.replaceAll(pool, owner, [goal], null);
 });
 
 describe("MCP surface", () => {
@@ -150,7 +152,7 @@ describe("MCP surface", () => {
     assert.equal(added.text, "Try a shorter script next time.");
 
     // The real assertion: it's in Postgres, where the web app will read it.
-    const stored = await repo.listComments(pool, "goal-podcast");
+    const stored = await repo.listComments(pool, owner, "goal-podcast");
     assert.deepEqual(stored.map((c) => c.text), [
       "Try a shorter script next time.",
       "Editing takes longer than recording.",
@@ -186,7 +188,7 @@ describe("MCP surface", () => {
     );
     assert.equal(toggled.done, true);
 
-    const stored = await repo.getGoal(pool, created.id);
+    const stored = await repo.getGoal(pool, owner, created.id);
     assert.equal(stored.why, "Been putting it off for years");
     assert.equal(stored.groups[0]!.steps[0]!.done, true);
     await client.close();
