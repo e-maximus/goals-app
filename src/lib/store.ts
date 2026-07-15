@@ -56,7 +56,11 @@ export const useStore = create<StoreState>((set) => ({
     set({ loadStatus: "loading" });
     try {
       const state = await fetchState();
+      // Applying server data — flag it so the persistence subscriber doesn't
+      // immediately echo the just-loaded goals back to the server as a "save".
+      applyingRemote = true;
       set({ goals: state.goals, serverUpdatedAt: state.updatedAt, loadStatus: "ready" });
+      applyingRemote = false;
     } catch {
       set({ loadStatus: "error" });
     }

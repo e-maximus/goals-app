@@ -112,7 +112,8 @@ test.describe("Goal detail — toggling and deleting", () => {
   });
 
   test("renames the goal and changes why it matters", async ({ page }) => {
-    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await page.getByRole("button", { name: "Goal options" }).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByLabel("Goal name")).toHaveValue("Launch my podcast");
@@ -132,7 +133,8 @@ test.describe("Goal detail — toggling and deleting", () => {
   });
 
   test("deletes the whole goal and returns to the dashboard", async ({ page }) => {
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await page.getByRole("button", { name: "Goal options" }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
 
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole("link", { name: /Launch my podcast/ })).toHaveCount(0);

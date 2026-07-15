@@ -14,7 +14,7 @@ import {
 import { Topbar, Crumbs } from "@/components/topbar";
 import { LoadError } from "@/components/load-error";
 import { NewGoalDialog } from "@/components/new-goal-dialog";
-import { ProgressBar, SectionLabel } from "@/components/ui-bits";
+import { LoadingState, ProgressBar, SectionLabel } from "@/components/ui-bits";
 import { cn } from "@/lib/utils";
 
 function goalMeta(goal: Goal): string {
@@ -97,7 +97,9 @@ export function Dashboard() {
       <Topbar crumbs={<Crumbs />} onNewGoal={() => setDialogOpen(true)} />
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-8 sm:px-10">
-        {loadStatus === "loading" ? null : loadStatus === "error" ? (
+        {loadStatus === "loading" ? (
+          <LoadingState label="Loading your goals…" />
+        ) : loadStatus === "error" ? (
           <LoadError />
         ) : goals.length === 0 ? (
           <EmptyState onNewGoal={() => setDialogOpen(true)} />

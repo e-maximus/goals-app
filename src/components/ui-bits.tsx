@@ -1,4 +1,26 @@
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+/** A spinning loader icon. Size and color come from the parent via `className`. */
+export function Spinner({ className }: { className?: string }) {
+  return <Loader2 className={cn("animate-spin", className)} aria-hidden />;
+}
+
+/**
+ * Centered loading state for a page while its data loads from the server. Fills
+ * the available space so it sits where the content will land.
+ */
+export function LoadingState({ label = "Loading…" }: { label?: string }) {
+  return (
+    <div
+      className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-muted-foreground"
+      role="status"
+    >
+      <Spinner className="h-6 w-6" />
+      <span className="text-sm">{label}</span>
+    </div>
+  );
+}
 
 export function ProgressBar({
   value,
