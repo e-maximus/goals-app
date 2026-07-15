@@ -9,13 +9,9 @@ import { SaveStatus } from "@/components/save-status";
 export function Topbar({
   crumbs,
   onNewGoal,
-  onShare = () => {},
-  showShare = false,
 }: {
   crumbs: React.ReactNode;
   onNewGoal: () => void;
-  onShare?: () => void;
-  showShare?: boolean;
 }) {
   const saveStatus = useStore((s) => s.saveStatus);
 
@@ -24,11 +20,6 @@ export function Topbar({
       <div className="min-w-0 truncate text-sm text-muted-foreground">{crumbs}</div>
       <div className="flex flex-shrink-0 items-center gap-2.5">
         <SaveStatus status={saveStatus} />
-        {showShare && (
-          <Button variant="outline" size="sm" onClick={onShare}>
-            Share
-          </Button>
-        )}
         <Button
           variant="ghost"
           size="icon-sm"

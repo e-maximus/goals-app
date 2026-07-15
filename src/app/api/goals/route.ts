@@ -16,10 +16,11 @@ const groupSchema = z.object({
   steps: z.array(stepSchema),
 });
 
-const commentSchema = z.object({
+const noteSchema = z.object({
   id: z.string(),
   text: z.string(),
   createdAt: z.number(),
+  stepId: z.string().optional(),
 });
 
 const goalSchema = z.object({
@@ -28,7 +29,7 @@ const goalSchema = z.object({
   why: z.string().optional(),
   createdAt: z.number(),
   groups: z.array(groupSchema),
-  comments: z.array(commentSchema).optional(),
+  notes: z.array(noteSchema).optional(),
 });
 
 const putBodySchema = z.object({

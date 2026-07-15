@@ -103,12 +103,19 @@ export function GroupCard({
           </div>
         ) : (
           group.steps.map((step) => (
+            // The whole row is a toggle target: clicking anywhere on it flips the
+            // step. The checkbox and the edit/delete buttons stop propagation so
+            // they keep their own behaviour instead of doubling the toggle.
             <div
               key={step.id}
-              className="group/step flex items-start gap-2.5 rounded-lg px-2 py-2 hover:bg-muted/60"
+              onClick={() => onToggleStep(step.id)}
+              className="group/step flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-2 hover:bg-muted/60"
             >
               <button
-                onClick={() => onToggleStep(step.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleStep(step.id);
+                }}
                 className={cn(
                   "mt-0.5 flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors",
                   step.done
@@ -140,14 +147,20 @@ export function GroupCard({
                 )}
               </div>
               <button
-                onClick={() => setEditingStep(step)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingStep(step);
+                }}
                 className="mt-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/step:opacity-100"
                 aria-label="Edit step"
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
               <button
-                onClick={() => onDeleteStep(step.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteStep(step.id);
+                }}
                 className="mt-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/step:opacity-100"
                 aria-label="Delete step"
               >

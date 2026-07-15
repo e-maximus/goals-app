@@ -14,10 +14,14 @@ export type Group = {
   steps: Step[];
 };
 
-export type Comment = {
+export type Note = {
   id: string;
   text: string;
   createdAt: number;
+  // Optionally ties the note to one step (a "sub-goal") within the same goal.
+  // Optional so notes written before this, or notes about the goal as a whole,
+  // still parse. Cleared to undefined if the step it pointed at is deleted.
+  stepId?: string;
 };
 
 export type Goal = {
@@ -26,9 +30,9 @@ export type Goal = {
   why?: string;
   groups: Group[];
   createdAt: number;
-  // Optional so payloads written before comments existed still parse. Read it
-  // as `goal.comments ?? []` everywhere rather than bumping the storage key.
-  comments?: Comment[];
+  // Optional so payloads written before notes existed still parse. Read it
+  // as `goal.notes ?? []` everywhere rather than bumping the storage key.
+  notes?: Note[];
 };
 
 // ---- derived progress helpers ----
@@ -60,6 +64,6 @@ export function isGoalComplete(goal: Goal): boolean {
   return total > 0 && goalProgress(goal) === 100;
 }
 
-export function commentCount(goal: Goal): number {
-  return goal.comments?.length ?? 0;
+export function noteCount(goal: Goal): number {
+  return goal.notes?.length ?? 0;
 }

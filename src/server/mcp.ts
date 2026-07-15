@@ -9,7 +9,7 @@ function json(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
 
-/** A goal without its groups/comments bodies — enough to pick one to act on. */
+/** A goal without its groups/notes bodies — enough to pick one to act on. */
 function summarize(goal: Goal) {
   const { done, total } = goalStepCounts(goal);
   return {
@@ -19,7 +19,7 @@ function summarize(goal: Goal) {
     progressPct: goalProgress(goal),
     steps: { done, total },
     groups: goal.groups.length,
-    comments: goal.comments?.length ?? 0,
+    notes: goal.notes?.length ?? 0,
   };
 }
 
@@ -36,8 +36,8 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     {
       instructions:
         "Read and manage the user's goals. A goal breaks down into groups of steps, " +
-        "and carries a comment feed where the user records thinking about the goal as " +
-        "a whole — what's working, what's stuck. Read the comments before advising on a " +
+        "and carries a notes feed where the user records thinking about the goal as " +
+        "a whole — what's working, what's stuck. Read the notes before advising on a " +
         "goal; they hold the context the structure doesn't.",
     }
   );
@@ -48,7 +48,7 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     "list_goals",
     {
       title: "List goals",
-      description: "Every goal with its progress, step counts and comment count.",
+      description: "Every goal with its progress, step counts and note count.",
       inputSchema: {},
     },
     async () => {
@@ -61,7 +61,7 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     "get_goal",
     {
       title: "Get a goal",
-      description: "One goal in full: its groups, their steps, and its comments.",
+      description: "One goal in full: its groups, their steps, and its notes.",
       inputSchema: { goalId: z.string().describe("The goal's id, from list_goals") },
     },
     async ({ goalId }) => json(await repo.getGoal(pool, ownerId, goalId))
@@ -73,7 +73,7 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     "create_goal",
     {
       title: "Create a goal",
-      description: "Add a new goal. It starts with no groups and no comments.",
+      description: "Add a new goal. It starts with no groups and no notes.",
       inputSchema: {
         title: z.string().min(1).describe("What the user wants to achieve"),
         why: z.string().optional().describe("Why it matters to them — optional but motivating"),
@@ -89,7 +89,7 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
       description:
         "Change a goal's title, its 'why', or both. Anything you leave out stays as it is; " +
         "pass an empty `why` to clear it. Use this rather than deleting and recreating — " +
-        "deleting a goal takes its groups, steps and comments with it.",
+        "deleting a goal takes its groups, steps and notes with it.",
       inputSchema: {
         goalId: z.string(),
         title: z.string().min(1).optional().describe("The new title, if it should change"),
@@ -227,51 +227,72 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     }
   );
 
-  // ---- comments ----
+  // ---- notes ----
 
   server.registerTool(
-    "list_comments",
+    "list_notes",
     {
-      title: "List a goal's comments",
+      title: "List a goal's notes",
       description:
-        "The goal's comment feed, newest first. This is where the user thinks out loud " +
+        "The goal's notes feed, newest first. This is where the user thinks out loud " +
         "about the goal — read it before giving advice.",
       inputSchema: { goalId: z.string() },
     },
-    async ({ goalId }) => json(await repo.listComments(pool, ownerId, goalId))
+    async ({ goalId }) => json(await repo.listNotes(pool, ownerId, goalId))
   );
 
   server.registerTool(
-    "add_comment",
+    "add_note",
     {
-      title: "Add a comment",
-      description: "Leave a comment on a goal — an observation, a note, a next thought.",
-      inputSchema: { goalId: z.string(), text: z.string().min(1) },
+      title: "Add a note",
+      description:
+        "Leave a note on a goal — an observation, a thought, a next step. Optionally tie it " +
+        "to one step of the goal with `stepId` (from get_goal); leave it out for a note about " +
+        "the goal as a whole.",
+      inputSchema: {
+        goalId: z.string(),
+        text: z.string().min(1),
+        stepId: z.string().optional().describe("A step id under this goal to link the note to"),
+      },
     },
-    async ({ goalId, text }) => json(await repo.addComment(pool, ownerId, goalId, text))
+    async ({ goalId, text, stepId }) => json(await repo.addNote(pool, ownerId, goalId, text, stepId))
   );
 
   server.registerTool(
-    "edit_comment",
+    "edit_note",
     {
-      title: "Edit a comment",
-      description: "Rewrite an existing comment's text.",
-      inputSchema: { commentId: z.string(), text: z.string().min(1) },
+      title: "Edit a note",
+      description:
+        "Change a note's text and/or the step it's linked to. Anything you leave out stays as " +
+        "it is; pass an empty `stepId` to unlink it from its step.",
+      inputSchema: {
+        noteId: z.string(),
+        text: z.string().min(1).optional().describe("The new text, if it should change"),
+        stepId: z
+          .string()
+          .optional()
+          .describe("A step id under this goal to link to; pass an empty string to unlink"),
+      },
     },
-    async ({ commentId, text }) => json(await repo.editComment(pool, ownerId, commentId, text))
+    async ({ noteId, text, stepId }) => {
+      if (text === undefined && stepId === undefined) {
+        throw new Error("Nothing to update — pass text, a stepId, or both.");
+      }
+      return json(await repo.editNote(pool, ownerId, noteId, { text, stepId }));
+    }
   );
 
   server.registerTool(
-    "delete_comment",
+    "delete_note",
     {
-      title: "Delete a comment",
-      description: "Remove a comment from a goal's feed.",
-      inputSchema: { commentId: z.string() },
+      title: "Delete a note",
+      description: "Remove a note from a goal's feed.",
+      inputSchema: { noteId: z.string() },
       annotations: { destructiveHint: true },
     },
-    async ({ commentId }) => {
-      await repo.deleteComment(pool, ownerId, commentId);
-      return json({ deleted: commentId });
+    async ({ noteId }) => {
+      await repo.deleteNote(pool, ownerId, noteId);
+      return json({ deleted: noteId });
     }
   );
 
@@ -281,7 +302,7 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     "goals://all",
     {
       title: "All goals",
-      description: "The complete goals store: every goal, group, step and comment.",
+      description: "The complete goals store: every goal, group, step and note.",
       mimeType: "application/json",
     },
     async (uri) => {

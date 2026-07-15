@@ -109,4 +109,24 @@ export const migrations: Migration[] = [
       ALTER TABLE steps ADD COLUMN description TEXT;
     `,
   },
+  {
+    name: "004_rename_comments_to_notes",
+    sql: `
+      -- "Comments" were renamed to "Notes" across the app. The table's columns
+      -- are unchanged (id, goal_id, text, created_at) — only the table and its
+      -- index carry the old name, so this is a pure rename with no data movement.
+      ALTER TABLE comments RENAME TO notes;
+      ALTER INDEX comments_goal_id_idx RENAME TO notes_goal_id_idx;
+    `,
+  },
+  {
+    name: "005_note_step_link",
+    sql: `
+      -- A note may optionally point at one step ("sub-goal") within its goal.
+      -- Nullable because most notes are about the goal as a whole. ON DELETE SET
+      -- NULL so deleting the step just unlinks the note rather than removing it.
+      ALTER TABLE notes ADD COLUMN step_id TEXT REFERENCES steps (id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS notes_step_id_idx ON notes (step_id);
+    `,
+  },
 ];

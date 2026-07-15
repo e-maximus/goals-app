@@ -15,7 +15,7 @@ import { GoalDialog, NewGoalDialog } from "@/components/new-goal-dialog";
 import { PromptDialog } from "@/components/prompt-dialog";
 import { GroupCardConnected, AddGroupCard } from "@/components/group-card";
 import { GoalBanner } from "@/components/goal-banner";
-import { CommentsSection } from "@/components/comments-section";
+import { NotesSection } from "@/components/notes-section";
 import { LoadingState, SectionLabel } from "@/components/ui-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Check } from "lucide-react";
@@ -44,7 +44,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
   if (loadStatus === "loading") {
     return (
       <div className="flex flex-1 flex-col">
-        <Topbar crumbs={<Crumbs goalTitle="…" />} onNewGoal={openNewGoal} showShare />
+        <Topbar crumbs={<Crumbs goalTitle="…" />} onNewGoal={openNewGoal} />
         <LoadingState label="Loading goal…" />
       </div>
     );
@@ -86,7 +86,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
   return (
     <div className="flex flex-1 flex-col">
-      <Topbar crumbs={<Crumbs goalTitle={goal.title} />} onNewGoal={openNewGoal} showShare onShare={() => setShareOpen(true)} />
+      <Topbar crumbs={<Crumbs goalTitle={goal.title} />} onNewGoal={openNewGoal} />
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-8 sm:px-10">
         {/* Goal banner */}
@@ -96,6 +96,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
             why={goal.why}
             pct={pct}
             onEdit={() => setEditGoalOpen(true)}
+            onShare={() => setShareOpen(true)}
             onDelete={() => {
               deleteGoal(goal.id);
               router.push("/");
@@ -151,7 +152,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
           </div>
         )}
 
-        <CommentsSection goalId={goal.id} comments={goal.comments ?? []} />
+        <NotesSection goalId={goal.id} groups={goal.groups} notes={goal.notes ?? []} />
       </main>
 
       <NewGoalDialog open={newGoalOpen} onOpenChange={setNewGoalOpen} onCreate={handleCreateGoal} />

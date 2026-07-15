@@ -1,4 +1,4 @@
-import type { Comment, Goal, Step } from "@/lib/types";
+import type { Note, Goal, Step } from "@/lib/types";
 import { uid } from "./domain";
 
 let counter = 0;
@@ -20,11 +20,11 @@ function steps(pairs: ([string, boolean] | [string, boolean, string])[]): Step[]
 
 const DAY = 1000 * 60 * 60 * 24;
 
-// Comment ids are written out rather than generated so the example data is
+// Note ids are written out rather than generated so the example data is
 // identical on every fresh visit — the e2e suite relies on that.
-function comments(pairs: [string, string, number][]): Comment[] {
-  return pairs.map(([commentId, text, daysAgo]) => ({
-    id: commentId,
+function notes(pairs: [string, string, number][]): Note[] {
+  return pairs.map(([noteId, text, daysAgo]) => ({
+    id: noteId,
     text,
     createdAt: Date.now() - daysAgo * DAY,
   }));
@@ -46,7 +46,7 @@ export function withFreshIds(goals: Goal[]): Goal[] {
       id: uid(),
       steps: group.steps.map((step) => ({ ...step, id: uid() })),
     })),
-    comments: goal.comments?.map((comment) => ({ ...comment, id: uid() })),
+    notes: goal.notes?.map((note) => ({ ...note, id: uid() })),
   }));
 }
 
@@ -60,7 +60,7 @@ export function seedGoals(): Goal[] {
       title: "Launch my podcast",
       why: "Prove to myself I can ship something creative from start to finish.",
       createdAt: Date.now() - 1000 * 60 * 60 * 24 * 20,
-      comments: comments([
+      notes: notes([
         [
           "c-podcast-1",
           "Editing is taking way longer than recording. Next episode I should script tighter so there's less to cut.",
@@ -119,7 +119,7 @@ export function seedGoals(): Goal[] {
       id: "goal-marathon",
       title: "Run a half marathon",
       createdAt: Date.now() - 1000 * 60 * 60 * 24 * 40,
-      comments: comments([
+      notes: notes([
         ["c-marathon-1", "The 16k long run is the one I keep putting off. It's the wall.", 3],
       ]),
       groups: [

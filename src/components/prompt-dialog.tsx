@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-// Single-field modal used for "Add group", "Add step" and "Edit comment".
+// Single-field modal used for "Add group", "Add step" and "Edit note".
 export function PromptDialog({
   open,
   onOpenChange,
@@ -40,7 +40,7 @@ export function PromptDialog({
   // rename). Defaults to empty for the "add" flows.
   initialValue?: string;
   // Swap the single-line input for a textarea. Names and step titles are one
-  // line; comment bodies are not.
+  // line; note bodies are not.
   multiline?: boolean;
   onSubmit: (value: string) => void;
 }) {
