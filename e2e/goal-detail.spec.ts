@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 // These tests build a goal up from scratch on the seeded (but empty) "Learn
 // watercolor painting" goal, so each interaction starts from a known state.
@@ -148,7 +148,7 @@ test.describe("Goal detail — completion banner singular/plural", () => {
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Goal name").fill("Singular banner test");
     await dialog.getByRole("button", { name: "Create goal" }).click();
-    await expect(page).toHaveURL(/\/goal\/\?id=/);
+    await expect(page).toHaveURL(/\/goal\?id=/);
     await expect(page.getByText("No groups yet")).toBeVisible();
 
     // Add exactly one group

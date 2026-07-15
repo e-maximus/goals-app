@@ -1,8 +1,6 @@
-# The web app, built as a self-contained Next.js server (output: "standalone").
-#
-# This is what Railway runs. The default build mode is still the static export
-# (see next.config.ts) — the export is what GitHub Pages needs, so the mode is
-# selected here rather than changed in the config.
+# The app — UI, REST API and MCP endpoint in one Next.js server (see
+# next.config.ts: output "standalone"). This is what Railway runs, and what
+# docker-compose runs alongside Postgres.
 
 FROM node:22-alpine AS deps
 WORKDIR /app
@@ -16,7 +14,6 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NEXT_OUTPUT=standalone
 RUN npm run build
 
 

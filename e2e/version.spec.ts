@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test.describe("Version footer", () => {
   test("displays current version at the bottom of the page", async ({ page }) => {

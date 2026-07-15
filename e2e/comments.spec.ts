@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 // The podcast goal ships with two seeded comments, so it exercises the feed,
 // editing and deletion against a known starting state.
@@ -26,8 +26,17 @@ test.describe("Goal comments", () => {
 
   test("keeps a posted comment after a reload", async ({ page }) => {
     await page.getByLabel("Comment", { exact: true }).fill("Persisted thought.");
+
+    // Writes are pushed to the server on a short debounce, so wait for that PUT
+    // to land before reloading — otherwise the reload can race the save and pull
+    // a copy from before the comment existed. In the app the header's "Saving…"
+    // indicator is the user-facing version of this wait.
+    const saved = page.waitForResponse(
+      (r) => r.url().includes("/api/goals") && r.request().method() === "PUT" && r.ok()
+    );
     await page.getByRole("button", { name: "Post comment" }).click();
     await expect(page.getByText("Persisted thought.")).toBeVisible();
+    await saved;
 
     await page.reload();
     await expect(page.getByText("Persisted thought.")).toBeVisible();
