@@ -30,8 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  // The goals server is a separate workspace with its own dependencies and its
-  // own tsconfig — the Next build must not try to type-check it, or it fails on
-  // packages that are only installed under server/.
-  "exclude": ["node_modules", "server"]
+  "exclude": ["node_modules"]
 }

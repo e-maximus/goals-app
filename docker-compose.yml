@@ -1,11 +1,13 @@
-# The goals backend: Postgres plus a single Node service that exposes both the
-# sync REST API (for the web app) and the MCP endpoint (for Claude / an IDE).
+# The whole thing: Postgres, plus the app — which is now also the server. One
+# Next process serves the UI, the REST API (/api/goals) and the MCP endpoint
+# (/api/mcp), all on the same port.
 #
 #   docker compose up -d --build
-#   curl localhost:8787/api/health
+#   curl localhost:3000/api/health
 #
-# The web app itself is not in here — it stays a static export and talks to this
-# stack only if you point it at the API in Settings.
+# Day to day you usually want only the database, and `npm run dev` for the app:
+#
+#   docker compose up -d db
 
 services:
   db:
@@ -16,9 +18,10 @@ services:
       POSTGRES_DB: goals
     volumes:
       - goals-db:/var/lib/postgresql/data
-      - ./server/scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
-    # Exposed so you can psql into it while developing. Drop this in a shared
-    # deployment — the server reaches it over the compose network regardless.
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    # Exposed so you can psql into it while developing, and so the test suite can
+    # reach goals_test. Drop this in a shared deployment — the app reaches the
+    # database over the compose network regardless.
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
@@ -27,17 +30,15 @@ services:
       timeout: 3s
       retries: 10
 
-  server:
+  app:
     build:
       context: .
-      dockerfile: server/Dockerfile
+      dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgres://goals:${POSTGRES_PASSWORD:-goals}@db:5432/goals
-      PORT: 8787
-      # Origins allowed to call the sync API from a browser. Comma-separated.
-      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      PORT: 3000
     ports:
-      - "${SERVER_PORT:-8787}:8787"
+      - "${APP_PORT:-3000}:3000"
     depends_on:
       db:
         condition: service_healthy
