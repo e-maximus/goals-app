@@ -51,7 +51,7 @@ function GoalRow({ goal }: { goal: Goal }) {
 
   return (
     <Link
-      href={`/goal?id=${goal.id}`}
+      href={`/goal/${goal.id}`}
       className={cn(
         "flex items-center gap-4 rounded-2xl border border-border bg-card px-6 py-4 shadow-sm transition-colors hover:border-primary/50 sm:gap-6",
         complete && "border-primary/60 bg-secondary/60"
@@ -89,7 +89,7 @@ export function Dashboard() {
 
   const handleCreate = (title: string, why?: string) => {
     const goal = addGoal(title, why);
-    router.push(`/goal?id=${goal.id}`);
+    router.push(`/goal/${goal.id}`);
   };
 
   return (

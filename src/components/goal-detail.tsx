@@ -36,7 +36,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
   const handleCreateGoal = (title: string, why?: string) => {
     const g = addGoal(title, why);
-    router.push(`/goal?id=${g.id}`);
+    router.push(`/goal/${g.id}`);
   };
 
   const openNewGoal = () => setNewGoalOpen(true);

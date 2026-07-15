@@ -4,7 +4,7 @@ import { test, expect } from "./fixtures";
 // watercolor painting" goal, so each interaction starts from a known state.
 test.describe("Goal detail — groups and steps", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/goal?id=goal-watercolor");
+    await page.goto("/goal/goal-watercolor");
     await expect(page.getByRole("heading", { name: "Learn watercolor painting", level: 1 })).toBeVisible();
   });
 
@@ -45,7 +45,7 @@ test.describe("Goal detail — groups and steps", () => {
 // and deletion.
 test.describe("Goal detail — toggling and deleting", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/goal?id=goal-podcast");
+    await page.goto("/goal/goal-podcast");
     await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
   });
 
@@ -150,7 +150,7 @@ test.describe("Goal detail — completion banner singular/plural", () => {
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Goal name").fill("Singular banner test");
     await dialog.getByRole("button", { name: "Create goal" }).click();
-    await expect(page).toHaveURL(/\/goal\?id=/);
+    await expect(page).toHaveURL(/\/goal\//);
     await expect(page.getByText("No groups yet")).toBeVisible();
 
     // Add exactly one group

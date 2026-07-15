@@ -26,7 +26,7 @@ test.describe("Dashboard", () => {
   test("navigates to a goal's detail page", async ({ page }) => {
     await page.getByRole("link", { name: /Launch my podcast/ }).click();
 
-    await expect(page).toHaveURL(/\/goal\?id=goal-podcast/);
+    await expect(page).toHaveURL(/\/goal\/goal-podcast/);
     await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
   });
 

@@ -4,7 +4,7 @@ import { test, expect } from "./fixtures";
 // editing and deletion against a known starting state.
 test.describe("Goal comments", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/goal?id=goal-podcast");
+    await page.goto("/goal/goal-podcast");
     await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
   });
 
@@ -87,7 +87,7 @@ test.describe("Goal comments", () => {
 // The watercolor goal is seeded with no groups and no comments — the empty state.
 test.describe("Goal comments — empty state", () => {
   test("shows the empty state and posts the first comment", async ({ page }) => {
-    await page.goto("/goal?id=goal-watercolor");
+    await page.goto("/goal/goal-watercolor");
     await expect(page.getByRole("heading", { name: "Learn watercolor painting", level: 1 })).toBeVisible();
 
     await expect(page.getByText("Comments · 0")).toBeVisible();
