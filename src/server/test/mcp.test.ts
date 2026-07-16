@@ -69,6 +69,7 @@ describe("MCP surface", () => {
       "list_goals",
       "list_notes",
       "rename_group",
+      "set_goal_status",
       "toggle_step",
       "update_goal",
     ]);
@@ -146,15 +147,53 @@ describe("MCP surface", () => {
     await client.close();
   });
 
-  it("lists goals with progress and a note count", async () => {
+  it("lists goals with progress, a note count, status and activity", async () => {
     const client = await connect();
     const result = await client.callTool({ name: "list_goals", arguments: {} });
-    const goals = payload<{ id: string; progressPct: number; notes: number }[]>(result);
+    const goals = payload<
+      { id: string; progressPct: number; notes: number; status: string; updatedAt: number }[]
+    >(result);
 
     assert.equal(goals.length, 1);
     assert.equal(goals[0]!.id, "goal-podcast");
     assert.equal(goals[0]!.progressPct, 100); // the one step is done
     assert.equal(goals[0]!.notes, 1);
+    assert.equal(goals[0]!.status, "active");
+    assert.equal(goals[0]!.updatedAt, goal.createdAt); // untouched since the seed
+    await client.close();
+  });
+
+  it("pauses and resumes a goal", async () => {
+    const client = await connect();
+
+    const paused = payload<Goal>(
+      await client.callTool({
+        name: "set_goal_status",
+        arguments: { goalId: "goal-podcast", status: "paused" },
+      })
+    );
+    assert.equal(paused.status, "paused");
+    assert.ok(paused.pausedAt! > 0);
+
+    const resumed = payload<Goal>(
+      await client.callTool({
+        name: "set_goal_status",
+        arguments: { goalId: "goal-podcast", status: "active" },
+      })
+    );
+    assert.equal(resumed.status, "active");
+    assert.equal(resumed.pausedAt, undefined);
+    await client.close();
+  });
+
+  it("bumps the goal's activity stamp when an agent toggles a step", async () => {
+    const client = await connect();
+    const before = (await repo.getGoal(pool, owner, "goal-podcast")).updatedAt!;
+
+    await client.callTool({ name: "toggle_step", arguments: { stepId: "s-1" } });
+
+    const after = (await repo.getGoal(pool, owner, "goal-podcast")).updatedAt!;
+    assert.ok(after > before);
     await client.close();
   });
 

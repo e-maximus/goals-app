@@ -79,8 +79,96 @@ test.describe("Goal detail — groups and steps", () => {
   });
 });
 
+// The podcast goal ships with steps already, so it's a good fixture for the
+// hybrid layout: only the active group (the one holding the next unchecked
+// step — "Recording Content") starts expanded.
+test.describe("Goal detail — hybrid layout", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/goal/goal-podcast");
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+  });
+
+  test("expands only the active group and highlights the next step", async ({ page }) => {
+    // The active group's steps are visible; a completed group's are folded away.
+    await expect(page.getByText("Edit ep. 1")).toBeVisible();
+    await expect(page.getByText("Pick a name")).toHaveCount(0);
+
+    // The first unchecked step carries the "next" badge.
+    const row = page.locator("div.group\\/step").filter({ hasText: "Edit ep. 1" });
+    await expect(row.getByText("next")).toBeVisible();
+  });
+
+  test("expands and collapses a group from its header", async ({ page }) => {
+    await page.getByRole("button", { name: "Expand Preparation" }).click();
+    await expect(page.getByText("Pick a name")).toBeVisible();
+
+    await page.getByRole("button", { name: "Collapse Preparation" }).click();
+    await expect(page.getByText("Pick a name")).toHaveCount(0);
+  });
+
+  test("renders completed steps without a strikethrough", async ({ page }) => {
+    await page.getByRole("button", { name: "Expand Preparation" }).click();
+
+    const done = page
+      .locator("div.group\\/step")
+      .filter({ hasText: "Pick a name" })
+      .locator("div")
+      .filter({ hasText: "Pick a name" })
+      .first();
+    await expect(done).toHaveCSS("text-decoration-line", "none");
+  });
+});
+
+// The timeline (stepper) view is an opt-in alternative for sequential goals.
+test.describe("Goal detail — timeline view", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/goal/goal-podcast");
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+  });
+
+  test("shows the groups as stages and opens the clicked one", async ({ page }) => {
+    await page.getByRole("button", { name: "Timeline" }).click();
+
+    // One stage per group, with the completed stage counting its steps.
+    await expect(page.getByRole("tab", { name: /Preparation/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Recording Content/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Promotion/ })).toBeVisible();
+
+    // The active group's panel opens by default, next step highlighted.
+    await expect(page.getByText("Edit ep. 1")).toBeVisible();
+
+    // Clicking another stage swaps the panel to its steps.
+    await page.getByRole("tab", { name: /Promotion/ }).click();
+    await expect(page.getByText("Create social accounts")).toBeVisible();
+    await expect(page.getByText("Edit ep. 1")).toHaveCount(0);
+  });
+
+  test("completing a step in the panel updates its stage counter", async ({ page }) => {
+    await page.getByRole("button", { name: "Timeline" }).click();
+
+    const stage = page.getByRole("tab", { name: /Promotion/ });
+    await expect(stage.getByText("0 of 3")).toBeVisible();
+
+    await stage.click();
+    const row = page.locator("div.group\\/step").filter({ hasText: "Create social accounts" });
+    await row.getByRole("button", { name: "Mark step complete" }).click();
+
+    await expect(stage.getByText("1 of 3")).toBeVisible();
+  });
+
+  test("the view choice sticks across a reload", async ({ page }) => {
+    await page.getByRole("button", { name: "Timeline" }).click();
+    await expect(page.getByRole("tab", { name: /Preparation/ })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Preparation/ })).toBeVisible();
+  });
+});
+
 // The podcast goal ships with steps already, so it's a good fixture for toggling
-// and deletion.
+// and deletion. Steps in completed groups sit behind a collapsed header now, so
+// these tests expand "Preparation" before touching its steps.
 test.describe("Goal detail — toggling and deleting", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/goal/goal-podcast");
@@ -88,16 +176,18 @@ test.describe("Goal detail — toggling and deleting", () => {
   });
 
   test("toggles a completed step back to incomplete", async ({ page }) => {
+    await page.getByRole("button", { name: "Expand Preparation" }).click();
     const step = page.getByText("Pick a name");
     await expect(step).toBeVisible();
 
-    // Seeded as done → line-through. The row's toggle button says "incomplete".
+    // Seeded as done. The row's toggle button says "incomplete".
     const row = page.locator("div.group\\/step").filter({ hasText: "Pick a name" });
     await row.getByRole("button", { name: "Mark step incomplete" }).click();
     await expect(row.getByRole("button", { name: "Mark step complete" })).toBeVisible();
   });
 
   test("deletes a step", async ({ page }) => {
+    await page.getByRole("button", { name: "Expand Preparation" }).click();
     const row = page.locator("div.group\\/step").filter({ hasText: "Buy a microphone" });
     await expect(row).toBeVisible();
 
@@ -133,6 +223,7 @@ test.describe("Goal detail — toggling and deleting", () => {
   });
 
   test("edits a step's text without unticking it", async ({ page }) => {
+    await page.getByRole("button", { name: "Expand Preparation" }).click();
     const row = page.locator("div.group\\/step").filter({ hasText: "Pick a name" });
     // Seeded as done.
     await expect(row.getByRole("button", { name: "Mark step incomplete" })).toBeVisible();
@@ -166,8 +257,10 @@ test.describe("Goal detail — toggling and deleting", () => {
     await expect(body.getByText("Because I keep not finishing things")).toBeVisible();
 
     // The goal kept its groups and steps — this is not a delete-and-recreate.
+    // ("Pick a name" sits in the collapsed Preparation group, so assert on the
+    // active group's step instead.)
     await expect(body.getByRole("heading", { name: "Promotion", level: 3 })).toBeVisible();
-    await expect(body.getByText("Pick a name")).toBeVisible();
+    await expect(body.getByText("Edit ep. 1")).toBeVisible();
   });
 
   test("deletes the whole goal and returns to the dashboard", async ({ page }) => {

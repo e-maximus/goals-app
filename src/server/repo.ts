@@ -1,5 +1,5 @@
 import { withTransaction, type Client, type Pool } from "./db";
-import { uid, type Note, type Goal, type Group, type Step } from "./domain";
+import { uid, type Note, type Goal, type GoalStatus, type Group, type Step } from "./domain";
 
 export type StoreState = {
   /**
@@ -60,6 +60,45 @@ async function touch(client: Client, ownerId: string): Promise<number> {
   return now;
 }
 
+/**
+ * Bump one goal's last-activity stamp. Called by the targeted mutations below
+ * (the web app's whole-store PUT instead persists the client's own stamps —
+ * see insertGoals). `goalId` is already ownership-checked by every caller.
+ */
+async function touchGoal(client: Client, goalId: string): Promise<void> {
+  await client.query("UPDATE goals SET updated_at = $2 WHERE id = $1", [goalId, Date.now()]);
+}
+
+/** Resolve a group's goal, scoped to the owner; null if not theirs. */
+async function goalIdOfGroup(
+  client: Client,
+  ownerId: string,
+  groupId: string
+): Promise<string | null> {
+  const { rows } = await client.query<{ goal_id: string }>(
+    `SELECT gr.goal_id FROM groups gr JOIN goals g ON gr.goal_id = g.id
+      WHERE gr.id = $1 AND g.owner_id = $2`,
+    [groupId, ownerId]
+  );
+  return rows[0]?.goal_id ?? null;
+}
+
+/** Resolve a step's goal, scoped to the owner; null if not theirs. */
+async function goalIdOfStep(
+  client: Client,
+  ownerId: string,
+  stepId: string
+): Promise<string | null> {
+  const { rows } = await client.query<{ goal_id: string }>(
+    `SELECT gr.goal_id FROM steps s
+       JOIN groups gr ON s.group_id = gr.id
+       JOIN goals g ON gr.goal_id = g.id
+      WHERE s.id = $1 AND g.owner_id = $2`,
+    [stepId, ownerId]
+  );
+  return rows[0]?.goal_id ?? null;
+}
+
 /** The owner's last-write stamp, or null if they've never been written to. */
 async function readUpdatedAt(client: Client | Pool, ownerId: string): Promise<number | null> {
   const { rows } = await client.query<{ goals_updated_at: number | null }>(
@@ -77,8 +116,21 @@ async function readUpdatedAt(client: Client | Pool, ownerId: string): Promise<nu
 export async function insertGoals(client: Client, ownerId: string, goals: Goal[]): Promise<void> {
   for (const [goalIndex, goal] of goals.entries()) {
     await client.query(
-      "INSERT INTO goals (id, owner_id, title, why, created_at, position) VALUES ($1, $2, $3, $4, $5, $6)",
-      [goal.id, ownerId, goal.title, goal.why ?? null, goal.createdAt, goalIndex]
+      `INSERT INTO goals (id, owner_id, title, why, created_at, updated_at, status, paused_at, position)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        goal.id,
+        ownerId,
+        goal.title,
+        goal.why ?? null,
+        goal.createdAt,
+        // Client-owned: the web app bumps only the goal it mutated, so stamps
+        // survive the whole-store rewrite. Absent on legacy payloads.
+        goal.updatedAt ?? goal.createdAt,
+        goal.status ?? "active",
+        goal.pausedAt ?? null,
+        goalIndex,
+      ]
     );
 
     // The step ids this goal actually has, so a note's `stepId` that points at a
@@ -119,8 +171,12 @@ export async function getState(pool: Pool, ownerId: string): Promise<StoreState>
     title: string;
     why: string | null;
     created_at: number;
+    updated_at: number;
+    status: GoalStatus;
+    paused_at: number | null;
   }>(
-    "SELECT id, title, why, created_at FROM goals WHERE owner_id = $1 ORDER BY position, id",
+    `SELECT id, title, why, created_at, updated_at, status, paused_at
+       FROM goals WHERE owner_id = $1 ORDER BY position, id`,
     [ownerId]
   );
 
@@ -193,6 +249,9 @@ export async function getState(pool: Pool, ownerId: string): Promise<StoreState>
     title: g.title,
     ...(g.why ? { why: g.why } : {}),
     createdAt: g.created_at,
+    updatedAt: g.updated_at,
+    status: g.status,
+    ...(g.paused_at ? { pausedAt: g.paused_at } : {}),
     groups: groupsByGoal.get(g.id) ?? [],
     notes: notesByGoal.get(g.id) ?? [],
   }));
@@ -266,18 +325,22 @@ export async function createGoal(
   why?: string
 ): Promise<Goal> {
   return withTransaction(pool, async (client) => {
+    const now = Date.now();
     const goal: Goal = {
       id: uid(),
       title: title.trim(),
       ...(why?.trim() ? { why: why.trim() } : {}),
-      createdAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
+      status: "active",
       groups: [],
       notes: [],
     };
     // New goals go to the top of this owner's list, matching the app's addGoal.
     await client.query("UPDATE goals SET position = position + 1 WHERE owner_id = $1", [ownerId]);
     await client.query(
-      "INSERT INTO goals (id, owner_id, title, why, created_at, position) VALUES ($1, $2, $3, $4, $5, 0)",
+      `INSERT INTO goals (id, owner_id, title, why, created_at, updated_at, status, position)
+       VALUES ($1, $2, $3, $4, $5, $5, 'active', 0)`,
       [goal.id, ownerId, goal.title, goal.why ?? null, goal.createdAt]
     );
     await touch(client, ownerId);
@@ -316,6 +379,30 @@ export async function updateGoal(
       ]);
     }
 
+    await touchGoal(client, goalId);
+    await touch(client, ownerId);
+  });
+
+  return getGoal(pool, ownerId, goalId);
+}
+
+/**
+ * Pause or resume a goal. Pausing records when; resuming clears it. Either
+ * transition counts as activity, so the goal's `updated_at` moves too.
+ */
+export async function setGoalStatus(
+  pool: Pool,
+  ownerId: string,
+  goalId: string,
+  status: GoalStatus
+): Promise<Goal> {
+  await withTransaction(pool, async (client) => {
+    const now = Date.now();
+    const { rowCount } = await client.query(
+      "UPDATE goals SET status = $3, paused_at = $4, updated_at = $5 WHERE id = $1 AND owner_id = $2",
+      [goalId, ownerId, status, status === "paused" ? now : null, now]
+    );
+    if (!rowCount) throw new NotFoundError("Goal", goalId);
     await touch(client, ownerId);
   });
 
@@ -347,6 +434,7 @@ export async function addGroup(
        VALUES ($1, $2, $3, (SELECT COALESCE(MAX(position) + 1, 0) FROM groups WHERE goal_id = $2))`,
       [group.id, goalId, group.title]
     );
+    await touchGoal(client, goalId);
     await touch(client, ownerId);
     return group;
   });
@@ -359,36 +447,26 @@ export async function renameGroup(
   title: string
 ): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query(
-      `UPDATE groups SET title = $2
-        WHERE id = $1 AND goal_id IN (SELECT id FROM goals WHERE owner_id = $3)`,
-      [groupId, title.trim(), ownerId]
-    );
-    if (!rowCount) throw new NotFoundError("Group", groupId);
+    const goalId = await goalIdOfGroup(client, ownerId, groupId);
+    if (!goalId) throw new NotFoundError("Group", groupId);
+    await client.query("UPDATE groups SET title = $2 WHERE id = $1", [groupId, title.trim()]);
+    await touchGoal(client, goalId);
     await touch(client, ownerId);
   });
 }
 
 export async function deleteGroup(pool: Pool, ownerId: string, groupId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query(
+    const { rows } = await client.query<{ goal_id: string }>(
       `DELETE FROM groups
-        WHERE id = $1 AND goal_id IN (SELECT id FROM goals WHERE owner_id = $2)`,
+        WHERE id = $1 AND goal_id IN (SELECT id FROM goals WHERE owner_id = $2)
+        RETURNING goal_id`,
       [groupId, ownerId]
     );
-    if (!rowCount) throw new NotFoundError("Group", groupId);
+    if (!rows[0]) throw new NotFoundError("Group", groupId);
+    await touchGoal(client, rows[0].goal_id);
     await touch(client, ownerId);
   });
-}
-
-/** True if `groupId` belongs to `ownerId`. Used to guard step inserts. */
-async function groupOwnedBy(client: Client, ownerId: string, groupId: string): Promise<boolean> {
-  const { rowCount } = await client.query(
-    `SELECT 1 FROM groups gr JOIN goals g ON gr.goal_id = g.id
-      WHERE gr.id = $1 AND g.owner_id = $2`,
-    [groupId, ownerId]
-  );
-  return Boolean(rowCount);
 }
 
 export async function addStep(
@@ -399,7 +477,8 @@ export async function addStep(
   description?: string
 ): Promise<Step> {
   return withTransaction(pool, async (client) => {
-    if (!(await groupOwnedBy(client, ownerId, groupId))) throw new NotFoundError("Group", groupId);
+    const goalId = await goalIdOfGroup(client, ownerId, groupId);
+    if (!goalId) throw new NotFoundError("Group", groupId);
 
     const desc = description?.trim() || null;
     const step: Step = { id: uid(), text: text.trim(), ...(desc ? { description: desc } : {}), done: false };
@@ -408,6 +487,7 @@ export async function addStep(
        VALUES ($1, $2, $3, $4, FALSE, (SELECT COALESCE(MAX(position) + 1, 0) FROM steps WHERE group_id = $2))`,
       [step.id, groupId, step.text, desc]
     );
+    await touchGoal(client, goalId);
     await touch(client, ownerId);
     return step;
   });
@@ -432,8 +512,8 @@ export async function editStep(
   changes: { text?: string; description?: string }
 ): Promise<Step> {
   return withTransaction(pool, async (client) => {
-    const owned = await client.query(`SELECT 1 FROM steps WHERE ${OWNED_STEP}`, [stepId, ownerId]);
-    if (!owned.rowCount) throw new NotFoundError("Step", stepId);
+    const goalId = await goalIdOfStep(client, ownerId, stepId);
+    if (!goalId) throw new NotFoundError("Step", stepId);
 
     if (changes.text !== undefined) {
       const next = changes.text.trim();
@@ -455,6 +535,7 @@ export async function editStep(
       description: string | null;
       done: boolean;
     }>(`SELECT ${STEP_COLS} FROM steps WHERE ${OWNED_STEP}`, [stepId, ownerId]);
+    await touchGoal(client, goalId);
     await touch(client, ownerId);
     return toStep(rows[0]!);
   });
@@ -479,6 +560,8 @@ export async function setStepDone(
     );
     const step = rows[0];
     if (!step) throw new NotFoundError("Step", stepId);
+    const goalId = await goalIdOfStep(client, ownerId, stepId);
+    if (goalId) await touchGoal(client, goalId);
     await touch(client, ownerId);
     return toStep(step);
   });
@@ -486,11 +569,10 @@ export async function setStepDone(
 
 export async function deleteStep(pool: Pool, ownerId: string, stepId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query(`DELETE FROM steps WHERE ${OWNED_STEP}`, [
-      stepId,
-      ownerId,
-    ]);
-    if (!rowCount) throw new NotFoundError("Step", stepId);
+    const goalId = await goalIdOfStep(client, ownerId, stepId);
+    if (!goalId) throw new NotFoundError("Step", stepId);
+    await client.query(`DELETE FROM steps WHERE ${OWNED_STEP}`, [stepId, ownerId]);
+    await touchGoal(client, goalId);
     await touch(client, ownerId);
   });
 }
@@ -549,6 +631,7 @@ export async function addNote(
       "INSERT INTO notes (id, goal_id, text, created_at, step_id) VALUES ($1, $2, $3, $4, $5)",
       [note.id, goalId, note.text, note.createdAt, linkedStep]
     );
+    await touchGoal(client, goalId);
     await touch(client, ownerId);
     return note;
   });
@@ -608,6 +691,7 @@ export async function editNote(
       created_at: number;
       step_id: string | null;
     }>(`SELECT id, text, created_at, step_id FROM notes WHERE ${OWNED_NOTE}`, [noteId, ownerId]);
+    await touchGoal(client, row.goal_id);
     await touch(client, ownerId);
     return toNote(updated[0]!);
   });
@@ -615,11 +699,12 @@ export async function editNote(
 
 export async function deleteNote(pool: Pool, ownerId: string, noteId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query(`DELETE FROM notes WHERE ${OWNED_NOTE}`, [
-      noteId,
-      ownerId,
-    ]);
-    if (!rowCount) throw new NotFoundError("Note", noteId);
+    const { rows } = await client.query<{ goal_id: string }>(
+      `DELETE FROM notes WHERE ${OWNED_NOTE} RETURNING goal_id`,
+      [noteId, ownerId]
+    );
+    if (!rows[0]) throw new NotFoundError("Note", noteId);
+    await touchGoal(client, rows[0].goal_id);
     await touch(client, ownerId);
   });
 }

@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Pool } from "./db";
-import { goalProgress, goalStepCounts, type Goal } from "./domain";
+import { goalProgress, goalStatus, goalStepCounts, lastActivityAt, type Goal } from "./domain";
 import * as repo from "./repo";
 
 /** Every tool answers with JSON text — agents parse it, humans can read it. */
@@ -16,10 +16,13 @@ function summarize(goal: Goal) {
     id: goal.id,
     title: goal.title,
     why: goal.why,
+    status: goalStatus(goal),
     progressPct: goalProgress(goal),
     steps: { done, total },
     groups: goal.groups.length,
     notes: goal.notes?.length ?? 0,
+    updatedAt: lastActivityAt(goal),
+    ...(goal.pausedAt ? { pausedAt: goal.pausedAt } : {}),
   };
 }
 
@@ -116,6 +119,21 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
       await repo.deleteGoal(pool, ownerId, goalId);
       return json({ deleted: goalId });
     }
+  );
+
+  server.registerTool(
+    "set_goal_status",
+    {
+      title: "Pause or resume a goal",
+      description:
+        "Set a goal's status: 'paused' shelves it without losing progress, 'active' resumes " +
+        "it. Completion is not a status — it's derived from the steps being done.",
+      inputSchema: {
+        goalId: z.string(),
+        status: z.enum(["active", "paused"]).describe("'paused' to shelve, 'active' to resume"),
+      },
+    },
+    async ({ goalId, status }) => json(await repo.setGoalStatus(pool, ownerId, goalId, status))
   );
 
   // ---- groups ----

@@ -125,11 +125,14 @@ test.describe("Dashboard — note count", () => {
   test("shows the note count in the goal meta line", async ({ page }) => {
     await page.goto("/");
 
-    const row = page.getByRole("link", { name: /Launch my podcast/ });
+    // The meta line sits on the card, next to the stretched title link.
+    const row = page.locator("div.group\\/goal").filter({ hasText: "Launch my podcast" });
     await expect(row).toContainText("2 notes");
 
     // A goal with no notes doesn't show a notes segment at all.
-    const watercolor = page.getByRole("link", { name: /Learn watercolor painting/ });
+    const watercolor = page
+      .locator("div.group\\/goal")
+      .filter({ hasText: "Learn watercolor painting" });
     await expect(watercolor).not.toContainText("note");
   });
 });

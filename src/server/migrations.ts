@@ -140,4 +140,24 @@ export const migrations: Migration[] = [
       ALTER TABLE users ADD COLUMN clerk_user_id TEXT UNIQUE;
     `,
   },
+  {
+    name: "007_goal_status_activity",
+    sql: `
+      -- A goal gains a lifecycle status (active/paused — completed stays derived
+      -- from its steps), a last-activity stamp, and the moment it was paused.
+      --
+      -- \`updated_at\` is client-owned on the whole-store PUT path (the client
+      -- bumps only the goal it mutated; replaceAll persists it verbatim) and
+      -- server-set on targeted MCP mutations. Backfilled from created_at so
+      -- existing goals read as "active since creation" rather than "today".
+      -- \`paused_at\` is separate from \`updated_at\` because pausing also counts
+      -- as activity; it is cleared on resume.
+      ALTER TABLE goals ADD COLUMN status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'paused'));
+      ALTER TABLE goals ADD COLUMN updated_at BIGINT;
+      UPDATE goals SET updated_at = created_at;
+      ALTER TABLE goals ALTER COLUMN updated_at SET NOT NULL;
+      ALTER TABLE goals ADD COLUMN paused_at BIGINT;
+    `,
+  },
 ];

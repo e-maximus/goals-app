@@ -4,13 +4,15 @@
  * re-export the app's types verbatim — `src/lib/types.ts` is the one source of
  * truth for the domain, shared by both sides of the same build.
  */
-export type { Note, Goal, Group, Step } from "@/lib/types";
+export type { Note, Goal, GoalStatus, Group, Step } from "@/lib/types";
 export {
   noteCount,
   goalProgress,
   goalStepCounts,
   groupProgress,
   isGoalComplete,
+  goalStatus,
+  lastActivityAt,
 } from "@/lib/types";
 
 /** Mirrors the id shape the web app generates, so ids look alike everywhere. */

@@ -3,11 +3,20 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { create } from "zustand";
-import type { Goal } from "./types";
+import type { Goal, GoalStatus } from "./types";
 import { SyncConflictError, fetchState, pushGoals } from "./sync";
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+}
+
+/**
+ * Stamp a goal as just-touched. Applied by every mutating action to the one
+ * goal it changed — and only that one — so per-goal activity survives the
+ * whole-store PUT (the server persists these stamps verbatim).
+ */
+function touched(goal: Goal): Goal {
+  return { ...goal, updatedAt: Date.now() };
 }
 
 /**
@@ -33,6 +42,8 @@ type StoreState = {
 
   addGoal: (title: string, why?: string) => Goal;
   updateGoal: (goalId: string, title: string, why?: string) => void;
+  /** Pause or resume a goal. Pausing records when; resuming clears it. */
+  setGoalStatus: (goalId: string, status: GoalStatus) => void;
   addGroup: (goalId: string, title: string) => void;
   renameGroup: (goalId: string, groupId: string, title: string) => void;
   addStep: (goalId: string, groupId: string, text: string, description?: string) => void;
@@ -87,12 +98,15 @@ export const useStore = create<StoreState>((set) => ({
   },
 
   addGoal: (title, why) => {
+    const now = Date.now();
     const goal: Goal = {
       id: uid(),
       title: title.trim(),
       why: why?.trim() || undefined,
       groups: [],
-      createdAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
+      status: "active",
     };
     set((s) => ({ goals: [goal, ...s.goals] }));
     return goal;
@@ -104,16 +118,30 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({
       goals: s.goals.map((g) =>
         // An empty `why` clears it, matching addGoal's treatment of the field.
-        g.id === goalId ? { ...g, title: next, why: why?.trim() || undefined } : g
+        g.id === goalId ? touched({ ...g, title: next, why: why?.trim() || undefined }) : g
       ),
     }));
   },
+
+  setGoalStatus: (goalId, status) =>
+    set((s) => ({
+      goals: s.goals.map((g) =>
+        g.id === goalId
+          ? touched({
+              ...g,
+              status,
+              // Present only while paused; cleared on resume (see Goal.pausedAt).
+              pausedAt: status === "paused" ? Date.now() : undefined,
+            })
+          : g
+      ),
+    })),
 
   addGroup: (goalId, title) =>
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? { ...g, groups: [...g.groups, { id: uid(), title: title.trim(), steps: [] }] }
+          ? touched({ ...g, groups: [...g.groups, { id: uid(), title: title.trim(), steps: [] }] })
           : g
       ),
     })),
@@ -124,12 +152,12 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? {
+          ? touched({
               ...g,
               groups: g.groups.map((gr) =>
                 gr.id === groupId ? { ...gr, title: next } : gr
               ),
-            }
+            })
           : g
       ),
     }));
@@ -140,7 +168,7 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? {
+          ? touched({
               ...g,
               groups: g.groups.map((gr) =>
                 gr.id === groupId
@@ -153,7 +181,7 @@ export const useStore = create<StoreState>((set) => ({
                     }
                   : gr
               ),
-            }
+            })
           : g
       ),
     }));
@@ -167,7 +195,7 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? {
+          ? touched({
               ...g,
               groups: g.groups.map((gr) =>
                 gr.id === groupId
@@ -179,7 +207,7 @@ export const useStore = create<StoreState>((set) => ({
                     }
                   : gr
               ),
-            }
+            })
           : g
       ),
     }));
@@ -189,7 +217,7 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? {
+          ? touched({
               ...g,
               groups: g.groups.map((gr) =>
                 gr.id === groupId
@@ -201,7 +229,7 @@ export const useStore = create<StoreState>((set) => ({
                     }
                   : gr
               ),
-            }
+            })
           : g
       ),
     })),
@@ -212,7 +240,7 @@ export const useStore = create<StoreState>((set) => ({
   deleteGroup: (goalId, groupId) =>
     set((s) => ({
       goals: s.goals.map((g) =>
-        g.id === goalId ? { ...g, groups: g.groups.filter((gr) => gr.id !== groupId) } : g
+        g.id === goalId ? touched({ ...g, groups: g.groups.filter((gr) => gr.id !== groupId) }) : g
       ),
     })),
 
@@ -220,14 +248,14 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? {
+          ? touched({
               ...g,
               groups: g.groups.map((gr) =>
                 gr.id === groupId
                   ? { ...gr, steps: gr.steps.filter((step) => step.id !== stepId) }
                   : gr
               ),
-            }
+            })
           : g
       ),
     })),
@@ -238,14 +266,14 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? {
+          ? touched({
               ...g,
               // Newest first, so the latest thought is the one you see.
               notes: [
                 { id: uid(), text: next, createdAt: Date.now(), ...(stepId ? { stepId } : {}) },
                 ...(g.notes ?? []),
               ],
-            }
+            })
           : g
       ),
     }));
@@ -257,13 +285,13 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? {
+          ? touched({
               ...g,
               notes: (g.notes ?? []).map((n) =>
                 // An empty/absent stepId unlinks the note from any step.
                 n.id === noteId ? { ...n, text: next, stepId: stepId || undefined } : n
               ),
-            }
+            })
           : g
       ),
     }));
@@ -273,7 +301,7 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? { ...g, notes: (g.notes ?? []).filter((n) => n.id !== noteId) }
+          ? touched({ ...g, notes: (g.notes ?? []).filter((n) => n.id !== noteId) })
           : g
       ),
     })),

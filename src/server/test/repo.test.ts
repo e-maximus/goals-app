@@ -25,6 +25,10 @@ function sampleGoal(overrides: Partial<Goal> = {}): Goal {
     title: "Launch my podcast",
     why: "Ship something creative",
     createdAt: 1_700_000_000_000,
+    // What the repo defaults an incoming goal to when the client sends neither
+    // (getState always reports both, so the round-trip assertions see them).
+    updatedAt: 1_700_000_000_000,
+    status: "active",
     groups: [
       {
         id: "g-1",
@@ -74,6 +78,92 @@ describe("store state", () => {
     assert.equal(rows[0].n, 0);
     const notes = await pool.query("SELECT COUNT(*)::int AS n FROM notes");
     assert.equal(notes.rows[0].n, 0);
+  });
+});
+
+describe("status and activity", () => {
+  it("defaults a legacy-shaped goal to active, with updatedAt = createdAt", async () => {
+    const legacy = sampleGoal({ groups: [], notes: [] });
+    // A payload from a tab predating these fields carries neither.
+    delete legacy.status;
+    delete legacy.updatedAt;
+    await repo.replaceAll(pool, owner, [legacy], null);
+
+    const goal = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.equal(goal.status, "active");
+    assert.equal(goal.updatedAt, goal.createdAt);
+    assert.equal(goal.pausedAt, undefined);
+  });
+
+  it("round-trips an explicit status, updatedAt and pausedAt verbatim", async () => {
+    const paused = sampleGoal({
+      groups: [],
+      notes: [],
+      status: "paused",
+      updatedAt: 1_700_000_500_000,
+      pausedAt: 1_700_000_500_000,
+    });
+    await repo.replaceAll(pool, owner, [paused], null);
+    assert.deepEqual((await repo.getState(pool, owner)).goals, [paused]);
+  });
+
+  it("pauses and resumes a goal via setGoalStatus", async () => {
+    await repo.replaceAll(pool, owner, [sampleGoal()], null);
+    const before = Date.now();
+
+    const pausedGoal = await repo.setGoalStatus(pool, owner, "goal-podcast", "paused");
+    assert.equal(pausedGoal.status, "paused");
+    assert.ok(pausedGoal.pausedAt! >= before);
+    assert.ok(pausedGoal.updatedAt! >= before);
+
+    const resumed = await repo.setGoalStatus(pool, owner, "goal-podcast", "active");
+    assert.equal(resumed.status, "active");
+    assert.equal(resumed.pausedAt, undefined);
+  });
+
+  it("refuses to set status on a goal that isn't there", async () => {
+    await assert.rejects(
+      () => repo.setGoalStatus(pool, owner, "nope", "paused"),
+      (err: unknown) => err instanceof repo.NotFoundError
+    );
+  });
+
+  it("bumps only the mutated goal's updatedAt on targeted mutations", async () => {
+    const a = sampleGoal();
+    const b = sampleGoal({ id: "goal-other", title: "Other", groups: [], notes: [] });
+    await repo.replaceAll(pool, owner, [a, b], null);
+
+    const stampsOf = async () =>
+      new Map((await repo.getState(pool, owner)).goals.map((g) => [g.id, g.updatedAt!]));
+
+    let previous = await stampsOf();
+    const mutations: [string, () => Promise<unknown>][] = [
+      ["updateGoal", () => repo.updateGoal(pool, owner, "goal-podcast", { title: "Renamed" })],
+      ["addGroup", () => repo.addGroup(pool, owner, "goal-podcast", "New group")],
+      ["renameGroup", () => repo.renameGroup(pool, owner, "g-1", "Renamed group")],
+      ["addStep", () => repo.addStep(pool, owner, "g-1", "New step")],
+      ["setStepDone", () => repo.setStepDone(pool, owner, "s-2", true)],
+      ["editStep", () => repo.editStep(pool, owner, "s-2", { text: "Edited step" })],
+      ["deleteStep", () => repo.deleteStep(pool, owner, "s-2")],
+      ["addNote", () => repo.addNote(pool, owner, "goal-podcast", "A note")],
+      ["deleteNote", () => repo.deleteNote(pool, owner, "c-1")],
+    ];
+
+    for (const [name, mutate] of mutations) {
+      await new Promise((r) => setTimeout(r, 2));
+      await mutate();
+      const current = await stampsOf();
+      assert.ok(
+        current.get("goal-podcast")! > previous.get("goal-podcast")!,
+        `${name} should bump the mutated goal's updatedAt`
+      );
+      assert.equal(
+        current.get("goal-other"),
+        previous.get("goal-other"),
+        `${name} must not touch the other goal's updatedAt`
+      );
+      previous = current;
+    }
   });
 });
 

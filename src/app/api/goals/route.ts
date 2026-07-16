@@ -32,6 +32,11 @@ const goalSchema = z.object({
   createdAt: z.number(),
   groups: z.array(groupSchema),
   notes: z.array(noteSchema).optional(),
+  // Optional like their domain counterparts, so a tab from before these fields
+  // existed can still save; the repo fills in defaults (see insertGoals).
+  status: z.enum(["active", "paused"]).optional(),
+  updatedAt: z.number().optional(),
+  pausedAt: z.number().optional(),
 });
 
 const putBodySchema = z.object({

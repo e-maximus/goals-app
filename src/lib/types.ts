@@ -24,6 +24,10 @@ export type Note = {
   stepId?: string;
 };
 
+// A goal's lifecycle status. "Completed" is not a status — it stays derived
+// from the steps (see isGoalComplete); pausing is the only explicit transition.
+export type GoalStatus = "active" | "paused";
+
 export type Goal = {
   id: string;
   title: string;
@@ -33,6 +37,17 @@ export type Goal = {
   // Optional so payloads written before notes existed still parse. Read it
   // as `goal.notes ?? []` everywhere rather than bumping the storage key.
   notes?: Note[];
+  // Lifecycle status. Optional so payloads written before statuses existed
+  // still parse — read it via `goalStatus(goal)`, which defaults to "active".
+  status?: GoalStatus;
+  // Last-activity stamp (epoch ms), bumped on every mutation that touches this
+  // goal. Optional for the same reason; read it via `lastActivityAt(goal)`,
+  // which falls back to `createdAt`.
+  updatedAt?: number;
+  // When the goal was paused (epoch ms). Present only while status is
+  // "paused"; cleared on resume. Kept separate from `updatedAt` because
+  // pausing itself counts as activity.
+  pausedAt?: number;
 };
 
 // ---- derived progress helpers ----
@@ -66,4 +81,62 @@ export function isGoalComplete(goal: Goal): boolean {
 
 export function noteCount(goal: Goal): number {
   return goal.notes?.length ?? 0;
+}
+
+// ---- status & activity helpers ----
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** After this many days without activity an active goal is considered stale. */
+export const STALE_AFTER_DAYS = 14;
+
+export function goalStatus(goal: Goal): GoalStatus {
+  return goal.status ?? "active";
+}
+
+export function lastActivityAt(goal: Goal): number {
+  return goal.updatedAt ?? goal.createdAt;
+}
+
+export function daysSinceActivity(goal: Goal, now: number = Date.now()): number {
+  return Math.max(0, Math.floor((now - lastActivityAt(goal)) / DAY_MS));
+}
+
+/** An active, unfinished goal nobody has touched in STALE_AFTER_DAYS days. */
+export function isGoalStale(goal: Goal, now: number = Date.now()): boolean {
+  return (
+    goalStatus(goal) === "active" &&
+    !isGoalComplete(goal) &&
+    daysSinceActivity(goal, now) >= STALE_AFTER_DAYS
+  );
+}
+
+/**
+ * The next actionable step: the first unchecked step of the first group that
+ * still has one. Simple and deterministic — the same rule drives the home
+ * card, the hybrid detail highlight, and the stepper's "current" stage.
+ */
+export function nextStep(goal: Goal): { group: Group; step: Step } | null {
+  for (const group of goal.groups) {
+    const step = group.steps.find((s) => !s.done);
+    if (step) return { group, step };
+  }
+  return null;
+}
+
+/**
+ * How long a completed goal took, in coarse human units. The last mutation of
+ * a completed goal is almost always the final step-toggle, so
+ * `lastActivityAt − createdAt` is an honest "finished in ~X". (A note added
+ * after completion inflates it slightly — accepted.)
+ */
+export function completedIn(goal: Goal): string {
+  const ms = Math.max(0, lastActivityAt(goal) - goal.createdAt);
+  const days = Math.round(ms / DAY_MS);
+  if (days < 2) return "in a day";
+  if (days < 14) return `in ${days} days`;
+  const weeks = Math.round(days / 7);
+  if (weeks < 10) return `in ${weeks} weeks`;
+  const months = Math.round(days / 30);
+  return `in ${months} months`;
 }
