@@ -272,6 +272,46 @@ test.describe("Goal detail — toggling and deleting", () => {
   });
 });
 
+// Groups and steps can be reordered with the Move up / Move down items in
+// their options menus.
+test.describe("Goal detail — reordering", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/goal/goal-podcast");
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+  });
+
+  test("moves a group up via the options menu", async ({ page }) => {
+    await expect(page.getByRole("heading", { level: 3 })).toHaveText([
+      "Preparation",
+      "Recording Content",
+      "Promotion",
+    ]);
+
+    const card = page.locator("div.group\\/card").filter({ hasText: "Promotion" });
+    await card.getByRole("button", { name: "Group options" }).click({ force: true });
+    await page.getByRole("menuitem", { name: "Move up" }).click();
+
+    await expect(page.getByRole("heading", { level: 3 })).toHaveText([
+      "Preparation",
+      "Promotion",
+      "Recording Content",
+    ]);
+  });
+
+  test("moves a step down via its options menu", async ({ page }) => {
+    await page.getByRole("button", { name: "Expand Preparation" }).click();
+    const card = page.locator("div.group\\/card").filter({ hasText: "Preparation" });
+    await expect(card.locator("div.group\\/step").first()).toContainText("Pick a name");
+
+    const row = card.locator("div.group\\/step").filter({ hasText: "Pick a name" });
+    await row.getByRole("button", { name: "Step options" }).click({ force: true });
+    await page.getByRole("menuitem", { name: "Move down" }).click();
+
+    await expect(card.locator("div.group\\/step").first()).toContainText("Choose a platform");
+    await expect(card.locator("div.group\\/step").nth(1)).toContainText("Pick a name");
+  });
+});
+
 // A goal can hold steps directly, without any group — the hybrid model. The
 // empty watercolor goal is the fixture: build ungrouped steps on it via the UI.
 test.describe("Goal detail — ungrouped steps", () => {
@@ -326,6 +366,42 @@ test.describe("Goal detail — ungrouped steps", () => {
     await expect(page.getByText("Grouped step")).toBeVisible();
     const looseRow = page.locator("div.group\\/step").filter({ hasText: "Loose step" });
     await expect(looseRow.getByText("next")).toBeVisible();
+  });
+
+  test("ungrouped steps appear as their own stages on the timeline", async ({ page }) => {
+    // One ungrouped step and one group with a step, built through the UI.
+    await page.getByRole("button", { name: "+ Add step" }).click();
+    let dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Step").fill("Loose step");
+    await dialog.getByRole("button", { name: "Add step" }).click();
+    await expect(page.getByText("Loose step")).toBeVisible();
+
+    await page.getByRole("button", { name: "Add group" }).last().click();
+    dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Group name").fill("Fundamentals");
+    await dialog.getByRole("button", { name: "Add group" }).click();
+    await page.getByRole("button", { name: "Expand Fundamentals" }).click();
+    const group = page.locator("div.group\\/card").filter({ hasText: "Fundamentals" });
+    await group.getByRole("button", { name: "Add step" }).click();
+    dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Step").fill("Grouped step");
+    await dialog.getByRole("button", { name: "Add step" }).click();
+    await expect(page.getByText("Grouped step")).toBeVisible();
+
+    await page.getByRole("button", { name: "Timeline" }).click();
+
+    // The ungrouped step is its own stage; the group stage carries a counter.
+    await expect(page.getByRole("tab", { name: /Loose step/ })).toBeVisible();
+    const groupTab = page.getByRole("tab", { name: /Fundamentals/ });
+    await expect(groupTab.getByText("0 of 1")).toBeVisible();
+
+    // The ungrouped stage is the next step, so its panel opens by default.
+    const looseRow = page.locator("div.group\\/step").filter({ hasText: "Loose step" });
+    await expect(looseRow.getByText("next")).toBeVisible();
+
+    // Clicking the group stage swaps the panel to its steps.
+    await groupTab.click();
+    await expect(page.locator("div.group\\/step").filter({ hasText: "Grouped step" })).toBeVisible();
   });
 });
 

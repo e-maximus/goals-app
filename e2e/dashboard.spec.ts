@@ -80,6 +80,66 @@ test.describe("Dashboard", () => {
     await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
   });
 
+  test("pauses an in-progress goal from its options menu", async ({ page }) => {
+    const card = page.locator("div.group\\/goal").filter({ hasText: "Launch my podcast" });
+    await card.getByRole("button", { name: "Goal options" }).click();
+    await page.getByRole("menuitem", { name: "Pause" }).click();
+
+    await expect(page.getByText("In progress · 2")).toBeVisible();
+    await expect(page.getByText("Paused · 2")).toBeVisible();
+  });
+
+  test("deletes a goal from its options menu", async ({ page }) => {
+    const card = page.locator("div.group\\/goal").filter({ hasText: "Learn watercolor painting" });
+    await card.getByRole("button", { name: "Goal options" }).click();
+    await page.getByRole("menuitem", { name: "Delete goal" }).click();
+
+    await expect(page.getByRole("link", { name: /Learn watercolor painting/ })).toHaveCount(0);
+    await expect(page.getByText("In progress · 2")).toBeVisible();
+  });
+
+  test("reorders goals within their section via the options menu", async ({ page }) => {
+    const titles = page.locator("div.group\\/goal a");
+    await expect(titles).toHaveText([
+      /Launch my podcast/,
+      /Run a half marathon/,
+      /Learn watercolor painting/,
+    ]);
+
+    const card = page.locator("div.group\\/goal").filter({ hasText: "Run a half marathon" });
+    await card.getByRole("button", { name: "Goal options" }).click();
+    await page.getByRole("menuitem", { name: "Move up" }).click();
+
+    await expect(titles).toHaveText([
+      /Run a half marathon/,
+      /Launch my podcast/,
+      /Learn watercolor painting/,
+    ]);
+  });
+
+  test("edits a goal from its options menu", async ({ page }) => {
+    const card = page.locator("div.group\\/goal").filter({ hasText: "Learn watercolor painting" });
+    await card.getByRole("button", { name: "Goal options" }).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("Goal name")).toHaveValue("Learn watercolor painting");
+    await dialog.getByLabel("Goal name").fill("Master watercolor");
+    await dialog.getByRole("button", { name: "Save goal" }).click();
+
+    await expect(page.getByRole("link", { name: /Master watercolor/ })).toBeVisible();
+  });
+
+  test("opens the share dialog from the options menu", async ({ page }) => {
+    const card = page.locator("div.group\\/goal").filter({ hasText: "Launch my podcast" });
+    await card.getByRole("button", { name: "Goal options" }).click();
+    await page.getByRole("menuitem", { name: "Share" }).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText("Share goal")).toBeVisible();
+    await expect(dialog.getByRole("textbox")).toHaveValue(/Launch my podcast/);
+  });
+
   test("just loading the page writes nothing back to the server", async ({ page }) => {
     // Loading fills the store from the server; that must not be echoed back as a
     // save. Watch for the write (PUT /api/goals) — none should fire, and the

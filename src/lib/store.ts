@@ -32,6 +32,21 @@ function withSteps(goal: Goal, groupId: string | null, fn: (steps: Step[]) => St
 }
 
 /**
+ * Move the item with `id` one position up or down. Returns the same array when
+ * the move is a no-op (unknown id, or already at the edge) so callers can skip
+ * the update entirely.
+ */
+function moveItem<T extends { id: string }>(items: T[], id: string, delta: -1 | 1): T[] {
+  const from = items.findIndex((item) => item.id === id);
+  const to = from + delta;
+  if (from === -1 || to < 0 || to >= items.length) return items;
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved!);
+  return next;
+}
+
+/**
  * Where the goals load stands. The store no longer keeps a local copy — the
  * goals live on the server, so until the first fetch lands there is nothing to
  * show, and a failed fetch is a real error state rather than a fallback to
@@ -54,10 +69,20 @@ type StoreState = {
 
   addGoal: (title: string, why?: string, dueDate?: number) => Goal;
   updateGoal: (goalId: string, title: string, why?: string, dueDate?: number) => void;
+  /**
+   * Move a goal to sit right before or after another goal in the list. The
+   * dashboard sections are filtered views of the one list, so reordering
+   * against a visible neighbour keeps the move meaningful within its section.
+   */
+  reorderGoal: (goalId: string, targetId: string, position: "before" | "after") => void;
   /** Pause or resume a goal. Pausing records when; resuming clears it. */
   setGoalStatus: (goalId: string, status: GoalStatus) => void;
   addGroup: (goalId: string, title: string, dueDate?: number) => void;
   renameGroup: (goalId: string, groupId: string, title: string, dueDate?: number) => void;
+  /** Move a group one position up (-1) or down (+1) in the goal's group list. */
+  moveGroup: (goalId: string, groupId: string, delta: -1 | 1) => void;
+  /** Move a step one position up (-1) or down (+1) within its list. */
+  moveStep: (goalId: string, groupId: string | null, stepId: string, delta: -1 | 1) => void;
   // Step actions take `groupId: null` for a step living directly on the goal.
   addStep: (
     goalId: string,
@@ -146,6 +171,20 @@ export const useStore = create<StoreState>((set) => ({
     }));
   },
 
+  reorderGoal: (goalId, targetId, position) =>
+    set((s) => {
+      const from = s.goals.findIndex((g) => g.id === goalId);
+      if (from === -1 || goalId === targetId) return {};
+      const goals = [...s.goals];
+      const [moved] = goals.splice(from, 1);
+      const target = goals.findIndex((g) => g.id === targetId);
+      if (target === -1) return {};
+      // Reordering isn't goal activity, so no touched() — the push subscriber
+      // still picks up the new array and persists the order.
+      goals.splice(position === "before" ? target : target + 1, 0, moved!);
+      return { goals };
+    }),
+
   setGoalStatus: (goalId, status) =>
     set((s) => ({
       goals: s.goals.map((g) =>
@@ -193,6 +232,28 @@ export const useStore = create<StoreState>((set) => ({
       ),
     }));
   },
+
+  moveGroup: (goalId, groupId, delta) =>
+    set((s) => ({
+      goals: s.goals.map((g) => {
+        if (g.id !== goalId) return g;
+        const groups = moveItem(g.groups, groupId, delta);
+        return groups === g.groups ? g : touched({ ...g, groups });
+      }),
+    })),
+
+  moveStep: (goalId, groupId, stepId, delta) =>
+    set((s) => ({
+      goals: s.goals.map((g) => {
+        if (g.id !== goalId) return g;
+        const next = withSteps(g, groupId, (steps) => moveItem(steps, stepId, delta));
+        // withSteps always rebuilds the goal; compare the inner list to detect
+        // a no-op move (already at the edge) and skip the touch + push.
+        const before = groupId === null ? (g.steps ?? []) : g.groups.find((gr) => gr.id === groupId)?.steps;
+        const after = groupId === null ? next.steps : next.groups.find((gr) => gr.id === groupId)?.steps;
+        return before === after ? g : touched(next);
+      }),
+    })),
 
   addStep: (goalId, groupId, text, description, dueDate) => {
     const desc = description?.trim() || undefined;

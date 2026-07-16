@@ -4,7 +4,8 @@ test.describe("Creating a goal", () => {
   test("creates a goal from the dialog and opens its detail page", async ({ page }) => {
     await page.goto("/");
 
-    await page.getByRole("button", { name: "+ New Goal" }).click();
+    // The button lives among the goals, not in the topbar.
+    await page.getByRole("main").getByRole("button", { name: "+ New Goal" }).click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByText("New goal")).toBeVisible();

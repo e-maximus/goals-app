@@ -217,7 +217,10 @@ export function GoalDetail({ goalId }: { goalId: string }) {
               )}
             </SectionLabel>
             <div className="flex flex-col gap-4">
-              {ungrouped.length > 0 && (
+              {/* In the timeline view the ungrouped steps become stages on the
+                  rail itself, so the standalone card only renders in the list
+                  view (or when there are no groups and thus no timeline). */}
+              {ungrouped.length > 0 && (view === "list" || !hasGroups) && (
                 <UngroupedStepsCard
                   goalId={goal.id}
                   steps={ungrouped}

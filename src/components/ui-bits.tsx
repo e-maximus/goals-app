@@ -71,6 +71,14 @@ export function DueBadge({
   );
 }
 
+// Shared styling for Base UI dropdown menus (group cards, step rows, goal rows).
+export const menuPopupClass =
+  "min-w-40 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none";
+export const menuItemClass =
+  "flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] outline-none data-[highlighted]:bg-muted data-[disabled]:opacity-40";
+export const menuItemDestructiveClass =
+  "flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-destructive outline-none data-[highlighted]:bg-destructive/10";
+
 export function SectionLabel({
   children,
   action,

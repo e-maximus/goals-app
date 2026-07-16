@@ -75,21 +75,15 @@ function UserChip() {
   );
 }
 
-export function Topbar({
-  crumbs,
-  onNewGoal,
-}: {
-  crumbs: React.ReactNode;
-  /** Renders the "+ New Goal" button when provided — the dashboard only. */
-  onNewGoal?: () => void;
-}) {
+export function Topbar({ crumbs }: { crumbs: React.ReactNode }) {
   const saveStatus = useStore((s) => s.saveStatus);
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border px-5 sm:px-9">
+    <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-border bg-background px-5 sm:px-9">
       <div className="min-w-0 truncate text-sm text-muted-foreground">{crumbs}</div>
       <div className="flex flex-shrink-0 items-center gap-2.5">
         <SaveStatus status={saveStatus} />
+        <UserChip />
         <Button
           variant="ghost"
           size="icon-sm"
@@ -99,12 +93,6 @@ export function Topbar({
         >
           <Settings />
         </Button>
-        {onNewGoal && (
-          <Button size="sm" onClick={onNewGoal}>
-            + New Goal
-          </Button>
-        )}
-        <UserChip />
       </div>
     </header>
   );

@@ -3,8 +3,20 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Check, Pause, Play } from "lucide-react";
+import { Menu } from "@base-ui/react/menu";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  MoreVertical,
+  Pause,
+  Pencil,
+  Play,
+  Share2,
+  Trash2,
+} from "lucide-react";
 import { useStore } from "@/lib/store";
+import { useShallow } from "zustand/shallow";
 import {
   noteCount,
   goalProgress,
@@ -19,9 +31,18 @@ import {
 } from "@/lib/types";
 import { Topbar, Crumbs } from "@/components/topbar";
 import { LoadError } from "@/components/load-error";
-import { NewGoalDialog } from "@/components/new-goal-dialog";
+import { GoalDialog, NewGoalDialog } from "@/components/new-goal-dialog";
+import { ShareDialog } from "@/components/share-dialog";
 import { Button } from "@/components/ui/button";
-import { DueBadge, LoadingState, ProgressBar, SectionLabel } from "@/components/ui-bits";
+import {
+  DueBadge,
+  LoadingState,
+  ProgressBar,
+  SectionLabel,
+  menuItemClass,
+  menuItemDestructiveClass,
+  menuPopupClass,
+} from "@/components/ui-bits";
 import { cn } from "@/lib/utils";
 
 function goalMeta(goal: Goal): string {
@@ -55,11 +76,110 @@ function shortDate(ms: number): string {
 }
 
 /**
+ * The three-dots menu every dashboard goal row carries: edit, pause/resume
+ * (hidden for completed goals), reorder within the row's section, delete.
+ * `prevId`/`nextId` are the visible section neighbours — absent at the edges,
+ * which disables the move items.
+ */
+function GoalMenu({ goal, prevId, nextId }: { goal: Goal; prevId?: string; nextId?: string }) {
+  const { updateGoal, setGoalStatus, reorderGoal, deleteGoal } = useStore(
+    useShallow((s) => ({
+      updateGoal: s.updateGoal,
+      setGoalStatus: s.setGoalStatus,
+      reorderGoal: s.reorderGoal,
+      deleteGoal: s.deleteGoal,
+    }))
+  );
+  const [editOpen, setEditOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const complete = isGoalComplete(goal);
+  const paused = goalStatus(goal) === "paused";
+
+  return (
+    <>
+      <Menu.Root>
+        <Menu.Trigger
+          aria-label="Goal options"
+          className="relative z-10 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <MoreVertical className="h-4 w-4" />
+        </Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
+            <Menu.Popup className={menuPopupClass}>
+              <Menu.Item onClick={() => setEditOpen(true)} className={menuItemClass}>
+                <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                Edit
+              </Menu.Item>
+              <Menu.Item onClick={() => setShareOpen(true)} className={menuItemClass}>
+                <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
+                Share
+              </Menu.Item>
+              {!complete &&
+                (paused ? (
+                  <Menu.Item
+                    onClick={() => setGoalStatus(goal.id, "active")}
+                    className={menuItemClass}
+                  >
+                    <Play className="h-3.5 w-3.5 text-muted-foreground" />
+                    Resume
+                  </Menu.Item>
+                ) : (
+                  <Menu.Item
+                    onClick={() => setGoalStatus(goal.id, "paused")}
+                    className={menuItemClass}
+                  >
+                    <Pause className="h-3.5 w-3.5 text-muted-foreground" />
+                    Pause
+                  </Menu.Item>
+                ))}
+              <Menu.Item
+                disabled={!prevId}
+                onClick={prevId ? () => reorderGoal(goal.id, prevId, "before") : undefined}
+                className={menuItemClass}
+              >
+                <ArrowUp className="h-3.5 w-3.5 text-muted-foreground" />
+                Move up
+              </Menu.Item>
+              <Menu.Item
+                disabled={!nextId}
+                onClick={nextId ? () => reorderGoal(goal.id, nextId, "after") : undefined}
+                className={menuItemClass}
+              >
+                <ArrowDown className="h-3.5 w-3.5 text-muted-foreground" />
+                Move down
+              </Menu.Item>
+              <Menu.Item onClick={() => deleteGoal(goal.id)} className={menuItemDestructiveClass}>
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete goal
+              </Menu.Item>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
+
+      <GoalDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        heading="Edit goal"
+        description="Rename this goal, change why it matters, or set a deadline."
+        submitLabel="Save goal"
+        initialTitle={goal.title}
+        initialWhy={goal.why ?? ""}
+        initialDueDate={goal.dueDate}
+        onSubmit={(title, why, dueDate) => updateGoal(goal.id, title, why, dueDate)}
+      />
+      <ShareDialog open={shareOpen} onOpenChange={setShareOpen} goal={goal} />
+    </>
+  );
+}
+
+/**
  * An in-progress goal card. The whole card navigates via a stretched title
  * link (an `after:` overlay), so the inline actions — Done / Pause / Break it
  * down — can be real buttons layered above it rather than nested inside a Link.
  */
-function GoalRow({ goal }: { goal: Goal }) {
+function GoalRow({ goal, prevId, nextId }: { goal: Goal; prevId?: string; nextId?: string }) {
   const toggleStep = useStore((s) => s.toggleStep);
   const setGoalStatus = useStore((s) => s.setGoalStatus);
   const router = useRouter();
@@ -116,6 +236,7 @@ function GoalRow({ goal }: { goal: Goal }) {
               <Pause data-icon="inline-start" /> Pause
             </Button>
           )}
+          <GoalMenu goal={goal} prevId={prevId} nextId={nextId} />
         </div>
       </div>
 
@@ -156,7 +277,7 @@ function GoalRow({ goal }: { goal: Goal }) {
 }
 
 /** A paused goal, collapsed to one line to keep the in-progress list honest. */
-function PausedRow({ goal }: { goal: Goal }) {
+function PausedRow({ goal, prevId, nextId }: { goal: Goal; prevId?: string; nextId?: string }) {
   const setGoalStatus = useStore((s) => s.setGoalStatus);
   const { done, total } = goalStepCounts(goal);
 
@@ -182,13 +303,14 @@ function PausedRow({ goal }: { goal: Goal }) {
         >
           <Play data-icon="inline-start" /> Resume
         </Button>
+        <GoalMenu goal={goal} prevId={prevId} nextId={nextId} />
       </div>
     </div>
   );
 }
 
 /** A finished goal, collapsed to one line with a small reward instead of 100%. */
-function CompletedRow({ goal }: { goal: Goal }) {
+function CompletedRow({ goal, prevId, nextId }: { goal: Goal; prevId?: string; nextId?: string }) {
   const { total } = goalStepCounts(goal);
 
   return (
@@ -200,9 +322,12 @@ function CompletedRow({ goal }: { goal: Goal }) {
         <Check className="h-4 w-4 flex-shrink-0 text-primary" aria-hidden />
         <span className="truncate">{goal.title}</span>
       </Link>
-      <span className="flex-shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-        {total} {total === 1 ? "step" : "steps"} · finished {completedIn(goal)}
-      </span>
+      <div className="flex flex-shrink-0 items-center gap-3">
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
+          {total} {total === 1 ? "step" : "steps"} · finished {completedIn(goal)}
+        </span>
+        <GoalMenu goal={goal} prevId={prevId} nextId={nextId} />
+      </div>
     </div>
   );
 }
@@ -225,7 +350,7 @@ export function Dashboard() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <Topbar crumbs={<Crumbs />} onNewGoal={() => setDialogOpen(true)} />
+      <Topbar crumbs={<Crumbs />} />
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-8 sm:px-10">
         {loadStatus === "loading" ? (
@@ -240,19 +365,36 @@ export function Dashboard() {
               <section>
                 <SectionLabel>In progress · {inProgress.length}</SectionLabel>
                 <div className="flex flex-col gap-3.5">
-                  {inProgress.map((g) => (
-                    <GoalRow key={g.id} goal={g} />
+                  {inProgress.map((g, i) => (
+                    <GoalRow
+                      key={g.id}
+                      goal={g}
+                      prevId={inProgress[i - 1]?.id}
+                      nextId={inProgress[i + 1]?.id}
+                    />
                   ))}
                 </div>
               </section>
             )}
 
+            <button
+              onClick={() => setDialogOpen(true)}
+              className="mx-auto flex w-full max-w-md items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong px-4 py-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+            >
+              + New Goal
+            </button>
+
             {paused.length > 0 && (
               <section>
                 <SectionLabel>Paused · {paused.length}</SectionLabel>
                 <div className="flex flex-col gap-2.5">
-                  {paused.map((g) => (
-                    <PausedRow key={g.id} goal={g} />
+                  {paused.map((g, i) => (
+                    <PausedRow
+                      key={g.id}
+                      goal={g}
+                      prevId={paused[i - 1]?.id}
+                      nextId={paused[i + 1]?.id}
+                    />
                   ))}
                 </div>
               </section>
@@ -262,8 +404,13 @@ export function Dashboard() {
               <section>
                 <SectionLabel>Completed · {completed.length}</SectionLabel>
                 <div className="flex flex-col gap-2.5">
-                  {completed.map((g) => (
-                    <CompletedRow key={g.id} goal={g} />
+                  {completed.map((g, i) => (
+                    <CompletedRow
+                      key={g.id}
+                      goal={g}
+                      prevId={completed[i - 1]?.id}
+                      nextId={completed[i + 1]?.id}
+                    />
                   ))}
                 </div>
               </section>

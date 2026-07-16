@@ -2,26 +2,38 @@
 
 import { useState } from "react";
 import { Check } from "lucide-react";
-import { groupProgress, type Goal } from "@/lib/types";
-import { GroupCardConnected } from "@/components/group-card";
+import { groupProgress, ungroupedSteps, type Goal, type Group, type Step } from "@/lib/types";
+import { GroupCardConnected, UngroupedStepsCard } from "@/components/group-card";
 import { DueBadge } from "@/components/ui-bits";
 import { cn } from "@/lib/utils";
 
 type StageState = "done" | "current" | "todo";
 
-function stageState(goal: Goal, groupId: string, activeGroupId: string | null): StageState {
-  const group = goal.groups.find((g) => g.id === groupId)!;
-  const { done, total } = groupProgress(group);
+/**
+ * A node on the rail: either a single ungrouped step, or a whole group of
+ * steps. Ungrouped steps come first, matching the list view and `nextStep`.
+ */
+type StageNode =
+  | { kind: "step"; id: string; step: Step }
+  | { kind: "group"; id: string; group: Group };
+
+function nodeState(node: StageNode, activeGroupId: string | null, nextStepId: string | null): StageState {
+  if (node.kind === "step") {
+    if (node.step.done) return "done";
+    return node.step.id === nextStepId ? "current" : "todo";
+  }
+  const { done, total } = groupProgress(node.group);
   if (total > 0 && done === total) return "done";
-  if (groupId === activeGroupId) return "current";
-  return "todo";
+  return node.group.id === activeGroupId ? "current" : "todo";
 }
 
 /**
- * The timeline view of a goal: groups as sequential stages on a horizontal
- * rail. Clicking a stage shows its steps in a panel below — the panel is the
- * same store-connected group card the list view uses, so every step mutation
- * has exactly one implementation.
+ * The timeline view of a goal: every stage — each ungrouped step, then each
+ * group — as sequential nodes on a horizontal rail (it scrolls sideways when
+ * crowded). A group node is distinguished by its step counter ("2 of 6");
+ * a step node is a single step, so it carries none. Clicking a stage shows its
+ * steps in a panel below — the same store-connected cards the list view uses,
+ * so every step mutation has exactly one implementation.
  *
  * Layout: an equal-column grid keeps the nodes evenly distributed no matter
  * how wide each label is. The connector into a node is drawn inside its own
@@ -36,17 +48,25 @@ export function GoalStepper({
   goal: Goal;
   /** The group holding the next actionable step — rendered as "current". */
   activeGroupId: string | null;
-  /** Highlighted inside the panel when the selected group is the active one. */
+  /** Highlighted inside the panel when the selected stage holds it. */
   nextStepId: string | null;
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Follow the goal if the selected group was deleted out from under us.
-  const selected =
-    goal.groups.find((g) => g.id === selectedId) ??
-    goal.groups.find((g) => g.id === activeGroupId) ??
-    goal.groups[0];
+  const ungrouped = ungroupedSteps(goal);
+  const nodes: StageNode[] = [
+    ...ungrouped.map((step): StageNode => ({ kind: "step", id: step.id, step })),
+    ...goal.groups.map((group): StageNode => ({ kind: "group", id: group.id, group })),
+  ];
 
-  const crowded = goal.groups.length >= 5;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Follow the goal if the selected stage was deleted out from under us; by
+  // default open the stage holding the next actionable step.
+  const selected =
+    nodes.find((n) => n.id === selectedId) ??
+    nodes.find((n) => n.id === activeGroupId) ??
+    nodes.find((n) => n.id === nextStepId) ??
+    nodes[0];
+
+  const crowded = nodes.length >= 5;
 
   return (
     <div>
@@ -56,17 +76,19 @@ export function GoalStepper({
           role="tablist"
           aria-label="Stages"
         >
-          {goal.groups.map((group, i) => {
-            const state = stageState(goal, group.id, activeGroupId);
-            const { done, total } = groupProgress(group);
-            const complete = total > 0 && done === total;
-            const isSelected = selected?.id === group.id;
+          {nodes.map((node, i) => {
+            const state = nodeState(node, activeGroupId, nextStepId);
+            const isSelected = selected?.id === node.id;
+            const counts = node.kind === "group" ? groupProgress(node.group) : null;
+            const complete = state === "done";
+            const title = node.kind === "group" ? node.group.title : node.step.text;
+            const dueDate = node.kind === "group" ? node.group.dueDate : node.step.dueDate;
             // The connector into this node fills once the previous stage is done.
             const prevDone =
-              i > 0 && stageState(goal, goal.groups[i - 1]!.id, activeGroupId) === "done";
+              i > 0 && nodeState(nodes[i - 1]!, activeGroupId, nextStepId) === "done";
 
             return (
-              <div key={group.id} className="relative">
+              <div key={node.id} className="relative">
                 {i > 0 && (
                   <div
                     className={cn(
@@ -79,12 +101,14 @@ export function GoalStepper({
                 <button
                   role="tab"
                   aria-selected={isSelected}
-                  onClick={() => setSelectedId(group.id)}
+                  onClick={() => setSelectedId(node.id)}
                   className="relative mx-auto flex w-full flex-col items-center gap-1.5 px-2 text-center"
                 >
                   <span
                     className={cn(
-                      "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-colors",
+                      "flex h-7 w-7 items-center justify-center text-xs font-bold transition-colors",
+                      // A group stage is a rounded square, a single step a circle.
+                      node.kind === "group" ? "rounded-lg" : "rounded-full",
                       state === "done" && "bg-primary text-primary-foreground",
                       state === "current" && "border-2 border-primary bg-card text-primary",
                       state === "todo" &&
@@ -94,19 +118,21 @@ export function GoalStepper({
                     {state === "done" ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : i + 1}
                   </span>
                   <span
-                    title={group.title}
+                    title={title}
                     className={cn(
                       "max-w-full truncate text-[13px]",
                       crowded && "max-w-24",
                       isSelected ? "font-semibold text-foreground" : "text-muted-foreground"
                     )}
                   >
-                    {group.title}
+                    {title}
                   </span>
-                  <span className="text-[11px] tabular-nums text-muted-foreground">
-                    {done} of {total}
-                  </span>
-                  <DueBadge dueDate={group.dueDate} done={complete} />
+                  {counts && (
+                    <span className="text-[11px] tabular-nums text-muted-foreground">
+                      {counts.done} of {counts.total}
+                    </span>
+                  )}
+                  <DueBadge dueDate={dueDate} done={complete} />
                   <span
                     className={cn(
                       "h-0.5 w-8 rounded-full",
@@ -121,14 +147,21 @@ export function GoalStepper({
         </div>
       </div>
 
-      {selected && (
-        <GroupCardConnected
-          key={selected.id}
-          goalId={goal.id}
-          group={selected}
-          nextStepId={selected.id === activeGroupId ? nextStepId : null}
-        />
-      )}
+      {selected &&
+        (selected.kind === "group" ? (
+          <GroupCardConnected
+            key={selected.id}
+            goalId={goal.id}
+            group={selected.group}
+            nextStepId={selected.id === activeGroupId ? nextStepId : null}
+          />
+        ) : (
+          <UngroupedStepsCard
+            goalId={goal.id}
+            steps={ungrouped}
+            nextStepId={ungrouped.some((s) => s.id === nextStepId) ? nextStepId : null}
+          />
+        ))}
     </div>
   );
 }

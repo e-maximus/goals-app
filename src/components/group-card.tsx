@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { groupProgress, type Group, type Step } from "@/lib/types";
-import { DueBadge } from "@/components/ui-bits";
+import { DueBadge, menuItemClass, menuItemDestructiveClass, menuPopupClass } from "@/components/ui-bits";
 import { GroupDialog } from "@/components/group-dialog";
 import { StepDialog } from "@/components/step-dialog";
 import { useStore } from "@/lib/store";
 import { useShallow } from "zustand/shallow";
 import { cn } from "@/lib/utils";
-import { Check, ChevronDown, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
 
 /**
  * One step row. The whole row is a toggle target: clicking anywhere on it
@@ -24,12 +24,17 @@ export function StepRow({
   onToggle,
   onEdit,
   onDelete,
+  onMoveUp,
+  onMoveDown,
 }: {
   step: Step;
   isNext: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  /** Reorder handlers; absent (e.g. at the edge of the list) disables the item. */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
   return (
     <div
@@ -106,6 +111,29 @@ export function StepRow({
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>
+      <Menu.Root>
+        <Menu.Trigger
+          aria-label="Step options"
+          onClick={(e) => e.stopPropagation()}
+          className="mt-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 data-[popup-open]:opacity-100 group-hover/step:opacity-100"
+        >
+          <MoreVertical className="h-3.5 w-3.5" />
+        </Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
+            <Menu.Popup className={menuPopupClass}>
+              <Menu.Item disabled={!onMoveUp} onClick={onMoveUp} className={menuItemClass}>
+                <ArrowUp className="h-3.5 w-3.5 text-muted-foreground" />
+                Move up
+              </Menu.Item>
+              <Menu.Item disabled={!onMoveDown} onClick={onMoveDown} className={menuItemClass}>
+                <ArrowDown className="h-3.5 w-3.5 text-muted-foreground" />
+                Move down
+              </Menu.Item>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
     </div>
   );
 }
@@ -131,6 +159,9 @@ export function GroupCard({
   onDeleteStep,
   onRenameGroup,
   onDeleteGroup,
+  onMoveUp,
+  onMoveDown,
+  onMoveStep,
 }: {
   group: Group;
   collapsible?: boolean;
@@ -143,6 +174,11 @@ export function GroupCard({
   onDeleteStep: (stepId: string) => void;
   onRenameGroup: (title: string, dueDate?: number) => void;
   onDeleteGroup: () => void;
+  /** Reorder the group among its siblings; absent at the edge of the list. */
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  /** Reorder a step within this group. Optional so Storybook can omit it. */
+  onMoveStep?: (stepId: string, delta: -1 | 1) => void;
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -212,18 +248,23 @@ export function GroupCard({
           </Menu.Trigger>
           <Menu.Portal>
             <Menu.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
-              <Menu.Popup className="min-w-40 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none">
+              <Menu.Popup className={menuPopupClass}>
                 <Menu.Item
                   onClick={() => setRenameOpen(true)}
-                  className="flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] outline-none data-[highlighted]:bg-muted"
+                  className={menuItemClass}
                 >
                   <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
                   Rename
                 </Menu.Item>
-                <Menu.Item
-                  onClick={onDeleteGroup}
-                  className="flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-destructive outline-none data-[highlighted]:bg-destructive/10"
-                >
+                <Menu.Item disabled={!onMoveUp} onClick={onMoveUp} className={menuItemClass}>
+                  <ArrowUp className="h-3.5 w-3.5 text-muted-foreground" />
+                  Move up
+                </Menu.Item>
+                <Menu.Item disabled={!onMoveDown} onClick={onMoveDown} className={menuItemClass}>
+                  <ArrowDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  Move down
+                </Menu.Item>
+                <Menu.Item onClick={onDeleteGroup} className={menuItemDestructiveClass}>
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete group
                 </Menu.Item>
@@ -242,7 +283,7 @@ export function GroupCard({
                 <div className="text-xs text-muted-foreground">Break this group down into steps</div>
               </div>
             ) : (
-              group.steps.map((step) => (
+              group.steps.map((step, i) => (
                 <StepRow
                   key={step.id}
                   step={step}
@@ -250,6 +291,12 @@ export function GroupCard({
                   onToggle={() => onToggleStep(step.id)}
                   onEdit={() => setEditingStep(step)}
                   onDelete={() => onDeleteStep(step.id)}
+                  onMoveUp={onMoveStep && i > 0 ? () => onMoveStep(step.id, -1) : undefined}
+                  onMoveDown={
+                    onMoveStep && i < group.steps.length - 1
+                      ? () => onMoveStep(step.id, 1)
+                      : undefined
+                  }
                 />
               ))
             )}
@@ -326,15 +373,23 @@ export function GroupCardConnected({
   onToggleCollapse?: () => void;
   nextStepId?: string | null;
 }) {
-  const { toggleStep, addStep, editStep, deleteStep, renameGroup, deleteGroup } = useStore(
-    useShallow((s) => ({
-      toggleStep: s.toggleStep,
-      addStep: s.addStep,
-      editStep: s.editStep,
-      deleteStep: s.deleteStep,
-      renameGroup: s.renameGroup,
-      deleteGroup: s.deleteGroup,
-    }))
+  const { toggleStep, addStep, editStep, deleteStep, renameGroup, deleteGroup, moveGroup, moveStep } =
+    useStore(
+      useShallow((s) => ({
+        toggleStep: s.toggleStep,
+        addStep: s.addStep,
+        editStep: s.editStep,
+        deleteStep: s.deleteStep,
+        renameGroup: s.renameGroup,
+        deleteGroup: s.deleteGroup,
+        moveGroup: s.moveGroup,
+        moveStep: s.moveStep,
+      }))
+    );
+  // The group's position among its siblings gates the Move up/down items.
+  const groupCount = useStore((s) => s.goals.find((g) => g.id === goalId)?.groups.length ?? 0);
+  const groupIndex = useStore(
+    (s) => s.goals.find((g) => g.id === goalId)?.groups.findIndex((gr) => gr.id === group.id) ?? -1
   );
   return (
     <GroupCard
@@ -353,6 +408,13 @@ export function GroupCardConnected({
       onDeleteStep={(stepId) => deleteStep(goalId, group.id, stepId)}
       onRenameGroup={(title, dueDate) => renameGroup(goalId, group.id, title, dueDate)}
       onDeleteGroup={() => deleteGroup(goalId, group.id)}
+      onMoveUp={groupIndex > 0 ? () => moveGroup(goalId, group.id, -1) : undefined}
+      onMoveDown={
+        groupIndex >= 0 && groupIndex < groupCount - 1
+          ? () => moveGroup(goalId, group.id, 1)
+          : undefined
+      }
+      onMoveStep={(stepId, delta) => moveStep(goalId, group.id, stepId, delta)}
     />
   );
 }
@@ -371,12 +433,13 @@ export function UngroupedStepsCard({
   steps: Step[];
   nextStepId?: string | null;
 }) {
-  const { toggleStep, addStep, editStep, deleteStep } = useStore(
+  const { toggleStep, addStep, editStep, deleteStep, moveStep } = useStore(
     useShallow((s) => ({
       toggleStep: s.toggleStep,
       addStep: s.addStep,
       editStep: s.editStep,
       deleteStep: s.deleteStep,
+      moveStep: s.moveStep,
     }))
   );
   const [addOpen, setAddOpen] = useState(false);
@@ -385,7 +448,7 @@ export function UngroupedStepsCard({
   return (
     <div className="group/card flex flex-col rounded-2xl border border-border bg-card shadow-sm">
       <div className="flex flex-col gap-0.5 px-2.5 py-2">
-        {steps.map((step) => (
+        {steps.map((step, i) => (
           <StepRow
             key={step.id}
             step={step}
@@ -393,6 +456,8 @@ export function UngroupedStepsCard({
             onToggle={() => toggleStep(goalId, null, step.id)}
             onEdit={() => setEditingStep(step)}
             onDelete={() => deleteStep(goalId, null, step.id)}
+            onMoveUp={i > 0 ? () => moveStep(goalId, null, step.id, -1) : undefined}
+            onMoveDown={i < steps.length - 1 ? () => moveStep(goalId, null, step.id, 1) : undefined}
           />
         ))}
       </div>
