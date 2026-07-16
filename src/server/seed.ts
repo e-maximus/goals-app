@@ -41,6 +41,7 @@ export function withFreshIds(goals: Goal[]): Goal[] {
   return goals.map((goal) => ({
     ...goal,
     id: uid(),
+    steps: goal.steps?.map((step) => ({ ...step, id: uid() })),
     groups: goal.groups.map((group) => ({
       ...group,
       id: uid(),
@@ -50,16 +51,58 @@ export function withFreshIds(goals: Goal[]): Goal[] {
   }));
 }
 
-// Example data mirroring the design sketches. A fresh-id copy is inserted into
-// each new user's store on first visit; the canonical fixed-id copy is what the
-// e2e test user gets (see users.seedForOwner / repo.resetTestUser).
+/**
+ * What a brand-new user is seeded: a single starter goal that teaches the app
+ * by using it — its steps are the tour, and the last one is deleting it. Kept
+ * separate from the rich `seedGoals()` fixture below, which only the e2e test
+ * user gets.
+ */
+export function starterGoals(): Goal[] {
+  return [
+    {
+      id: "goal-starter",
+      title: "Get to know Goals",
+      why: "A two-minute tour. Work through the steps below, then delete this goal.",
+      createdAt: Date.now(),
+      steps: [
+        {
+          id: id("s"),
+          text: "Create your own goal",
+          done: false,
+          description: "Hit “+ New Goal” at the top and name something you actually want to do.",
+        },
+        {
+          id: id("s"),
+          text: "Open it and add a few steps",
+          done: false,
+          description:
+            "Small steps beat big ones — one sitting's worth of work each. Group them into stages when the goal grows.",
+        },
+        { id: id("s"), text: "Mark a step done", done: false },
+        {
+          id: id("s"),
+          text: "Add a note about how it's going",
+          done: false,
+          description: "Notes are the goal's diary: what's working, what's stuck, what's next.",
+        },
+        { id: id("s"), text: "Delete this starter goal", done: false },
+      ],
+      groups: [],
+    },
+  ];
+}
+
+// Example data mirroring the design sketches. The canonical fixed-id copy is
+// what the e2e test user gets (see users.resetTestUser); real users get the
+// starter goal above instead.
 export function seedGoals(): Goal[] {
   return [
     {
       id: "goal-podcast",
       title: "Launch my podcast",
       why: "Prove to myself I can ship something creative from start to finish.",
-      createdAt: Date.now() - 1000 * 60 * 60 * 24 * 20,
+      createdAt: Date.now() - 20 * DAY,
+      updatedAt: Date.now() - 1 * DAY,
       notes: notes([
         [
           "c-podcast-1",
@@ -118,7 +161,9 @@ export function seedGoals(): Goal[] {
     {
       id: "goal-marathon",
       title: "Run a half marathon",
-      createdAt: Date.now() - 1000 * 60 * 60 * 24 * 40,
+      createdAt: Date.now() - 40 * DAY,
+      // Untouched long enough to demo the stale treatment on the home page.
+      updatedAt: Date.now() - 20 * DAY,
       notes: notes([
         ["c-marathon-1", "The 16k long run is the one I keep putting off. It's the wall.", 3],
       ]),
@@ -162,13 +207,49 @@ export function seedGoals(): Goal[] {
     {
       id: "goal-watercolor",
       title: "Learn watercolor painting",
-      createdAt: Date.now() - 1000 * 60 * 60 * 24 * 2,
+      createdAt: Date.now() - 2 * DAY,
       groups: [],
+    },
+    {
+      id: "goal-books",
+      title: "Read 12 books this year",
+      createdAt: Date.now() - 90 * DAY,
+      status: "paused",
+      pausedAt: Date.now() - 16 * DAY,
+      updatedAt: Date.now() - 16 * DAY,
+      groups: [
+        {
+          id: id("g"),
+          title: "First quarter",
+          steps: steps([
+            ["Book 1", true],
+            ["Book 2", true],
+            ["Book 3", true],
+            ["Book 4", false],
+          ]),
+        },
+        {
+          id: id("g"),
+          title: "Rest of the year",
+          steps: steps([
+            ["Book 5", true],
+            ["Book 6", false],
+            ["Book 7", false],
+            ["Book 8", false],
+            ["Book 9", false],
+            ["Book 10", false],
+            ["Book 11", false],
+            ["Book 12", false],
+          ]),
+        },
+      ],
     },
     {
       id: "goal-website",
       title: "Redesign personal website",
-      createdAt: Date.now() - 1000 * 60 * 60 * 24 * 60,
+      createdAt: Date.now() - 60 * DAY,
+      // Finished 18 days ago → "finished in 6 weeks" on the completed row.
+      updatedAt: Date.now() - 18 * DAY,
       groups: [
         {
           id: id("g"),

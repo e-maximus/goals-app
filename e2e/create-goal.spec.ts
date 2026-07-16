@@ -4,7 +4,8 @@ test.describe("Creating a goal", () => {
   test("creates a goal from the dialog and opens its detail page", async ({ page }) => {
     await page.goto("/");
 
-    await page.getByRole("button", { name: "+ New Goal" }).click();
+    // The button lives among the goals, not in the topbar.
+    await page.getByRole("main").getByRole("button", { name: "+ New Goal" }).click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByText("New goal")).toBeVisible();
@@ -17,7 +18,13 @@ test.describe("Creating a goal", () => {
     await expect(page).toHaveURL(/\/goal\//);
     await expect(page.getByRole("heading", { name: "Learn to juggle", level: 1 })).toBeVisible();
     await expect(page.getByText("For fun at parties")).toBeVisible();
-    await expect(page.getByText("No groups yet")).toBeVisible();
+    await expect(page.getByText("No steps yet")).toBeVisible();
+  });
+
+  test("the detail page has no New Goal button — it lives on the dashboard", async ({ page }) => {
+    await page.goto("/goal/goal-podcast");
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+    await expect(page.getByRole("button", { name: "+ New Goal" })).toHaveCount(0);
   });
 
   test("disables the submit button until a title is entered", async ({ page }) => {

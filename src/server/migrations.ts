@@ -140,4 +140,72 @@ export const migrations: Migration[] = [
       ALTER TABLE users ADD COLUMN clerk_user_id TEXT UNIQUE;
     `,
   },
+  {
+    name: "007_goal_status_activity",
+    sql: `
+      -- A goal gains a lifecycle status (active/paused — completed stays derived
+      -- from its steps), a last-activity stamp, and the moment it was paused.
+      --
+      -- \`updated_at\` is client-owned on the whole-store PUT path (the client
+      -- bumps only the goal it mutated; replaceAll persists it verbatim) and
+      -- server-set on targeted MCP mutations. Backfilled from created_at so
+      -- existing goals read as "active since creation" rather than "today".
+      -- \`paused_at\` is separate from \`updated_at\` because pausing also counts
+      -- as activity; it is cleared on resume.
+      ALTER TABLE goals ADD COLUMN status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'paused'));
+      ALTER TABLE goals ADD COLUMN updated_at BIGINT;
+      UPDATE goals SET updated_at = created_at;
+      ALTER TABLE goals ALTER COLUMN updated_at SET NOT NULL;
+      ALTER TABLE goals ADD COLUMN paused_at BIGINT;
+    `,
+  },
+  {
+    name: "008_ungrouped_steps",
+    sql: `
+      -- A step may now live directly on a goal, outside any group. A step has
+      -- exactly one parent: either a group (grouped, as before) or a goal
+      -- (ungrouped) — the CHECK enforces the exclusive-or. Existing rows all
+      -- have a group and pass with goal_id NULL.
+      ALTER TABLE steps ADD COLUMN goal_id TEXT REFERENCES goals (id) ON DELETE CASCADE;
+      ALTER TABLE steps ALTER COLUMN group_id DROP NOT NULL;
+      ALTER TABLE steps ADD CONSTRAINT steps_one_parent
+        CHECK ((group_id IS NULL) <> (goal_id IS NULL));
+      CREATE INDEX IF NOT EXISTS steps_goal_id_idx ON steps (goal_id);
+    `,
+  },
+  {
+    name: "009_due_dates",
+    sql: `
+      -- Optional deadlines, at day granularity. Stored as epoch milliseconds of
+      -- UTC midnight (matching the app's other timestamps); NULL means no
+      -- deadline. Goals, groups and steps each carry their own.
+      ALTER TABLE goals  ADD COLUMN due_date BIGINT;
+      ALTER TABLE groups ADD COLUMN due_date BIGINT;
+      ALTER TABLE steps  ADD COLUMN due_date BIGINT;
+    `,
+  },
+  {
+    name: "010_user_identity",
+    sql: `
+      -- Every account gets a friendly face for the topbar: a generated
+      -- adjective-animal name and a matching emoji avatar. Signed-in users are
+      -- shown their Clerk profile instead, but the columns are minted for
+      -- everyone so an anonymous visitor has an identity from the first visit.
+      -- Existing rows are backfilled deterministically from the account id.
+      ALTER TABLE users ADD COLUMN display_name TEXT;
+      ALTER TABLE users ADD COLUMN avatar TEXT;
+      UPDATE users SET
+        display_name = (ARRAY[
+          'Shiny Fox', 'Bright Capybara', 'Quiet Owl', 'Swift Otter', 'Calm Panda',
+          'Bold Tiger', 'Sunny Koala', 'Brave Penguin', 'Gentle Whale', 'Curious Lynx',
+          'Steady Tortoise', 'Merry Dolphin', 'Wise Badger', 'Clever Raven'
+        ])[(abs(hashtext(id)) % 14) + 1],
+        avatar = (ARRAY[
+          '🦊', '🦫', '🦉', '🦦', '🐼',
+          '🐯', '🐨', '🐧', '🐋', '🐱',
+          '🐢', '🐬', '🦡', '🐦'
+        ])[(abs(hashtext(id)) % 14) + 1];
+    `,
+  },
 ];

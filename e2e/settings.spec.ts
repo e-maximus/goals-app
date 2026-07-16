@@ -13,12 +13,34 @@ test.describe("settings (anonymous)", () => {
     await expect(page).toHaveURL(/\/settings$/);
     // The content waits for clerk-js from Clerk's CDN before loading the
     // identity, which can take longer than the default expect timeout.
-    await expect(page.getByText("User ID")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("User ID", { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("Stable authentication")).toBeVisible();
 
     // The MCP section is present but locked behind sign-in.
     await expect(page.getByText("MCP access", { exact: true })).toBeVisible();
     await expect(page.getByText("Sign in above to enable MCP access.")).toBeVisible();
+  });
+
+  test("warns that the anonymous session is temporary", async ({ page }) => {
+    await page.goto("/settings");
+
+    await expect(page.getByText("Temporary session")).toBeVisible();
+    await expect(page.getByText(/this account and all its goals are gone/)).toBeVisible();
+    // The account card names the generated identity (fixed for the e2e user).
+    await expect(page.getByText(/anonymously as Shiny Fox/)).toBeVisible();
+  });
+
+  test("shows the generated identity chip in the topbar", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByRole("link", { name: /Launch my podcast/ })).toBeVisible();
+
+    const chip = page.getByRole("link", { name: "Account" });
+    await expect(chip).toBeVisible();
+    await expect(chip).toContainText("Shiny Fox");
+
+    // The chip is a shortcut to Settings.
+    await chip.click();
+    await expect(page).toHaveURL(/\/settings$/);
   });
 
   test("hides the MCP endpoint until signed in", async ({ page }) => {

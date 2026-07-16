@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Show, SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Copy, Lock, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Check, Copy, Lock, ShieldCheck, TriangleAlert } from "lucide-react";
 import { fetchMe, type Me } from "@/lib/sync";
 import { LoadingState } from "@/components/ui-bits";
 import { Button } from "@/components/ui/button";
@@ -90,7 +90,8 @@ export function Settings() {
           </div>
         ) : me ? (
           <>
-            <AccountCard userId={me.userId} linked={me.clerkUserId !== null} />
+            {me.clerkUserId === null && <TemporarySessionWarning />}
+            <AccountCard me={me} />
             <StableAuthCard />
             <McpCard endpoint={`${origin}/api/mcp`} />
           </>
@@ -100,20 +101,49 @@ export function Settings() {
   );
 }
 
-function AccountCard({ userId, linked }: { userId: string; linked: boolean }) {
+/**
+ * The honest warning an anonymous visitor needs: their whole account hangs off
+ * a browser cookie. Shown above everything else so it can't be missed; the
+ * fix (signing in) is one card below.
+ */
+function TemporarySessionWarning() {
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-warning/60 bg-warning/10 px-5 py-4">
+      <TriangleAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-warning-foreground" aria-hidden />
+      <div className="space-y-1">
+        <p className="text-sm font-semibold">Temporary session</p>
+        <p className="text-[13px] text-muted-foreground">
+          Your user ID and session live in this browser&apos;s cookie. If the cookie is cleared —
+          private mode ends, browser data is wiped, or you switch devices — this account and all
+          its goals are gone for good. Create an account below to keep them.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function AccountCard({ me }: { me: Me }) {
+  const linked = me.clerkUserId !== null;
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Account</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          {me.avatar && (
+            <span aria-hidden className="text-base">
+              {me.avatar}
+            </span>
+          )}
+          Account
+        </CardTitle>
         <CardDescription>
           {linked
             ? "This account is linked to your sign-in, so it follows you across browsers and devices."
-            : "You're using this app anonymously — this browser is your account, and your goals are private to it."}
+            : `You're using this app anonymously as ${me.displayName ?? "a guest"} — this browser is your account, and your goals are private to it.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
         <FieldLabel>User ID</FieldLabel>
-        <CopyRow value={userId} />
+        <CopyRow value={me.userId} />
       </CardContent>
     </Card>
   );

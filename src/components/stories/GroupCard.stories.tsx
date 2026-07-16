@@ -34,6 +34,14 @@ export const States: Story = {
         <div className="text-xs font-medium text-muted-foreground">Empty</div>
         <GroupCardLive title="Ideas" steps={empty} />
       </div>
+      <div className="flex flex-col gap-2">
+        <div className="text-xs font-medium text-muted-foreground">Next-step highlight</div>
+        <GroupCardLive title="Research" steps={inProgress} highlightNext />
+      </div>
+      <div className="flex flex-col gap-2">
+        <div className="text-xs font-medium text-muted-foreground">Collapsed</div>
+        <GroupCardLive title="Research" steps={inProgress} collapsible />
+      </div>
     </div>
   ),
 };

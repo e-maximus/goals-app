@@ -33,10 +33,16 @@ export async function fetchState(): Promise<ServerState> {
 }
 
 /**
- * The current user's identity, for the Settings screen. `clerkUserId` is the
- * linked Clerk identity, or null while the account is purely anonymous.
+ * The current user's identity, for the Settings screen and the topbar chip.
+ * `clerkUserId` is the linked Clerk identity, or null while the account is
+ * purely anonymous; `displayName`/`avatar` are the generated animal identity.
  */
-export type Me = { userId: string; clerkUserId: string | null };
+export type Me = {
+  userId: string;
+  clerkUserId: string | null;
+  displayName: string | null;
+  avatar: string | null;
+};
 
 export async function fetchMe(): Promise<Me> {
   const res = await fetch("/api/me");
