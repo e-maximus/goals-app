@@ -11,3 +11,6 @@ playwright-report
 storybook-static
 *.log
 .DS_Store
+# Local env files carry secrets (e.g. CLERK_SECRET_KEY) — keep them out of the
+# build context so a local `docker compose build` never bakes them into layers.
+.env*
