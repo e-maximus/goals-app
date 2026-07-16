@@ -1,17 +1,20 @@
 import { clerkSetup } from "@clerk/testing/playwright";
 
 /**
- * Playwright global setup for the optional Clerk-authenticated tests.
+ * Playwright global setup.
  *
- * The normal suite runs entirely anonymously (cookie session) and needs none of
- * this, so we only reach out to Clerk when E2E_CLERK_AUTH=1 — otherwise this is
- * a no-op and the suite has no dependency on Clerk credentials at setup time.
+ * The app is wrapped in ClerkProvider and runs clerkMiddleware, so even the
+ * anonymous suite loads through Clerk: on a development instance a real browser
+ * is bounced through a dev-browser handshake before any page renders. clerkSetup()
+ * obtains a Testing Token (using CLERK_SECRET_KEY / the publishable key from the
+ * environment) that setupClerkTestingToken() then uses to wave the browser past
+ * that handshake and Clerk's bot protection — see e2e/fixtures.ts and
+ * settings-auth.spec.ts.
  *
- * When enabled, clerkSetup() obtains a Testing Token (using CLERK_SECRET_KEY /
- * the publishable key from the environment) so setupClerkTestingToken() can wave
- * the browser past Clerk's bot protection during sign-in. See settings-auth.spec.ts.
+ * Only runs when Clerk is configured (always in CI and in a real deploy). With no
+ * keys it's a no-op, so a bare local run has no dependency on Clerk at setup time.
  */
 export default async function globalSetup() {
-  if (process.env.E2E_CLERK_AUTH !== "1") return;
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) return;
   await clerkSetup();
 }
