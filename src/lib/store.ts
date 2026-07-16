@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { create } from "zustand";
-import type { Goal, GoalStatus } from "./types";
+import type { Goal, GoalStatus, Step } from "./types";
 import { SyncConflictError, fetchState, pushGoals } from "./sync";
 
 function uid(): string {
@@ -17,6 +17,18 @@ function uid(): string {
  */
 function touched(goal: Goal): Goal {
   return { ...goal, updatedAt: Date.now() };
+}
+
+/**
+ * Apply `fn` to the step list a target lives in: the goal's own ungrouped
+ * steps when `groupId` is null, or the named group's steps otherwise.
+ */
+function withSteps(goal: Goal, groupId: string | null, fn: (steps: Step[]) => Step[]): Goal {
+  if (groupId === null) return { ...goal, steps: fn(goal.steps ?? []) };
+  return {
+    ...goal,
+    groups: goal.groups.map((gr) => (gr.id === groupId ? { ...gr, steps: fn(gr.steps) } : gr)),
+  };
 }
 
 /**
@@ -40,24 +52,32 @@ type StoreState = {
   /** Load the goals from the server. Called once on mount; safe to call again to retry. */
   load: () => Promise<void>;
 
-  addGoal: (title: string, why?: string) => Goal;
-  updateGoal: (goalId: string, title: string, why?: string) => void;
+  addGoal: (title: string, why?: string, dueDate?: number) => Goal;
+  updateGoal: (goalId: string, title: string, why?: string, dueDate?: number) => void;
   /** Pause or resume a goal. Pausing records when; resuming clears it. */
   setGoalStatus: (goalId: string, status: GoalStatus) => void;
-  addGroup: (goalId: string, title: string) => void;
-  renameGroup: (goalId: string, groupId: string, title: string) => void;
-  addStep: (goalId: string, groupId: string, text: string, description?: string) => void;
+  addGroup: (goalId: string, title: string, dueDate?: number) => void;
+  renameGroup: (goalId: string, groupId: string, title: string, dueDate?: number) => void;
+  // Step actions take `groupId: null` for a step living directly on the goal.
+  addStep: (
+    goalId: string,
+    groupId: string | null,
+    text: string,
+    description?: string,
+    dueDate?: number
+  ) => void;
   editStep: (
     goalId: string,
-    groupId: string,
+    groupId: string | null,
     stepId: string,
     text: string,
-    description?: string
+    description?: string,
+    dueDate?: number
   ) => void;
-  toggleStep: (goalId: string, groupId: string, stepId: string) => void;
+  toggleStep: (goalId: string, groupId: string | null, stepId: string) => void;
   deleteGoal: (goalId: string) => void;
   deleteGroup: (goalId: string, groupId: string) => void;
-  deleteStep: (goalId: string, groupId: string, stepId: string) => void;
+  deleteStep: (goalId: string, groupId: string | null, stepId: string) => void;
   addNote: (goalId: string, text: string, stepId?: string) => void;
   editNote: (goalId: string, noteId: string, text: string, stepId?: string) => void;
   deleteNote: (goalId: string, noteId: string) => void;
@@ -97,12 +117,14 @@ export const useStore = create<StoreState>((set) => ({
     }
   },
 
-  addGoal: (title, why) => {
+  addGoal: (title, why, dueDate) => {
     const now = Date.now();
     const goal: Goal = {
       id: uid(),
       title: title.trim(),
       why: why?.trim() || undefined,
+      dueDate,
+      steps: [],
       groups: [],
       createdAt: now,
       updatedAt: now,
@@ -112,13 +134,14 @@ export const useStore = create<StoreState>((set) => ({
     return goal;
   },
 
-  updateGoal: (goalId, title, why) => {
+  updateGoal: (goalId, title, why, dueDate) => {
     const next = title.trim();
     if (!next) return;
     set((s) => ({
       goals: s.goals.map((g) =>
-        // An empty `why` clears it, matching addGoal's treatment of the field.
-        g.id === goalId ? touched({ ...g, title: next, why: why?.trim() || undefined }) : g
+        // An empty `why` clears it (matching addGoal); an absent dueDate clears
+        // the deadline — the edit dialog always submits the full picture.
+        g.id === goalId ? touched({ ...g, title: next, why: why?.trim() || undefined, dueDate }) : g
       ),
     }));
   },
@@ -137,16 +160,22 @@ export const useStore = create<StoreState>((set) => ({
       ),
     })),
 
-  addGroup: (goalId, title) =>
+  addGroup: (goalId, title, dueDate) =>
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? touched({ ...g, groups: [...g.groups, { id: uid(), title: title.trim(), steps: [] }] })
+          ? touched({
+              ...g,
+              groups: [
+                ...g.groups,
+                { id: uid(), title: title.trim(), steps: [], ...(dueDate ? { dueDate } : {}) },
+              ],
+            })
           : g
       ),
     })),
 
-  renameGroup: (goalId, groupId, title) => {
+  renameGroup: (goalId, groupId, title, dueDate) => {
     const next = title.trim();
     if (!next) return;
     set((s) => ({
@@ -155,7 +184,9 @@ export const useStore = create<StoreState>((set) => ({
           ? touched({
               ...g,
               groups: g.groups.map((gr) =>
-                gr.id === groupId ? { ...gr, title: next } : gr
+                // The dialog always submits the full picture, so an absent
+                // dueDate clears the deadline.
+                gr.id === groupId ? { ...gr, title: next, dueDate } : gr
               ),
             })
           : g
@@ -163,51 +194,44 @@ export const useStore = create<StoreState>((set) => ({
     }));
   },
 
-  addStep: (goalId, groupId, text, description) => {
+  addStep: (goalId, groupId, text, description, dueDate) => {
     const desc = description?.trim() || undefined;
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? touched({
-              ...g,
-              groups: g.groups.map((gr) =>
-                gr.id === groupId
-                  ? {
-                      ...gr,
-                      steps: [
-                        ...gr.steps,
-                        { id: uid(), text: text.trim(), ...(desc ? { description: desc } : {}), done: false },
-                      ],
-                    }
-                  : gr
-              ),
-            })
+          ? touched(
+              withSteps(g, groupId, (steps) => [
+                ...steps,
+                {
+                  id: uid(),
+                  text: text.trim(),
+                  ...(desc ? { description: desc } : {}),
+                  done: false,
+                  ...(dueDate ? { dueDate } : {}),
+                },
+              ])
+            )
           : g
       ),
     }));
   },
 
-  editStep: (goalId, groupId, stepId, text, description) => {
+  editStep: (goalId, groupId, stepId, text, description, dueDate) => {
     const next = text.trim();
     if (!next) return;
-    // An empty description clears it, matching addStep's treatment of the field.
+    // An empty description clears it, matching addStep's treatment of the
+    // field; likewise an absent dueDate clears the deadline.
     const desc = description?.trim() || undefined;
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? touched({
-              ...g,
-              groups: g.groups.map((gr) =>
-                gr.id === groupId
-                  ? {
-                      ...gr,
-                      steps: gr.steps.map((step) =>
-                        step.id === stepId ? { ...step, text: next, description: desc } : step
-                      ),
-                    }
-                  : gr
-              ),
-            })
+          ? touched(
+              withSteps(g, groupId, (steps) =>
+                steps.map((step) =>
+                  step.id === stepId ? { ...step, text: next, description: desc, dueDate } : step
+                )
+              )
+            )
           : g
       ),
     }));
@@ -217,19 +241,11 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? touched({
-              ...g,
-              groups: g.groups.map((gr) =>
-                gr.id === groupId
-                  ? {
-                      ...gr,
-                      steps: gr.steps.map((step) =>
-                        step.id === stepId ? { ...step, done: !step.done } : step
-                      ),
-                    }
-                  : gr
-              ),
-            })
+          ? touched(
+              withSteps(g, groupId, (steps) =>
+                steps.map((step) => (step.id === stepId ? { ...step, done: !step.done } : step))
+              )
+            )
           : g
       ),
     })),
@@ -248,14 +264,7 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({
       goals: s.goals.map((g) =>
         g.id === goalId
-          ? touched({
-              ...g,
-              groups: g.groups.map((gr) =>
-                gr.id === groupId
-                  ? { ...gr, steps: gr.steps.filter((step) => step.id !== stepId) }
-                  : gr
-              ),
-            })
+          ? touched(withSteps(g, groupId, (steps) => steps.filter((step) => step.id !== stepId)))
           : g
       ),
     })),

@@ -38,13 +38,20 @@ export class ConflictError extends Error {
   }
 }
 
-/** Shape a step row into a domain Step, omitting an absent description. */
-function toStep(row: { id: string; text: string; description: string | null; done: boolean }): Step {
+/** Shape a step row into a domain Step, omitting absent optional fields. */
+function toStep(row: {
+  id: string;
+  text: string;
+  description: string | null;
+  done: boolean;
+  due_date: number | null;
+}): Step {
   return {
     id: row.id,
     text: row.text,
     ...(row.description ? { description: row.description } : {}),
     done: row.done,
+    ...(row.due_date ? { dueDate: row.due_date } : {}),
   };
 }
 
@@ -83,16 +90,20 @@ async function goalIdOfGroup(
   return rows[0]?.goal_id ?? null;
 }
 
-/** Resolve a step's goal, scoped to the owner; null if not theirs. */
+/**
+ * Resolve a step's goal, scoped to the owner; null if not theirs. A step's
+ * parent is either its group's goal or — for an ungrouped step — the goal
+ * itself, hence the LEFT JOIN + COALESCE.
+ */
 async function goalIdOfStep(
   client: Client,
   ownerId: string,
   stepId: string
 ): Promise<string | null> {
   const { rows } = await client.query<{ goal_id: string }>(
-    `SELECT gr.goal_id FROM steps s
-       JOIN groups gr ON s.group_id = gr.id
-       JOIN goals g ON gr.goal_id = g.id
+    `SELECT g.id AS goal_id FROM steps s
+       LEFT JOIN groups gr ON s.group_id = gr.id
+       JOIN goals g ON g.id = COALESCE(s.goal_id, gr.goal_id)
       WHERE s.id = $1 AND g.owner_id = $2`,
     [stepId, ownerId]
   );
@@ -116,8 +127,8 @@ async function readUpdatedAt(client: Client | Pool, ownerId: string): Promise<nu
 export async function insertGoals(client: Client, ownerId: string, goals: Goal[]): Promise<void> {
   for (const [goalIndex, goal] of goals.entries()) {
     await client.query(
-      `INSERT INTO goals (id, owner_id, title, why, created_at, updated_at, status, paused_at, position)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      `INSERT INTO goals (id, owner_id, title, why, created_at, updated_at, status, paused_at, due_date, position)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         goal.id,
         ownerId,
@@ -129,6 +140,7 @@ export async function insertGoals(client: Client, ownerId: string, goals: Goal[]
         goal.updatedAt ?? goal.createdAt,
         goal.status ?? "active",
         goal.pausedAt ?? null,
+        goal.dueDate ?? null,
         goalIndex,
       ]
     );
@@ -137,17 +149,28 @@ export async function insertGoals(client: Client, ownerId: string, goals: Goal[]
     // since-deleted step is stored as NULL rather than tripping the foreign key.
     const stepIds = new Set<string>();
 
+    // The goal's own steps, outside any group: goal_id set, group_id NULL.
+    for (const [stepIndex, step] of (goal.steps ?? []).entries()) {
+      stepIds.add(step.id);
+      await client.query(
+        `INSERT INTO steps (id, goal_id, text, description, done, due_date, position)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [step.id, goal.id, step.text, step.description ?? null, step.done, step.dueDate ?? null, stepIndex]
+      );
+    }
+
     for (const [groupIndex, group] of goal.groups.entries()) {
       await client.query(
-        "INSERT INTO groups (id, goal_id, title, position) VALUES ($1, $2, $3, $4)",
-        [group.id, goal.id, group.title, groupIndex]
+        "INSERT INTO groups (id, goal_id, title, due_date, position) VALUES ($1, $2, $3, $4, $5)",
+        [group.id, goal.id, group.title, group.dueDate ?? null, groupIndex]
       );
 
       for (const [stepIndex, step] of group.steps.entries()) {
         stepIds.add(step.id);
         await client.query(
-          "INSERT INTO steps (id, group_id, text, description, done, position) VALUES ($1, $2, $3, $4, $5, $6)",
-          [step.id, group.id, step.text, step.description ?? null, step.done, stepIndex]
+          `INSERT INTO steps (id, group_id, text, description, done, due_date, position)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [step.id, group.id, step.text, step.description ?? null, step.done, step.dueDate ?? null, stepIndex]
         );
       }
     }
@@ -174,31 +197,41 @@ export async function getState(pool: Pool, ownerId: string): Promise<StoreState>
     updated_at: number;
     status: GoalStatus;
     paused_at: number | null;
+    due_date: number | null;
   }>(
-    `SELECT id, title, why, created_at, updated_at, status, paused_at
+    `SELECT id, title, why, created_at, updated_at, status, paused_at, due_date
        FROM goals WHERE owner_id = $1 ORDER BY position, id`,
     [ownerId]
   );
 
-  const groupRows = await pool.query<{ id: string; goal_id: string; title: string }>(
-    `SELECT gr.id, gr.goal_id, gr.title
+  const groupRows = await pool.query<{
+    id: string;
+    goal_id: string;
+    title: string;
+    due_date: number | null;
+  }>(
+    `SELECT gr.id, gr.goal_id, gr.title, gr.due_date
        FROM groups gr JOIN goals g ON gr.goal_id = g.id
       WHERE g.owner_id = $1
       ORDER BY gr.position, gr.id`,
     [ownerId]
   );
 
+  // A step hangs off a group or directly off a goal (ungrouped), hence the
+  // LEFT JOIN — `goal_id` is non-null exactly for the ungrouped ones.
   const stepRows = await pool.query<{
     id: string;
-    group_id: string;
+    group_id: string | null;
+    goal_id: string | null;
     text: string;
     description: string | null;
     done: boolean;
+    due_date: number | null;
   }>(
-    `SELECT s.id, s.group_id, s.text, s.description, s.done
+    `SELECT s.id, s.group_id, s.goal_id, s.text, s.description, s.done, s.due_date
        FROM steps s
-       JOIN groups gr ON s.group_id = gr.id
-       JOIN goals g ON gr.goal_id = g.id
+       LEFT JOIN groups gr ON s.group_id = gr.id
+       JOIN goals g ON g.id = COALESCE(s.goal_id, gr.goal_id)
       WHERE g.owner_id = $1
       ORDER BY s.position, s.id`,
     [ownerId]
@@ -219,16 +252,28 @@ export async function getState(pool: Pool, ownerId: string): Promise<StoreState>
   );
 
   const stepsByGroup = new Map<string, Step[]>();
+  const stepsByGoal = new Map<string, Step[]>();
   for (const s of stepRows.rows) {
-    const list = stepsByGroup.get(s.group_id) ?? [];
-    list.push(toStep(s));
-    stepsByGroup.set(s.group_id, list);
+    if (s.group_id) {
+      const list = stepsByGroup.get(s.group_id) ?? [];
+      list.push(toStep(s));
+      stepsByGroup.set(s.group_id, list);
+    } else if (s.goal_id) {
+      const list = stepsByGoal.get(s.goal_id) ?? [];
+      list.push(toStep(s));
+      stepsByGoal.set(s.goal_id, list);
+    }
   }
 
   const groupsByGoal = new Map<string, Group[]>();
   for (const g of groupRows.rows) {
     const list = groupsByGoal.get(g.goal_id) ?? [];
-    list.push({ id: g.id, title: g.title, steps: stepsByGroup.get(g.id) ?? [] });
+    list.push({
+      id: g.id,
+      title: g.title,
+      steps: stepsByGroup.get(g.id) ?? [],
+      ...(g.due_date ? { dueDate: g.due_date } : {}),
+    });
     groupsByGoal.set(g.goal_id, list);
   }
 
@@ -252,6 +297,8 @@ export async function getState(pool: Pool, ownerId: string): Promise<StoreState>
     updatedAt: g.updated_at,
     status: g.status,
     ...(g.paused_at ? { pausedAt: g.paused_at } : {}),
+    ...(g.due_date ? { dueDate: g.due_date } : {}),
+    steps: stepsByGoal.get(g.id) ?? [],
     groups: groupsByGoal.get(g.id) ?? [],
     notes: notesByGoal.get(g.id) ?? [],
   }));
@@ -322,7 +369,8 @@ export async function createGoal(
   pool: Pool,
   ownerId: string,
   title: string,
-  why?: string
+  why?: string,
+  dueDate?: number
 ): Promise<Goal> {
   return withTransaction(pool, async (client) => {
     const now = Date.now();
@@ -333,15 +381,17 @@ export async function createGoal(
       createdAt: now,
       updatedAt: now,
       status: "active",
+      ...(dueDate ? { dueDate } : {}),
+      steps: [],
       groups: [],
       notes: [],
     };
     // New goals go to the top of this owner's list, matching the app's addGoal.
     await client.query("UPDATE goals SET position = position + 1 WHERE owner_id = $1", [ownerId]);
     await client.query(
-      `INSERT INTO goals (id, owner_id, title, why, created_at, updated_at, status, position)
-       VALUES ($1, $2, $3, $4, $5, $5, 'active', 0)`,
-      [goal.id, ownerId, goal.title, goal.why ?? null, goal.createdAt]
+      `INSERT INTO goals (id, owner_id, title, why, created_at, updated_at, status, due_date, position)
+       VALUES ($1, $2, $3, $4, $5, $5, 'active', $6, 0)`,
+      [goal.id, ownerId, goal.title, goal.why ?? null, goal.createdAt, goal.dueDate ?? null]
     );
     await touch(client, ownerId);
     return goal;
@@ -349,14 +399,15 @@ export async function createGoal(
 }
 
 /**
- * Change a goal's title and/or its "why". Fields left undefined are untouched;
- * passing an empty `why` clears it, matching how the app treats the field.
+ * Change a goal's title, its "why", and/or its due date. Fields left undefined
+ * are untouched; passing an empty `why` clears it, and a null `dueDate` clears
+ * the deadline, matching how the app treats the fields.
  */
 export async function updateGoal(
   pool: Pool,
   ownerId: string,
   goalId: string,
-  changes: { title?: string; why?: string }
+  changes: { title?: string; why?: string; dueDate?: number | null }
 ): Promise<Goal> {
   await withTransaction(pool, async (client) => {
     await requireGoal(client, ownerId, goalId);
@@ -375,6 +426,14 @@ export async function updateGoal(
       await client.query("UPDATE goals SET why = $2 WHERE id = $1 AND owner_id = $3", [
         goalId,
         changes.why.trim() || null,
+        ownerId,
+      ]);
+    }
+
+    if (changes.dueDate !== undefined) {
+      await client.query("UPDATE goals SET due_date = $2 WHERE id = $1 AND owner_id = $3", [
+        goalId,
+        changes.dueDate,
         ownerId,
       ]);
     }
@@ -424,15 +483,16 @@ export async function addGroup(
   pool: Pool,
   ownerId: string,
   goalId: string,
-  title: string
+  title: string,
+  dueDate?: number
 ): Promise<Group> {
   return withTransaction(pool, async (client) => {
     await requireGoal(client, ownerId, goalId);
-    const group: Group = { id: uid(), title: title.trim(), steps: [] };
+    const group: Group = { id: uid(), title: title.trim(), steps: [], ...(dueDate ? { dueDate } : {}) };
     await client.query(
-      `INSERT INTO groups (id, goal_id, title, position)
-       VALUES ($1, $2, $3, (SELECT COALESCE(MAX(position) + 1, 0) FROM groups WHERE goal_id = $2))`,
-      [group.id, goalId, group.title]
+      `INSERT INTO groups (id, goal_id, title, due_date, position)
+       VALUES ($1, $2, $3, $4, (SELECT COALESCE(MAX(position) + 1, 0) FROM groups WHERE goal_id = $2))`,
+      [group.id, goalId, group.title, group.dueDate ?? null]
     );
     await touchGoal(client, goalId);
     await touch(client, ownerId);
@@ -440,16 +500,24 @@ export async function addGroup(
   });
 }
 
+/**
+ * Change a group's title and/or due date. A null `dueDate` clears the
+ * deadline; leaving it undefined keeps whatever is there.
+ */
 export async function renameGroup(
   pool: Pool,
   ownerId: string,
   groupId: string,
-  title: string
+  title: string,
+  dueDate?: number | null
 ): Promise<void> {
   await withTransaction(pool, async (client) => {
     const goalId = await goalIdOfGroup(client, ownerId, groupId);
     if (!goalId) throw new NotFoundError("Group", groupId);
     await client.query("UPDATE groups SET title = $2 WHERE id = $1", [groupId, title.trim()]);
+    if (dueDate !== undefined) {
+      await client.query("UPDATE groups SET due_date = $2 WHERE id = $1", [groupId, dueDate]);
+    }
     await touchGoal(client, goalId);
     await touch(client, ownerId);
   });
@@ -469,47 +537,77 @@ export async function deleteGroup(pool: Pool, ownerId: string, groupId: string):
   });
 }
 
+/**
+ * Add a step under exactly one parent: a group (`target.groupId`) or directly
+ * on a goal (`target.goalId`) for an ungrouped step.
+ */
 export async function addStep(
   pool: Pool,
   ownerId: string,
-  groupId: string,
+  target: { goalId?: string; groupId?: string },
   text: string,
-  description?: string
+  description?: string,
+  dueDate?: number
 ): Promise<Step> {
+  if (Boolean(target.goalId) === Boolean(target.groupId)) {
+    throw new ValidationError("A step needs exactly one parent — pass a goalId or a groupId");
+  }
   return withTransaction(pool, async (client) => {
-    const goalId = await goalIdOfGroup(client, ownerId, groupId);
-    if (!goalId) throw new NotFoundError("Group", groupId);
+    let goalId: string;
+    if (target.groupId) {
+      const resolved = await goalIdOfGroup(client, ownerId, target.groupId);
+      if (!resolved) throw new NotFoundError("Group", target.groupId);
+      goalId = resolved;
+    } else {
+      await requireGoal(client, ownerId, target.goalId!);
+      goalId = target.goalId!;
+    }
 
     const desc = description?.trim() || null;
-    const step: Step = { id: uid(), text: text.trim(), ...(desc ? { description: desc } : {}), done: false };
-    await client.query(
-      `INSERT INTO steps (id, group_id, text, description, done, position)
-       VALUES ($1, $2, $3, $4, FALSE, (SELECT COALESCE(MAX(position) + 1, 0) FROM steps WHERE group_id = $2))`,
-      [step.id, groupId, step.text, desc]
-    );
+    const step: Step = {
+      id: uid(),
+      text: text.trim(),
+      ...(desc ? { description: desc } : {}),
+      done: false,
+      ...(dueDate ? { dueDate } : {}),
+    };
+    if (target.groupId) {
+      await client.query(
+        `INSERT INTO steps (id, group_id, text, description, done, due_date, position)
+         VALUES ($1, $2, $3, $4, FALSE, $5, (SELECT COALESCE(MAX(position) + 1, 0) FROM steps WHERE group_id = $2))`,
+        [step.id, target.groupId, step.text, desc, step.dueDate ?? null]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO steps (id, goal_id, text, description, done, due_date, position)
+         VALUES ($1, $2, $3, $4, FALSE, $5, (SELECT COALESCE(MAX(position) + 1, 0) FROM steps WHERE goal_id = $2))`,
+        [step.id, goalId, step.text, desc, step.dueDate ?? null]
+      );
+    }
     await touchGoal(client, goalId);
     await touch(client, ownerId);
     return step;
   });
 }
 
-// Steps reach their owner through group → goal; this fragment scopes a step id.
-const OWNED_STEP = `id = $1 AND group_id IN (
-  SELECT gr.id FROM groups gr JOIN goals g ON gr.goal_id = g.id WHERE g.owner_id = $2
-)`;
+// Steps reach their owner through their parent — the group's goal, or the goal
+// itself for an ungrouped step. This fragment scopes a step id to an owner.
+const OWNED_STEP = `id = $1 AND COALESCE(
+  goal_id, (SELECT gr.goal_id FROM groups gr WHERE gr.id = steps.group_id)
+) IN (SELECT id FROM goals WHERE owner_id = $2)`;
 
-const STEP_COLS = "id, text, description, done";
+const STEP_COLS = "id, text, description, done, due_date";
 
 /**
- * Edit a step's title and/or description, leaving its done flag alone. Fields
- * left undefined are untouched; passing an empty `description` clears it,
- * mirroring how updateGoal treats a goal's `why`.
+ * Edit a step's title, description and/or due date, leaving its done flag
+ * alone. Fields left undefined are untouched; an empty `description` clears
+ * it, and a null `dueDate` clears the deadline.
  */
 export async function editStep(
   pool: Pool,
   ownerId: string,
   stepId: string,
-  changes: { text?: string; description?: string }
+  changes: { text?: string; description?: string; dueDate?: number | null }
 ): Promise<Step> {
   return withTransaction(pool, async (client) => {
     const goalId = await goalIdOfStep(client, ownerId, stepId);
@@ -529,11 +627,20 @@ export async function editStep(
       ]);
     }
 
+    if (changes.dueDate !== undefined) {
+      await client.query(`UPDATE steps SET due_date = $3 WHERE ${OWNED_STEP}`, [
+        stepId,
+        ownerId,
+        changes.dueDate,
+      ]);
+    }
+
     const { rows } = await client.query<{
       id: string;
       text: string;
       description: string | null;
       done: boolean;
+      due_date: number | null;
     }>(`SELECT ${STEP_COLS} FROM steps WHERE ${OWNED_STEP}`, [stepId, ownerId]);
     await touchGoal(client, goalId);
     await touch(client, ownerId);
@@ -554,6 +661,7 @@ export async function setStepDone(
       text: string;
       description: string | null;
       done: boolean;
+      due_date: number | null;
     }>(
       `UPDATE steps SET done = COALESCE($3, NOT done) WHERE ${OWNED_STEP} RETURNING ${STEP_COLS}`,
       [stepId, ownerId, done ?? null]
@@ -586,7 +694,7 @@ export async function listNotes(
   return goal.notes ?? [];
 }
 
-/** True if `stepId` is a step under `goalId`, owned by `ownerId`. */
+/** True if `stepId` is a step under `goalId` (grouped or not), owned by `ownerId`. */
 async function stepInGoal(
   client: Client,
   ownerId: string,
@@ -595,9 +703,9 @@ async function stepInGoal(
 ): Promise<boolean> {
   const { rowCount } = await client.query(
     `SELECT 1 FROM steps s
-       JOIN groups gr ON s.group_id = gr.id
-       JOIN goals g ON gr.goal_id = g.id
-      WHERE s.id = $1 AND gr.goal_id = $2 AND g.owner_id = $3`,
+       LEFT JOIN groups gr ON s.group_id = gr.id
+       JOIN goals g ON g.id = COALESCE(s.goal_id, gr.goal_id)
+      WHERE s.id = $1 AND g.id = $2 AND g.owner_id = $3`,
     [stepId, goalId, ownerId]
   );
   return Boolean(rowCount);

@@ -21,16 +21,14 @@ import { Topbar, Crumbs } from "@/components/topbar";
 import { LoadError } from "@/components/load-error";
 import { NewGoalDialog } from "@/components/new-goal-dialog";
 import { Button } from "@/components/ui/button";
-import { LoadingState, ProgressBar, SectionLabel } from "@/components/ui-bits";
+import { DueBadge, LoadingState, ProgressBar, SectionLabel } from "@/components/ui-bits";
 import { cn } from "@/lib/utils";
 
 function goalMeta(goal: Goal): string {
   const notes = noteCount(goal);
   const segments: string[] = [];
 
-  if (goal.groups.length === 0) {
-    segments.push("No groups yet");
-  } else {
+  if (goal.groups.length > 0) {
     const groupWord = goal.groups.length === 1 ? "group" : "groups";
     segments.push(`${goal.groups.length} ${groupWord}`);
   }
@@ -80,12 +78,15 @@ function GoalRow({ goal }: { goal: Goal }) {
     >
       <div className="flex items-start justify-between gap-4 sm:gap-6">
         <div className="min-w-0 flex-1">
-          <Link
-            href={`/goal/${goal.id}`}
-            className="text-base font-bold after:absolute after:inset-0 after:rounded-2xl"
-          >
-            <span className="block truncate">{goal.title}</span>
-          </Link>
+          <div className="flex items-center gap-2.5">
+            <Link
+              href={`/goal/${goal.id}`}
+              className="min-w-0 text-base font-bold after:absolute after:inset-0 after:rounded-2xl"
+            >
+              <span className="block truncate">{goal.title}</span>
+            </Link>
+            <DueBadge dueDate={goal.dueDate} done={false} />
+          </div>
           {stale ? (
             <div className="mt-1 flex items-center gap-2">
               <span className="rounded-full bg-warning/15 px-2.5 py-0.5 text-[11px] font-semibold text-warning-foreground">
@@ -123,14 +124,13 @@ function GoalRow({ goal }: { goal: Goal }) {
           <>
             <span className="min-w-0 truncate text-[13px] text-muted-foreground">
               Next: <span className="font-medium text-foreground">{next.step.text}</span>
-              {" · "}
-              {next.group.title}
+              {next.group ? ` · ${next.group.title}` : ""}
             </span>
             <Button
               variant="outline"
               size="sm"
               className="relative z-10 flex-shrink-0"
-              onClick={() => toggleStep(goal.id, next.group.id, next.step.id)}
+              onClick={() => toggleStep(goal.id, next.group?.id ?? null, next.step.id)}
             >
               Done <Check data-icon="inline-end" />
             </Button>

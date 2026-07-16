@@ -9,19 +9,19 @@ test.describe("Goal detail — groups and steps", () => {
   });
 
   test("adds a group to a goal", async ({ page }) => {
-    await expect(page.getByText("No groups yet")).toBeVisible();
+    await expect(page.getByText("No steps yet")).toBeVisible();
 
-    await page.getByRole("button", { name: "+ Add first group" }).click();
+    await page.getByRole("button", { name: "+ Add group" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Group name").fill("Fundamentals");
     await dialog.getByRole("button", { name: "Add group" }).click();
 
     await expect(page.getByRole("heading", { name: "Fundamentals", level: 3 })).toBeVisible();
-    await expect(page.getByText("Groups · 1")).toBeVisible();
+    await expect(page.getByText('Steps', { exact: true })).toBeVisible();
   });
 
   test("adds a step to a group and tracks progress", async ({ page }) => {
-    await page.getByRole("button", { name: "+ Add first group" }).click();
+    await page.getByRole("button", { name: "+ Add group" }).click();
     let dialog = page.getByRole("dialog");
     await dialog.getByLabel("Group name").fill("Fundamentals");
     await dialog.getByRole("button", { name: "Add group" }).click();
@@ -41,7 +41,7 @@ test.describe("Goal detail — groups and steps", () => {
   });
 
   test("adds a step with a description and edits it", async ({ page }) => {
-    await page.getByRole("button", { name: "+ Add first group" }).click();
+    await page.getByRole("button", { name: "+ Add group" }).click();
     let dialog = page.getByRole("dialog");
     await dialog.getByLabel("Group name").fill("Fundamentals");
     await dialog.getByRole("button", { name: "Add group" }).click();
@@ -272,24 +272,107 @@ test.describe("Goal detail — toggling and deleting", () => {
   });
 });
 
-// Regression test for issue #8 — the "Goal complete" banner must use singular
-// "group" / "step" when there is exactly one of each, not always plural.
+// A goal can hold steps directly, without any group — the hybrid model. The
+// empty watercolor goal is the fixture: build ungrouped steps on it via the UI.
+test.describe("Goal detail — ungrouped steps", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/goal/goal-watercolor");
+    await expect(
+      page.getByRole("heading", { name: "Learn watercolor painting", level: 1 })
+    ).toBeVisible();
+  });
+
+  test("adds a step directly to the goal from the empty state", async ({ page }) => {
+    await expect(page.getByText("No steps yet")).toBeVisible();
+
+    await page.getByRole("button", { name: "+ Add step" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Step").fill("Buy a starter set");
+    await dialog.getByRole("button", { name: "Add step" }).click();
+
+    // The step lands in the goal's own card, with no group created.
+    const row = page.locator("div.group\\/step").filter({ hasText: "Buy a starter set" });
+    await expect(row).toBeVisible();
+    await expect(row.getByText("next")).toBeVisible();
+
+    // It toggles like any other step.
+    await row.getByRole("button", { name: "Mark step complete" }).click();
+    await expect(row.getByRole("button", { name: "Mark step incomplete" })).toBeVisible();
+  });
+
+  test("ungrouped steps and groups coexist, ungrouped first", async ({ page }) => {
+    // One ungrouped step…
+    await page.getByRole("button", { name: "+ Add step" }).click();
+    let dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Step").fill("Loose step");
+    await dialog.getByRole("button", { name: "Add step" }).click();
+    await expect(page.getByText("Loose step")).toBeVisible();
+
+    // …then a group with its own step.
+    await page.getByRole("button", { name: "Add group" }).last().click();
+    dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Group name").fill("Fundamentals");
+    await dialog.getByRole("button", { name: "Add group" }).click();
+
+    // The new group starts collapsed — the next step is the ungrouped one.
+    await page.getByRole("button", { name: "Expand Fundamentals" }).click();
+    const group = page.locator("div.group\\/card").filter({ hasText: "Fundamentals" });
+    await group.getByRole("button", { name: "Add step" }).click();
+    dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Step").fill("Grouped step");
+    await dialog.getByRole("button", { name: "Add step" }).click();
+
+    // Both are on the page; the ungrouped one is the next actionable step.
+    await expect(page.getByText("Grouped step")).toBeVisible();
+    const looseRow = page.locator("div.group\\/step").filter({ hasText: "Loose step" });
+    await expect(looseRow.getByText("next")).toBeVisible();
+  });
+});
+
+// Deadlines: set on the goal via the edit dialog, shown as a badge here and on
+// the dashboard card.
+test.describe("Goal detail — deadlines", () => {
+  test("sets a goal due date and sees the badge on detail and dashboard", async ({ page }) => {
+    await page.goto("/goal/goal-podcast");
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+
+    await page.getByRole("button", { name: "Goal options" }).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Due date" }).click();
+    // Pick any selectable day from the calendar popup.
+    await page.getByRole("grid").getByRole("button", { name: /15/ }).first().click();
+    await dialog.getByRole("button", { name: "Save goal" }).click();
+
+    const banner = page.getByRole("main");
+    await expect(banner.getByText(/due /)).toBeVisible();
+
+    // The dashboard card carries the same badge.
+    await page.getByRole("link", { name: "My Goals" }).click();
+    const card = page.locator("div.group\\/goal").filter({ hasText: "Launch my podcast" });
+    await expect(card.getByText(/due /)).toBeVisible();
+  });
+});
+
+// Regression test for issue #8 — the "Goal complete" banner must read
+// naturally when there is exactly one step, not always plural.
 test.describe("Goal detail — completion banner singular/plural", () => {
-  test("shows singular 'group' and 'step' when one group with one step is completed", async ({ page }) => {
+  test("uses the singular copy when a single step is completed", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "+ New Goal" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Goal name").fill("Singular banner test");
     await dialog.getByRole("button", { name: "Create goal" }).click();
     await expect(page).toHaveURL(/\/goal\//);
-    await expect(page.getByText("No groups yet")).toBeVisible();
+    await expect(page.getByText("No steps yet")).toBeVisible();
 
     // Add exactly one group
-    await page.getByRole("button", { name: "+ Add first group" }).click();
+    await page.getByRole("button", { name: "+ Add group" }).click();
     let d = page.getByRole("dialog");
     await d.getByLabel("Group name").fill("Only group");
     await d.getByRole("button", { name: "Add group" }).click();
-    await expect(page.getByText("Groups · 1")).toBeVisible();
+    await expect(page.getByText('Steps', { exact: true })).toBeVisible();
 
     // Add exactly one step inside that group
     const group = page.locator("div.group\\/card").filter({ hasText: "Only group" });
@@ -302,7 +385,7 @@ test.describe("Goal detail — completion banner singular/plural", () => {
     await page.getByRole("button", { name: "Mark step complete" }).click();
     await expect(page.getByRole("button", { name: "Mark step incomplete" })).toBeVisible();
 
-    // The banner must use singular forms: "1 group" and "1 step"
-    await expect(page.getByText("All 1 group and 1 step are done. Nice work.")).toBeVisible();
+    // The banner must use the singular copy for a single step.
+    await expect(page.getByText("The only step is done. Nice work.")).toBeVisible();
   });
 });

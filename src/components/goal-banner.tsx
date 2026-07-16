@@ -1,6 +1,6 @@
 import { Menu } from "@base-ui/react/menu";
 import { MoreVertical, Pencil, Share2, Trash2 } from "lucide-react";
-import { ProgressBar } from "@/components/ui-bits";
+import { DueBadge, ProgressBar } from "@/components/ui-bits";
 
 /**
  * The goal header card shown at the top of a goal page. Presentational: the
@@ -12,6 +12,8 @@ export function GoalBanner({
   title,
   why,
   pct,
+  dueDate,
+  complete = false,
   onEdit,
   onShare,
   onDelete,
@@ -19,6 +21,8 @@ export function GoalBanner({
   title: string;
   why?: string;
   pct: number;
+  dueDate?: number;
+  complete?: boolean;
   onEdit?: () => void;
   onShare?: () => void;
   onDelete?: () => void;
@@ -29,7 +33,10 @@ export function GoalBanner({
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           Goal
         </div>
-        <h1 className="text-2xl font-bold">{title}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">{title}</h1>
+          <DueBadge dueDate={dueDate} done={complete} />
+        </div>
         {why && <p className="mt-2 max-w-xl text-sm text-muted-foreground">{why}</p>}
       </div>
       <div className="flex w-full items-center gap-4 sm:w-[260px] sm:flex-shrink-0">

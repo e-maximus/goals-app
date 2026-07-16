@@ -6,12 +6,16 @@ export type Step = {
   // it as `step.description ?? ""` in inputs and guard rendering on its presence.
   description?: string;
   done: boolean;
+  // Optional deadline: epoch ms of UTC midnight of the due day. Absent = none.
+  dueDate?: number;
 };
 
 export type Group = {
   id: string;
   title: string;
   steps: Step[];
+  // Optional deadline for the whole group (see Step.dueDate for the format).
+  dueDate?: number;
 };
 
 export type Note = {
@@ -48,7 +52,18 @@ export type Goal = {
   // "paused"; cleared on resume. Kept separate from `updatedAt` because
   // pausing itself counts as activity.
   pausedAt?: number;
+  // Steps living directly on the goal, outside any group — a simple goal
+  // doesn't need groups at all. Optional so payloads written before this
+  // existed still parse; read it via `ungroupedSteps(goal)`.
+  steps?: Step[];
+  // Optional deadline for the whole goal (see Step.dueDate for the format).
+  dueDate?: number;
 };
+
+/** The goal's own steps, outside any group. Renders above the groups. */
+export function ungroupedSteps(goal: Goal): Step[] {
+  return goal.steps ?? [];
+}
 
 // ---- derived progress helpers ----
 
@@ -59,13 +74,14 @@ export function groupProgress(group: Group): { done: number; total: number; pct:
 }
 
 export function goalStepCounts(goal: Goal): { done: number; total: number } {
+  const own = ungroupedSteps(goal);
   return goal.groups.reduce(
     (acc, g) => {
       acc.total += g.steps.length;
       acc.done += g.steps.filter((s) => s.done).length;
       return acc;
     },
-    { done: 0, total: 0 }
+    { done: own.filter((s) => s.done).length, total: own.length }
   );
 }
 
@@ -112,11 +128,15 @@ export function isGoalStale(goal: Goal, now: number = Date.now()): boolean {
 }
 
 /**
- * The next actionable step: the first unchecked step of the first group that
+ * The next actionable step: the first unchecked ungrouped step (they render
+ * above the groups), else the first unchecked step of the first group that
  * still has one. Simple and deterministic — the same rule drives the home
  * card, the hybrid detail highlight, and the stepper's "current" stage.
+ * `group` is null when the step lives directly on the goal.
  */
-export function nextStep(goal: Goal): { group: Group; step: Step } | null {
+export function nextStep(goal: Goal): { group: Group | null; step: Step } | null {
+  const own = ungroupedSteps(goal).find((s) => !s.done);
+  if (own) return { group: null, step: own };
   for (const group of goal.groups) {
     const step = group.steps.find((s) => !s.done);
     if (step) return { group, step };
@@ -139,4 +159,27 @@ export function completedIn(goal: Goal): string {
   if (weeks < 10) return `in ${weeks} weeks`;
   const months = Math.round(days / 30);
   return `in ${months} months`;
+}
+
+// ---- deadlines ----
+
+/** "Jun 30", with the year appended when it isn't the current one. */
+export function formatDueDate(dueDate: number, now: number = Date.now()): string {
+  const due = new Date(dueDate);
+  const sameYear = due.getUTCFullYear() === new Date(now).getUTCFullYear();
+  return due.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * True once the due day has fully passed and the work isn't done. Due dates
+ * are UTC midnights, so "overdue" starts the day after the deadline.
+ */
+export function isOverdue(dueDate: number | undefined, done: boolean, now: number = Date.now()): boolean {
+  if (dueDate === undefined || done) return false;
+  return now >= dueDate + DAY_MS;
 }

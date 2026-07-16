@@ -13,6 +13,7 @@ export {
   isGoalComplete,
   goalStatus,
   lastActivityAt,
+  ungroupedSteps,
 } from "@/lib/types";
 
 /** Mirrors the id shape the web app generates, so ids look alike everywhere. */

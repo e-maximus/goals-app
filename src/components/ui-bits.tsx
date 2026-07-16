@@ -1,4 +1,5 @@
-import { Loader2 } from "lucide-react";
+import { CalendarDays, Loader2 } from "lucide-react";
+import { formatDueDate, isOverdue } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** A spinning loader icon. Size and color come from the parent via `className`. */
@@ -38,6 +39,35 @@ export function ProgressBar({
         style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
       />
     </div>
+  );
+}
+
+/**
+ * A small "due Jun 30" chip. Muted while there's time; warning-tinted once
+ * the deadline has passed and the work isn't done.
+ */
+export function DueBadge({
+  dueDate,
+  done,
+  className,
+}: {
+  dueDate: number | undefined;
+  done: boolean;
+  className?: string;
+}) {
+  if (dueDate === undefined) return null;
+  const overdue = isOverdue(dueDate, done);
+  return (
+    <span
+      className={cn(
+        "inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+        overdue ? "bg-warning/15 text-warning-foreground" : "bg-muted text-muted-foreground",
+        className
+      )}
+    >
+      <CalendarDays className="h-3 w-3" aria-hidden />
+      due {formatDueDate(dueDate)}
+    </span>
   );
 }
 

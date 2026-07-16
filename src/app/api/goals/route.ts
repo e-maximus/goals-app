@@ -10,12 +10,14 @@ const stepSchema = z.object({
   text: z.string(),
   description: z.string().optional(),
   done: z.boolean(),
+  dueDate: z.number().optional(),
 });
 
 const groupSchema = z.object({
   id: z.string(),
   title: z.string(),
   steps: z.array(stepSchema),
+  dueDate: z.number().optional(),
 });
 
 const noteSchema = z.object({
@@ -37,6 +39,9 @@ const goalSchema = z.object({
   status: z.enum(["active", "paused"]).optional(),
   updatedAt: z.number().optional(),
   pausedAt: z.number().optional(),
+  // Steps living directly on the goal, outside any group.
+  steps: z.array(stepSchema).optional(),
+  dueDate: z.number().optional(),
 });
 
 const putBodySchema = z.object({

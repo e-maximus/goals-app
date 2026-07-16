@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import type { Pool } from "../db";
 import * as repo from "../repo";
 import {
+  IDENTITIES,
   createUser,
   getOrCreateUserByClerkId,
   getUserByClerkId,
@@ -24,7 +25,7 @@ beforeEach(async () => {
 });
 
 describe("createUser", () => {
-  it("mints two distinct tokens and seeds the example goals", async () => {
+  it("mints two distinct tokens and seeds the starter goal", async () => {
     const user = await createUser(pool);
     assert.ok(user.id);
     assert.ok(user.sessionToken);
@@ -33,7 +34,24 @@ describe("createUser", () => {
 
     const state = await repo.getState(pool, user.id);
     assert.equal(state.initialized, true);
-    assert.ok(state.goals.length > 0, "a new user starts with seeded example goals");
+    // The onboarding seed: exactly one goal, taught through its own ungrouped
+    // steps rather than demo data.
+    assert.equal(state.goals.length, 1);
+    assert.equal(state.goals[0]!.title, "Get to know Goals");
+    assert.ok(state.goals[0]!.steps!.length >= 4, "the tour lives in ungrouped steps");
+    assert.equal(state.goals[0]!.groups.length, 0);
+  });
+
+  it("mints an animal identity from the fixed list", async () => {
+    const user = await createUser(pool);
+    const identity = IDENTITIES.find((i) => i.name === user.displayName);
+    assert.ok(identity, "display name comes from the identity list");
+    assert.equal(user.avatar, identity!.avatar);
+
+    // The identity survives a lookup round-trip.
+    const fetched = await getUserBySession(pool, user.sessionToken);
+    assert.equal(fetched?.displayName, user.displayName);
+    assert.equal(fetched?.avatar, user.avatar);
   });
 
   it("gives two users different goal ids, so seeds don't collide", async () => {

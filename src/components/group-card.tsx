@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { groupProgress, type Group, type Step } from "@/lib/types";
-import { ProgressBar } from "@/components/ui-bits";
-import { PromptDialog } from "@/components/prompt-dialog";
+import { DueBadge } from "@/components/ui-bits";
+import { GroupDialog } from "@/components/group-dialog";
 import { StepDialog } from "@/components/step-dialog";
 import { useStore } from "@/lib/store";
 import { useShallow } from "zustand/shallow";
@@ -18,7 +18,7 @@ import { Check, ChevronDown, MoreVertical, Pencil, Plus, Trash2 } from "lucide-r
  * muted (no strikethrough — finished work should still scan well); the next
  * actionable step is highlighted with a badge and its own Done button.
  */
-function StepRow({
+export function StepRow({
   step,
   isNext,
   onToggle,
@@ -74,6 +74,7 @@ function StepRow({
           </p>
         )}
       </div>
+      <DueBadge dueDate={step.dueDate} done={step.done} className="mt-0.5" />
       {isNext && (
         <button
           onClick={(e) => {
@@ -137,10 +138,10 @@ export function GroupCard({
   onToggleCollapse?: () => void;
   nextStepId?: string | null;
   onToggleStep: (stepId: string) => void;
-  onAddStep: (text: string, description?: string) => void;
-  onEditStep: (stepId: string, text: string, description?: string) => void;
+  onAddStep: (text: string, description?: string, dueDate?: number) => void;
+  onEditStep: (stepId: string, text: string, description?: string, dueDate?: number) => void;
   onDeleteStep: (stepId: string) => void;
-  onRenameGroup: (title: string) => void;
+  onRenameGroup: (title: string, dueDate?: number) => void;
   onDeleteGroup: () => void;
 }) {
   const [addOpen, setAddOpen] = useState(false);
@@ -177,6 +178,7 @@ export function GroupCard({
             {group.title}
           </h3>
           <div className="mr-6 flex flex-shrink-0 items-center gap-2">
+            <DueBadge dueDate={group.dueDate} done={complete} />
             <span
               className={cn(
                 "rounded-full bg-muted px-2.5 py-0.5 text-xs font-bold tabular-nums text-muted-foreground",
@@ -196,7 +198,6 @@ export function GroupCard({
             )}
           </div>
         </div>
-        {!folded && <ProgressBar value={pct ?? 0} className="h-1.5" />}
 
         {/* Options menu floats in the card corner so the count badge can sit
             flush against the right edge. On large screens it's revealed on
@@ -257,7 +258,7 @@ export function GroupCard({
           <div className="flex-shrink-0 px-2.5 pb-3 pt-0.5">
             <button
               onClick={() => setAddOpen(true)}
-              className="flex w-full items-center gap-2.5 rounded-lg border border-dashed border-border-strong px-2 py-2 text-[13px] text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border-strong px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
             >
               <Plus className="h-3.5 w-3.5" />
               Add step
@@ -272,18 +273,17 @@ export function GroupCard({
         title="Add step"
         description={<>Add a step to &ldquo;{group.title}&rdquo;</>}
         submitLabel="Add step"
-        onSubmit={(text, description) => onAddStep(text, description)}
+        onSubmit={(text, description, dueDate) => onAddStep(text, description, dueDate)}
       />
 
-      <PromptDialog
+      <GroupDialog
         open={renameOpen}
         onOpenChange={setRenameOpen}
         title="Rename group"
-        label="Group name"
-        placeholder="e.g. Research"
         submitLabel="Save"
-        initialValue={group.title}
-        onSubmit={(v) => onRenameGroup(v)}
+        initialTitle={group.title}
+        initialDueDate={group.dueDate}
+        onSubmit={(title, dueDate) => onRenameGroup(title, dueDate)}
       />
 
       <StepDialog
@@ -298,8 +298,9 @@ export function GroupCard({
         submitLabel="Save"
         initialText={editingStep?.text ?? ""}
         initialDescription={editingStep?.description ?? ""}
-        onSubmit={(text, description) => {
-          if (editingStep) onEditStep(editingStep.id, text, description);
+        initialDueDate={editingStep?.dueDate}
+        onSubmit={(text, description, dueDate) => {
+          if (editingStep) onEditStep(editingStep.id, text, description, dueDate);
         }}
       />
     </div>
@@ -343,14 +344,92 @@ export function GroupCardConnected({
       onToggleCollapse={onToggleCollapse}
       nextStepId={nextStepId}
       onToggleStep={(stepId) => toggleStep(goalId, group.id, stepId)}
-      onAddStep={(text, description) => addStep(goalId, group.id, text, description)}
-      onEditStep={(stepId, text, description) =>
-        editStep(goalId, group.id, stepId, text, description)
+      onAddStep={(text, description, dueDate) =>
+        addStep(goalId, group.id, text, description, dueDate)
+      }
+      onEditStep={(stepId, text, description, dueDate) =>
+        editStep(goalId, group.id, stepId, text, description, dueDate)
       }
       onDeleteStep={(stepId) => deleteStep(goalId, group.id, stepId)}
-      onRenameGroup={(title) => renameGroup(goalId, group.id, title)}
+      onRenameGroup={(title, dueDate) => renameGroup(goalId, group.id, title, dueDate)}
       onDeleteGroup={() => deleteGroup(goalId, group.id)}
     />
+  );
+}
+
+/**
+ * The goal's own steps, outside any group — a plain card of StepRows above
+ * the groups (in both the list and timeline views). Store-connected with
+ * `groupId = null`; keeps the `group/card` hook the e2e suite locates by.
+ */
+export function UngroupedStepsCard({
+  goalId,
+  steps,
+  nextStepId,
+}: {
+  goalId: string;
+  steps: Step[];
+  nextStepId?: string | null;
+}) {
+  const { toggleStep, addStep, editStep, deleteStep } = useStore(
+    useShallow((s) => ({
+      toggleStep: s.toggleStep,
+      addStep: s.addStep,
+      editStep: s.editStep,
+      deleteStep: s.deleteStep,
+    }))
+  );
+  const [addOpen, setAddOpen] = useState(false);
+  const [editingStep, setEditingStep] = useState<Step | null>(null);
+
+  return (
+    <div className="group/card flex flex-col rounded-2xl border border-border bg-card shadow-sm">
+      <div className="flex flex-col gap-0.5 px-2.5 py-2">
+        {steps.map((step) => (
+          <StepRow
+            key={step.id}
+            step={step}
+            isNext={step.id === nextStepId}
+            onToggle={() => toggleStep(goalId, null, step.id)}
+            onEdit={() => setEditingStep(step)}
+            onDelete={() => deleteStep(goalId, null, step.id)}
+          />
+        ))}
+      </div>
+      <div className="flex-shrink-0 px-2.5 pb-3 pt-0.5">
+        <button
+          onClick={() => setAddOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border-strong px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add step
+        </button>
+      </div>
+
+      <StepDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        title="Add step"
+        description="Add a step to this goal"
+        submitLabel="Add step"
+        onSubmit={(text, description, dueDate) => addStep(goalId, null, text, description, dueDate)}
+      />
+      <StepDialog
+        key={editingStep?.id}
+        open={editingStep !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingStep(null);
+        }}
+        title="Edit step"
+        submitLabel="Save"
+        initialText={editingStep?.text ?? ""}
+        initialDescription={editingStep?.description ?? ""}
+        initialDueDate={editingStep?.dueDate}
+        onSubmit={(text, description, dueDate) => {
+          if (editingStep) editStep(goalId, null, editingStep.id, text, description, dueDate);
+        }}
+      />
+    </div>
   );
 }
 

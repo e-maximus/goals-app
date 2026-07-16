@@ -186,6 +186,60 @@ describe("MCP surface", () => {
     await client.close();
   });
 
+  it("adds an ungrouped step with add_step({ goalId })", async () => {
+    const client = await connect();
+    const added = payload<{ id: string; text: string }>(
+      await client.callTool({
+        name: "add_step",
+        arguments: { goalId: "goal-podcast", text: "A loose end" },
+      })
+    );
+
+    const stored = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.deepEqual(stored.steps!.map((s) => s.id), [added.id]);
+    await client.close();
+  });
+
+  it("rejects add_step with both parents, or neither", async () => {
+    const client = await connect();
+    const both = await client.callTool({
+      name: "add_step",
+      arguments: { goalId: "goal-podcast", groupId: "g-1", text: "x" },
+    });
+    assert.equal((both as { isError?: boolean }).isError, true);
+
+    const neither = await client.callTool({ name: "add_step", arguments: { text: "x" } });
+    assert.equal((neither as { isError?: boolean }).isError, true);
+    await client.close();
+  });
+
+  it("sets and clears a due date over MCP", async () => {
+    const client = await connect();
+    const due = Date.UTC(2026, 7, 1);
+
+    const withDue = payload<Goal>(
+      await client.callTool({
+        name: "update_goal",
+        arguments: { goalId: "goal-podcast", dueDate: due },
+      })
+    );
+    assert.equal(withDue.dueDate, due);
+
+    const cleared = payload<Goal>(
+      await client.callTool({
+        name: "update_goal",
+        arguments: { goalId: "goal-podcast", dueDate: null },
+      })
+    );
+    assert.equal(cleared.dueDate, undefined);
+
+    const step = payload<{ dueDate?: number }>(
+      await client.callTool({ name: "edit_step", arguments: { stepId: "s-1", dueDate: due } })
+    );
+    assert.equal(step.dueDate, due);
+    await client.close();
+  });
+
   it("bumps the goal's activity stamp when an agent toggles a step", async () => {
     const client = await connect();
     const before = (await repo.getGoal(pool, owner, "goal-podcast")).updatedAt!;
