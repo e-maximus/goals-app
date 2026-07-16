@@ -6,6 +6,7 @@ import { Show, SignInButton, SignUpButton, UserButton, useUser } from "@clerk/ne
 import { toast } from "sonner";
 import { ArrowLeft, Check, Copy, Lock, ShieldCheck, TriangleAlert } from "lucide-react";
 import { fetchMe, type Me } from "@/lib/sync";
+import { LoadingState } from "@/components/ui-bits";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -46,6 +47,20 @@ export function Settings() {
     loadMe();
   }, [authLoaded, isSignedIn, loadMe]);
 
+  // Clerk failing to initialize (missing publishable key, blocked script) leaves
+  // `isLoaded` false forever, and the effect above never fires — without a
+  // deadline the page would sit on the loader indefinitely. Give up after a
+  // while and surface the error state. Guard against a stale timer overwriting
+  // a load that succeeded in the meantime (e.g. after a manual retry).
+  useEffect(() => {
+    if (authLoaded) return;
+    const timer = setTimeout(
+      () => setStatus((s) => (s === "loading" ? "error" : s)),
+      8_000
+    );
+    return () => clearTimeout(timer);
+  }, [authLoaded]);
+
   return (
     <div className="flex flex-1 flex-col">
       <header className="flex h-16 items-center border-b border-border px-5 sm:px-9">
@@ -61,7 +76,9 @@ export function Settings() {
       </header>
 
       <main className="mx-auto w-full max-w-2xl flex-1 space-y-6 px-5 py-8 sm:px-10">
-        {status === "loading" ? null : status === "error" ? (
+        {status === "loading" ? (
+          <LoadingState />
+        ) : status === "error" ? (
           <div className="flex flex-col items-center gap-3 py-24 text-center">
             <h2 className="text-xl font-bold">Couldn&apos;t load your settings</h2>
             <p className="text-sm text-muted-foreground">
