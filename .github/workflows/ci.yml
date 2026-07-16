@@ -108,6 +108,15 @@ jobs:
         run: npm run test:e2e
         env:
           TEST_DATABASE_URL: postgres://goals:goals@localhost:5432/goals_test
+          # The app is wrapped in ClerkProvider and runs clerkMiddleware, both of
+          # which need Clerk keys present just to boot the server. Clerk is
+          # optional at runtime (no route is gated — see src/proxy.ts), so the
+          # default suite never signs in; these are throwaway, valid-format dummy
+          # keys that let the app start. The opt-in signed-in test
+          # (settings-auth.spec.ts) is gated behind E2E_CLERK_AUTH, which CI does
+          # not set, so it stays skipped and never touches a real Clerk instance.
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ZHVtbXkuY2xlcmsuYWNjb3VudHMuZGV2JA
+          CLERK_SECRET_KEY: sk_test_dummyclerksecretkeyforcitests0000000000
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
