@@ -1,8 +1,10 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { auth } from "@clerk/nextjs/server";
+import { verifyClerkToken } from "@clerk/mcp-tools/next";
 import { getPool } from "@/server/pool";
 import { createMcpServer } from "@/server/mcp";
-import { bearerUser } from "@/server/users";
 import { logRequest } from "@/server/log";
+import { getOrCreateUserByClerkId } from "@/server/users";
 
 /**
  * Peek at the JSON-RPC body to name what's being invoked, for logging only.
@@ -39,28 +41,52 @@ async function describeRpc(request: Request): Promise<Record<string, string>> {
  * next request without a session handshake. A stateless transport must not be
  * reused across requests (the SDK throws if you try), hence one per call.
  */
+
+/**
+ * The 401 an unauthorized MCP request gets. Per the MCP authorization spec the
+ * `WWW-Authenticate` header points at our protected-resource metadata, which is
+ * how the client discovers Clerk as the authorization server and starts the
+ * OAuth 2.1 flow (dynamic client registration → authorize → token).
+ */
+function unauthorized(request: Request): Response {
+  const resourceMetadata = new URL(
+    "/.well-known/oauth-protected-resource",
+    request.url
+  ).toString();
+  return Response.json(
+    {
+      jsonrpc: "2.0",
+      error: { code: -32001, message: "Unauthorized: a valid OAuth token is required" },
+      id: null,
+    },
+    {
+      status: 401,
+      headers: { "WWW-Authenticate": `Bearer resource_metadata="${resourceMetadata}"` },
+    }
+  );
+}
+
 export async function POST(request: Request) {
   const startedAt = Date.now();
   const rpc = await describeRpc(request);
   const pool = await getPool();
 
-  // The MCP surface is per-user: a request must carry a valid personal access
-  // token (`Authorization: Bearer <pat>`), and it operates only on that user's
-  // goals. No token, or an unknown one, gets nothing — this is what closes the
-  // endpoint to the public now that it's internet-reachable.
-  const user = await bearerUser(pool, request);
-  if (!user) {
+  // The MCP surface is per-user and OAuth 2.1-protected: a request must carry a
+  // Clerk-issued OAuth access token (`Authorization: Bearer <token>`). We verify
+  // it against Clerk, resolve the Clerk identity to this app's account, and
+  // operate only on that user's goals. No token, or an invalid one, gets a 401
+  // that kicks off the OAuth flow.
+  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const clerkAuth = await auth({ acceptsToken: "oauth_token" });
+  const authInfo = verifyClerkToken(clerkAuth, bearer);
+  const clerkUserId = authInfo?.extra?.userId as string | undefined;
+
+  if (!clerkUserId) {
     logRequest(request, 401, startedAt, rpc);
-    return Response.json(
-      {
-        jsonrpc: "2.0",
-        error: { code: -32001, message: "Unauthorized: a valid Bearer token is required" },
-        id: null,
-      },
-      { status: 401, headers: { "WWW-Authenticate": "Bearer" } }
-    );
+    return unauthorized(request);
   }
 
+  const user = await getOrCreateUserByClerkId(pool, clerkUserId);
   const server = createMcpServer(pool, user.id);
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,

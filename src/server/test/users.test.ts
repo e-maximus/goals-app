@@ -3,11 +3,11 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import type { Pool } from "../db";
 import * as repo from "../repo";
 import {
-  bearerUser,
   createUser,
-  getUserByPat,
+  getOrCreateUserByClerkId,
+  getUserByClerkId,
   getUserBySession,
-  rotatePat,
+  resolveWebUser,
 } from "../users";
 import { reset, setupPool } from "./helpers";
 
@@ -46,42 +46,74 @@ describe("createUser", () => {
 });
 
 describe("lookups", () => {
-  it("finds a user by session token and by pat", async () => {
+  it("finds a user by session token", async () => {
     const user = await createUser(pool);
     assert.equal((await getUserBySession(pool, user.sessionToken))?.id, user.id);
-    assert.equal((await getUserByPat(pool, user.pat))?.id, user.id);
     assert.equal(await getUserBySession(pool, "nope"), null);
-    assert.equal(await getUserByPat(pool, "nope"), null);
   });
 });
 
-describe("rotatePat", () => {
-  it("issues a new token, invalidates the old one, and keeps goals", async () => {
-    const user = await createUser(pool);
-    const before = (await repo.getState(pool, user.id)).goals.length;
+describe("resolveWebUser + Clerk linking", () => {
+  const withCookie = (token?: string) =>
+    new Request("http://localhost/api/goals", token ? { headers: { cookie: `session=${token}` } } : {});
 
-    const next = await rotatePat(pool, user.id);
-    assert.notEqual(next, user.pat);
-    assert.equal(await getUserByPat(pool, user.pat), null, "old token no longer resolves");
-    assert.equal((await getUserByPat(pool, next))?.id, user.id);
+  it("mints an anonymous account on first anonymous visit, then resolves it by cookie", async () => {
+    const first = await resolveWebUser(pool, withCookie(), null);
+    assert.ok(first.setCookie, "a fresh account hands back a Set-Cookie");
+    assert.equal(first.user.clerkUserId, null);
 
-    const after = (await repo.getState(pool, user.id)).goals.length;
-    assert.equal(after, before, "rotating the token leaves goals untouched");
+    const again = await resolveWebUser(pool, withCookie(first.user.sessionToken), null);
+    assert.equal(again.user.id, first.user.id, "same cookie resolves the same account");
+    assert.equal(again.setCookie, null, "no new cookie for a returning visitor");
+  });
+
+  it("claims the current anonymous account when its owner signs in with Clerk", async () => {
+    const anon = await createUser(pool);
+    const goalsBefore = (await repo.getState(pool, anon.id)).goals.length;
+
+    const resolved = await resolveWebUser(pool, withCookie(anon.sessionToken), "clerk_abc");
+    assert.equal(resolved.user.id, anon.id, "the anonymous account is claimed, not replaced");
+    assert.equal(resolved.user.clerkUserId, "clerk_abc");
+    assert.equal((await getUserByClerkId(pool, "clerk_abc"))?.id, anon.id);
+
+    const goalsAfter = (await repo.getState(pool, anon.id)).goals.length;
+    assert.equal(goalsAfter, goalsBefore, "signing in keeps the goals already in this account");
+  });
+
+  it("follows the linked account when the same Clerk identity signs in from a new browser", async () => {
+    const original = await createUser(pool);
+    await resolveWebUser(pool, withCookie(original.sessionToken), "clerk_xyz");
+
+    // A different browser: no cookie (or a stranger's), but the same Clerk id.
+    const fromElsewhere = await resolveWebUser(pool, withCookie(), "clerk_xyz");
+    assert.equal(fromElsewhere.user.id, original.id, "resolves back to the stable account");
+    assert.ok(fromElsewhere.setCookie, "re-points this browser's cookie at the account");
   });
 });
 
-describe("bearerUser", () => {
-  const req = (auth?: string) =>
-    new Request("http://localhost/api/mcp", auth ? { headers: { authorization: auth } } : {});
+describe("getOrCreateUserByClerkId (MCP, cookieless)", () => {
+  const withCookie = (token?: string) =>
+    new Request("http://localhost/api/goals", token ? { headers: { cookie: `session=${token}` } } : {});
 
-  it("resolves a valid Bearer token to its user", async () => {
-    const user = await createUser(pool);
-    assert.equal((await bearerUser(pool, req(`Bearer ${user.pat}`)))?.id, user.id);
+  it("returns the account a Clerk identity is already linked to", async () => {
+    const anon = await createUser(pool);
+    await resolveWebUser(pool, withCookie(anon.sessionToken), "clerk_mcp");
+
+    const resolved = await getOrCreateUserByClerkId(pool, "clerk_mcp");
+    assert.equal(resolved.id, anon.id, "MCP resolves to the same account as the web session");
+    assert.equal(resolved.clerkUserId, "clerk_mcp");
   });
 
-  it("returns null for a missing, malformed or unknown token", async () => {
-    assert.equal(await bearerUser(pool, req()), null);
-    assert.equal(await bearerUser(pool, req("Basic abc")), null);
-    assert.equal(await bearerUser(pool, req("Bearer nope")), null);
+  it("mints and links a seeded account for a Clerk identity new to the app", async () => {
+    const resolved = await getOrCreateUserByClerkId(pool, "clerk_fresh");
+    assert.equal(resolved.clerkUserId, "clerk_fresh");
+    assert.equal((await getUserByClerkId(pool, "clerk_fresh"))?.id, resolved.id);
+    assert.ok((await repo.getState(pool, resolved.id)).goals.length > 0, "seeded with example goals");
+  });
+
+  it("is idempotent — a second call resolves the same account", async () => {
+    const first = await getOrCreateUserByClerkId(pool, "clerk_twice");
+    const second = await getOrCreateUserByClerkId(pool, "clerk_twice");
+    assert.equal(second.id, first.id);
   });
 });

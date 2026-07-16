@@ -1,39 +1,28 @@
 import { test, expect } from "./fixtures";
 
-test.describe("settings", () => {
-  test("shows the account id and MCP connection details", async ({ page }) => {
+// The e2e user is anonymous (cookie session, no Clerk sign-in). MCP is authorized
+// only via Clerk OAuth, so an anonymous visitor sees the account id and the
+// "stable authentication" upsell, but the MCP endpoint/setup stays hidden until
+// they sign in. The signed-in MCP flow is covered separately in
+// settings-auth.spec.ts, which needs Clerk test credentials.
+test.describe("settings (anonymous)", () => {
+  test("shows the account id and the sign-in upsell, MCP gated", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Settings" }).click();
 
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.getByText("User ID")).toBeVisible();
-    await expect(page.getByText("MCP access")).toBeVisible();
+    await expect(page.getByText("Stable authentication")).toBeVisible();
 
-    // The endpoint is same-origin and points at /api/mcp.
-    await expect(page.getByText(/\/api\/mcp$/)).toBeVisible();
+    // The MCP section is present but locked behind sign-in.
+    await expect(page.getByText("MCP access", { exact: true })).toBeVisible();
+    await expect(page.getByText("Sign in above to enable MCP access.")).toBeVisible();
   });
 
-  test("reveals the MCP token on demand", async ({ page }) => {
+  test("hides the MCP endpoint until signed in", async ({ page }) => {
     await page.goto("/settings");
 
-    // Hidden by default: shown as dots, not the real token.
-    const reveal = page.getByRole("button", { name: "Show token" });
-    await expect(reveal).toBeVisible();
-    await expect(page.getByText("••••", { exact: false })).toBeVisible();
-
-    await reveal.click();
-    await expect(page.getByRole("button", { name: "Hide token" })).toBeVisible();
-  });
-
-  test("rotates the token after confirmation", async ({ page }) => {
-    await page.goto("/settings");
-
-    await page.getByRole("button", { name: "Rotate token" }).click();
-
-    const dialog = page.getByRole("dialog");
-    await expect(dialog.getByText("Rotate MCP token?")).toBeVisible();
-    await dialog.getByRole("button", { name: "Rotate token" }).click();
-
-    await expect(page.getByText("New MCP token issued")).toBeVisible();
+    // The signed-in MCP setup (the endpoint) isn't reachable while anonymous.
+    await expect(page.getByText(/\/api\/mcp$/)).toHaveCount(0);
   });
 });

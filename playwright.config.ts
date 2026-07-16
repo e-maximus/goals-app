@@ -15,6 +15,9 @@ const TEST_DATABASE_URL =
 
 export default defineConfig({
   testDir: "./e2e",
+  // No-op unless E2E_CLERK_AUTH=1, when it fetches a Clerk Testing Token for the
+  // opt-in signed-in tests (see e2e/global-setup.ts, e2e/settings-auth.spec.ts).
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI, // fail CI if a test is left `.only`

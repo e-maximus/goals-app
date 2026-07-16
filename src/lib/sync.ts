@@ -32,20 +32,16 @@ export async function fetchState(): Promise<ServerState> {
   return (await res.json()) as ServerState;
 }
 
-/** The current user's identity, for the Settings screen. */
-export type Me = { userId: string; pat: string };
+/**
+ * The current user's identity, for the Settings screen. `clerkUserId` is the
+ * linked Clerk identity, or null while the account is purely anonymous.
+ */
+export type Me = { userId: string; clerkUserId: string | null };
 
 export async function fetchMe(): Promise<Me> {
   const res = await fetch("/api/me");
   if (!res.ok) throw new Error(`Server responded ${res.status}`);
   return (await res.json()) as Me;
-}
-
-/** Reissue the MCP personal access token, returning the new one. */
-export async function rotateToken(): Promise<string> {
-  const res = await fetch("/api/me/rotate-token", { method: "POST" });
-  if (!res.ok) throw new Error(`Server responded ${res.status}`);
-  return ((await res.json()) as { pat: string }).pat;
 }
 
 export async function pushGoals(

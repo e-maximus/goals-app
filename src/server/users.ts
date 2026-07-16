@@ -5,23 +5,37 @@ import { insertGoals } from "./repo";
 import { seedGoals, withFreshIds } from "./seed";
 
 /**
- * Identity for the app. A user is just an id and two opaque tokens:
+ * Identity for the app. A user is an id plus the keys that resolve to it:
  *
  * - `sessionToken` rides in an httpOnly cookie and is how the web app is
  *   recognised across requests. It's never shown in the UI.
- * - `pat` is a personal access token the user copies into an MCP client and
- *   sends as `Authorization: Bearer <pat>`. It's shown in Settings.
+ * - `clerkUserId` is the linked Clerk identity, set when the user signs in. It's
+ *   what authorizes the **MCP** endpoint: an agent authenticates with a Clerk
+ *   OAuth token, and we resolve that identity back to this account.
  *
- * Neither token is the identity — `id` is, and it's what goals hang off — so
- * either can be rotated (see rotatePat) without the user losing anything.
+ * Neither key is the identity — `id` is, and it's what goals hang off — so the
+ * session can be reissued and the Clerk link is a durable second key on top.
  *
- * There is no password and no login: a first-time visitor is simply created,
- * seeded with the example goals, and handed a session cookie.
+ * There is no password and no login required for the web app: a first-time
+ * visitor is simply created, seeded with the example goals, and handed a session
+ * cookie.
+ *
+ * Signing in with Clerk is **optional** and additive for the web app. When it
+ * happens we stamp the Clerk user id onto this same account (`clerkUserId`),
+ * which makes the account recoverable beyond the cookie — sign in on another
+ * browser and we resolve back to it (see resolveWebUser) — and unlocks MCP,
+ * which is Clerk-authorized only.
+ *
+ * `pat` is a legacy opaque token still minted and stored per user, but no longer
+ * an auth credential anywhere; MCP moved to Clerk OAuth. The column is kept so
+ * the write path is unchanged; drop it in a later migration.
  */
 export type User = {
   id: string;
   sessionToken: string;
   pat: string;
+  /** The linked Clerk identity, or null while the account is purely anonymous. */
+  clerkUserId: string | null;
 };
 
 /** A URL-safe, unguessable token. 32 bytes of randomness, base64url encoded. */
@@ -29,10 +43,22 @@ function newToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-type UserRow = { id: string; session_token: string; pat: string };
+type UserRow = {
+  id: string;
+  session_token: string;
+  pat: string;
+  clerk_user_id: string | null;
+};
+
+const USER_COLS = "id, session_token, pat, clerk_user_id";
 
 function toUser(row: UserRow): User {
-  return { id: row.id, sessionToken: row.session_token, pat: row.pat };
+  return {
+    id: row.id,
+    sessionToken: row.session_token,
+    pat: row.pat,
+    clerkUserId: row.clerk_user_id,
+  };
 }
 
 /**
@@ -43,7 +69,7 @@ function toUser(row: UserRow): User {
 export async function createUser(pool: Pool): Promise<User> {
   return withTransaction(pool, async (client) => {
     const now = Date.now();
-    const user: User = { id: uid(), sessionToken: newToken(), pat: newToken() };
+    const user: User = { id: uid(), sessionToken: newToken(), pat: newToken(), clerkUserId: null };
     await client.query(
       `INSERT INTO users (id, session_token, pat, goals_updated_at, created_at)
        VALUES ($1, $2, $3, $4, $4)`,
@@ -56,30 +82,46 @@ export async function createUser(pool: Pool): Promise<User> {
 
 export async function getUserBySession(pool: Pool, sessionToken: string): Promise<User | null> {
   const { rows } = await pool.query<UserRow>(
-    "SELECT id, session_token, pat FROM users WHERE session_token = $1",
+    `SELECT ${USER_COLS} FROM users WHERE session_token = $1`,
     [sessionToken]
   );
   return rows[0] ? toUser(rows[0]) : null;
 }
 
-export async function getUserByPat(pool: Pool, pat: string): Promise<User | null> {
+/** Resolve the account a Clerk identity has been linked to, or null if none yet. */
+export async function getUserByClerkId(pool: Pool, clerkUserId: string): Promise<User | null> {
   const { rows } = await pool.query<UserRow>(
-    "SELECT id, session_token, pat FROM users WHERE pat = $1",
-    [pat]
+    `SELECT ${USER_COLS} FROM users WHERE clerk_user_id = $1`,
+    [clerkUserId]
   );
   return rows[0] ? toUser(rows[0]) : null;
 }
 
 /**
- * Issue the user a new personal access token, invalidating the old one. The
- * session and, crucially, the goals are untouched — only the MCP credential
- * changes. This is the "my token leaked" escape hatch.
+ * Link a Clerk identity to an existing account. Idempotent for the same pair;
+ * throws if this Clerk identity is already claimed by a *different* account
+ * (the UNIQUE constraint), which resolveWebUser avoids by checking first.
  */
-export async function rotatePat(pool: Pool, userId: string): Promise<string> {
-  const pat = newToken();
-  const { rowCount } = await pool.query("UPDATE users SET pat = $2 WHERE id = $1", [userId, pat]);
-  if (!rowCount) throw new Error(`No such user: ${userId}`);
-  return pat;
+export async function linkClerkUser(pool: Pool, userId: string, clerkUserId: string): Promise<void> {
+  await pool.query("UPDATE users SET clerk_user_id = $2 WHERE id = $1", [userId, clerkUserId]);
+}
+
+/**
+ * Resolve the account for a signed-in Clerk identity on a *cookieless* request —
+ * the MCP endpoint, where auth is an OAuth token and there is no web session to
+ * fall back on. If this Clerk id has used the web app before, it's already
+ * linked (typically to the anonymous account it signed in on), so we return that
+ * one and the agent sees the same goals as the browser. Otherwise this is a
+ * Clerk identity we've never seen against the app, so mint a fresh seeded
+ * account and link it. Anonymous cookie merging happens on the web side
+ * (resolveWebUser); here there's no cookie to merge.
+ */
+export async function getOrCreateUserByClerkId(pool: Pool, clerkUserId: string): Promise<User> {
+  const existing = await getUserByClerkId(pool, clerkUserId);
+  if (existing) return existing;
+  const user = await createUser(pool);
+  await linkClerkUser(pool, user.id, clerkUserId);
+  return { ...user, clerkUserId };
 }
 
 // ---- HTTP layer: cookie and bearer parsing ----
@@ -116,29 +158,49 @@ export function sessionSetCookie(token: string): string {
 }
 
 /**
- * Resolve the web user from the session cookie, creating one on first visit.
- * Returns the user plus, when a new one was minted, the Set-Cookie value the
- * route must send back so the browser is recognised next time.
+ * Resolve the web user for a request, creating one on first visit. Returns the
+ * user plus, when the browser should adopt a (new or switched) session, the
+ * Set-Cookie value the route must send back.
+ *
+ * `clerkUserId` is the signed-in Clerk identity for this request, or null when
+ * the visitor is anonymous. It layers on top of the cookie session:
+ *
+ * - **Anonymous** (no Clerk): resolve the cookie account, or mint one. Unchanged.
+ * - **Signed in, Clerk already linked to an account**: that account is the
+ *   stable one — return it, and re-point the cookie at it so this browser tracks
+ *   it going forward (this is what makes the account follow you across devices).
+ * - **Signed in, Clerk not linked yet**: claim the current cookie account (or a
+ *   fresh one) by stamping the Clerk id onto it. The common "used it anonymously,
+ *   then signed in" flow lands here and keeps the goals already in this browser.
  */
 export async function resolveWebUser(
   pool: Pool,
-  request: Request
+  request: Request,
+  clerkUserId: string | null
 ): Promise<{ user: User; setCookie: string | null }> {
   const token = readCookie(request, SESSION_COOKIE);
-  if (token) {
-    const existing = await getUserBySession(pool, token);
-    if (existing) return { user: existing, setCookie: null };
+  const cookieUser = token ? await getUserBySession(pool, token) : null;
+
+  if (clerkUserId) {
+    const linked = await getUserByClerkId(pool, clerkUserId);
+    if (linked) {
+      // Stable account for this Clerk identity. Adopt it here; refresh the cookie
+      // when this browser was on a different (or no) account.
+      const setCookie =
+        cookieUser?.id === linked.id ? null : sessionSetCookie(linked.sessionToken);
+      return { user: linked, setCookie };
+    }
+
+    // First time we've seen this Clerk identity: claim the current account.
+    const base = cookieUser ?? (await createUser(pool));
+    await linkClerkUser(pool, base.id, clerkUserId);
+    const setCookie = cookieUser ? null : sessionSetCookie(base.sessionToken);
+    return { user: { ...base, clerkUserId }, setCookie };
   }
+
+  if (cookieUser) return { user: cookieUser, setCookie: null };
   const user = await createUser(pool);
   return { user, setCookie: sessionSetCookie(user.sessionToken) };
-}
-
-/** Resolve the MCP user from the Bearer token, or null if absent/unknown. */
-export async function bearerUser(pool: Pool, request: Request): Promise<User | null> {
-  const header = request.headers.get("authorization");
-  const match = header?.match(/^Bearer\s+(.+)$/i);
-  if (!match) return null;
-  return getUserByPat(pool, match[1]!.trim());
 }
 
 // ---- e2e test user ----

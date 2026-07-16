@@ -65,8 +65,22 @@ export const useStore = create<StoreState>((set) => ({
       // Applying server data — flag it so the persistence subscriber doesn't
       // immediately echo the just-loaded goals back to the server as a "save".
       applyingRemote = true;
-      set({ goals: state.goals, serverUpdatedAt: state.updatedAt, loadStatus: "ready" });
+      // A goal created before this load resolved isn't on the server yet (and the
+      // subscriber ignores mutations made while loading, so no push was queued for
+      // it). Keep such local-only goals ahead of the server's rather than letting
+      // the load clobber them, and persist them below.
+      let localOnly: Goal[] = [];
+      set((s) => {
+        const serverIds = new Set(state.goals.map((g) => g.id));
+        localOnly = s.goals.filter((g) => !serverIds.has(g.id));
+        return {
+          goals: [...localOnly, ...state.goals],
+          serverUpdatedAt: state.updatedAt,
+          loadStatus: "ready",
+        };
+      });
       applyingRemote = false;
+      if (localOnly.length > 0) void pushToServer();
     } catch {
       set({ loadStatus: "error" });
     }

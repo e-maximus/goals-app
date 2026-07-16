@@ -2,20 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { Show, SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Copy, Eye, EyeOff, RefreshCw } from "lucide-react";
-import { fetchMe, rotateToken } from "@/lib/sync";
+import { ArrowLeft, Check, Copy, Lock, ShieldCheck } from "lucide-react";
+import { fetchMe, type Me } from "@/lib/sync";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-type Me = { userId: string; pat: string };
 
 export function Settings() {
   const [me, setMe] = useState<Me | null>(null);
@@ -25,6 +17,10 @@ export function Settings() {
   // origin-dependent UI only renders after the load below, so there's no SSR
   // markup to mismatch.
   const [origin] = useState(() => (typeof window !== "undefined" ? window.location.origin : ""));
+
+  // Clerk sign-in state. Signing in can switch which account /api/me resolves to
+  // (the linked one), so we re-fetch identity whenever it changes.
+  const { isLoaded: authLoaded, isSignedIn } = useUser();
 
   // Fetch identity, settling state from the promise's callbacks — the state is
   // updated in response to an external system resolving, not synchronously.
@@ -43,9 +39,12 @@ export function Settings() {
     loadMe();
   };
 
+  // Load on mount, and reload once Clerk resolves / the sign-in state flips, so
+  // the account and MCP token reflect the identity the server now sees.
   useEffect(() => {
+    if (!authLoaded) return;
     loadMe();
-  }, [loadMe]);
+  }, [authLoaded, isSignedIn, loadMe]);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -74,8 +73,9 @@ export function Settings() {
           </div>
         ) : me ? (
           <>
-            <AccountCard userId={me.userId} />
-            <McpCard endpoint={`${origin}/api/mcp`} token={me.pat} onRotated={(pat) => setMe({ ...me, pat })} />
+            <AccountCard userId={me.userId} linked={me.clerkUserId !== null} />
+            <StableAuthCard />
+            <McpCard endpoint={`${origin}/api/mcp`} />
           </>
         ) : null}
       </main>
@@ -83,14 +83,15 @@ export function Settings() {
   );
 }
 
-function AccountCard({ userId }: { userId: string }) {
+function AccountCard({ userId, linked }: { userId: string; linked: boolean }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Account</CardTitle>
         <CardDescription>
-          You&apos;re signed in anonymously — this browser is your account. Your goals are private
-          to it.
+          {linked
+            ? "This account is linked to your sign-in, so it follows you across browsers and devices."
+            : "You're using this app anonymously — this browser is your account, and your goals are private to it."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -101,106 +102,103 @@ function AccountCard({ userId }: { userId: string }) {
   );
 }
 
-function McpCard({
-  endpoint,
-  token,
-  onRotated,
-}: {
-  endpoint: string;
-  token: string;
-  onRotated: (pat: string) => void;
-}) {
-  const [revealed, setRevealed] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [rotating, setRotating] = useState(false);
+/**
+ * The optional upgrade: link a Clerk identity to this account. Signed out, it
+ * pitches the benefit and offers sign in / sign up. Signed in, it confirms the
+ * link and hands over the Clerk user button (manage account, sign out).
+ */
+function StableAuthCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+          Stable authentication
+        </CardTitle>
+        <CardDescription>
+          Sign in to give this account a durable identity. It keeps your goals if this browser&apos;s
+          cookie is cleared, lets you pick them up on another device, and unlocks features that need
+          a real account — MCP access, and AI chat soon.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Show when="signed-out">
+          <div className="flex flex-wrap items-center gap-2">
+            <SignInButton mode="modal">
+              <Button size="sm">Sign in</Button>
+            </SignInButton>
+            <SignUpButton mode="modal">
+              <Button size="sm" variant="outline">
+                Create account
+              </Button>
+            </SignUpButton>
+          </div>
+        </Show>
+        <Show when="signed-in">
+          <div className="flex items-center gap-3">
+            <UserButton />
+            <p className="text-sm text-muted-foreground">
+              You&apos;re signed in. This account is now yours to keep.
+            </p>
+          </div>
+        </Show>
+      </CardContent>
+    </Card>
+  );
+}
 
-  const cliSnippet = `claude mcp add --transport http goals ${endpoint} --header "Authorization: Bearer ${token}"`;
-
-  const rotate = async () => {
-    setRotating(true);
-    try {
-      const pat = await rotateToken();
-      onRotated(pat);
-      setRevealed(true);
-      toast.success("New MCP token issued", {
-        description: "The old token no longer works. Update your MCP clients.",
-      });
-    } catch {
-      toast.error("Couldn't rotate the token", { description: "Please try again." });
-    } finally {
-      setRotating(false);
-      setConfirmOpen(false);
-    }
-  };
+function McpCard({ endpoint }: { endpoint: string }) {
+  const cliSnippet = `claude mcp add --transport http goals ${endpoint}`;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>MCP access</CardTitle>
         <CardDescription>
-          Connect an agent (Claude Code, Claude Desktop, Cursor…) to read and edit these goals.
-          The token authenticates as you — treat it like a password.
+          Connect an agent (Claude on Android, Claude Code, Cursor…) to read and edit these goals.
+          Access is authorized with your sign-in over OAuth — there&apos;s no token to copy or leak.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="space-y-2">
-          <FieldLabel>Endpoint</FieldLabel>
-          <CopyRow value={endpoint} />
-        </div>
 
-        <div className="space-y-2">
-          <FieldLabel>Token</FieldLabel>
-          <CopyRow
-            value={token}
-            masked={!revealed}
-            trailing={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setRevealed((r) => !r)}
-                aria-label={revealed ? "Hide token" : "Show token"}
-              >
-                {revealed ? <EyeOff /> : <Eye />}
-              </Button>
-            }
-          />
-        </div>
+      {/* MCP is authorized only via Clerk sign-in: the OAuth flow needs a real
+          identity, so there's nothing to set up while signed out. */}
+      <Show when="signed-out">
+        <CardContent>
+          <div className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-5">
+            <Lock className="h-5 w-5 shrink-0 text-muted-foreground" />
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Sign in above to enable MCP access.
+              </p>
+              <SignInButton mode="modal">
+                <Button size="sm" variant="outline">
+                  Sign in to enable
+                </Button>
+              </SignInButton>
+            </div>
+          </div>
+        </CardContent>
+      </Show>
 
-        <div className="space-y-2">
-          <FieldLabel>Add to Claude Code</FieldLabel>
-          <CopyRow value={cliSnippet} mono />
-        </div>
+      <Show when="signed-in">
+        <CardContent className="space-y-5">
+          <div className="space-y-2">
+            <FieldLabel>Endpoint</FieldLabel>
+            <CopyRow value={endpoint} />
+          </div>
 
-        <div className="flex items-center justify-between border-t border-border pt-4">
-          <p className="text-xs text-muted-foreground">
-            Leaked the token? Rotate it — your goals stay, old token stops working.
+          <div className="space-y-2">
+            <FieldLabel>Add to Claude Code</FieldLabel>
+            <CopyRow value={cliSnippet} mono />
+          </div>
+
+          <p className="border-t border-border pt-4 text-xs text-muted-foreground">
+            Adding the endpoint in an MCP client (or pasting it as a connector in the Claude app)
+            opens a sign-in prompt — approve it once and the client stays connected. Revoke access
+            anytime by signing the app out from your account.
           </p>
-          <Button variant="outline" size="sm" onClick={() => setConfirmOpen(true)}>
-            <RefreshCw />
-            Rotate token
-          </Button>
-        </div>
-      </CardContent>
-
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Rotate MCP token?</DialogTitle>
-            <DialogDescription>
-              A new token will be issued and the current one will stop working immediately. Any MCP
-              client using the old token will need to be updated.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={rotating}>
-              Cancel
-            </Button>
-            <Button onClick={rotate} disabled={rotating}>
-              {rotating ? "Rotating…" : "Rotate token"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </CardContent>
+      </Show>
     </Card>
   );
 }
