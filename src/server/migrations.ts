@@ -129,4 +129,15 @@ export const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS notes_step_id_idx ON notes (step_id);
     `,
   },
+  {
+    name: "006_clerk_link",
+    sql: `
+      -- Clerk auth is optional and additive: an account is still primarily the
+      -- anonymous cookie session. This column links a Clerk identity to that
+      -- account so it becomes recoverable across cookies/devices (see
+      -- users.resolveWebUser). Nullable — an account that never signs in stays
+      -- purely anonymous — and UNIQUE so a Clerk identity maps to one account.
+      ALTER TABLE users ADD COLUMN clerk_user_id TEXT UNIQUE;
+    `,
+  },
 ];

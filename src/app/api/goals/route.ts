@@ -1,3 +1,4 @@
+import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 import { getPool } from "@/server/pool";
 import * as repo from "@/server/repo";
@@ -48,16 +49,17 @@ const putBodySchema = z.object({
  * The fine-grained operations live on the MCP side, where an agent acts one
  * edit at a time.
  *
- * Both verbs are scoped to the current user, resolved from the session cookie.
- * A first-time visitor is created here and handed a cookie (see resolveWebUser),
- * so GET doubles as "sign me in".
+ * Both verbs are scoped to the current user, resolved from the session cookie
+ * (and a linked Clerk identity when signed in — see resolveWebUser). A first-time
+ * visitor is created here and handed a cookie, so GET doubles as "sign me in".
  */
 export async function GET(request: Request) {
   const startedAt = Date.now();
   let userId: string | undefined;
   try {
+    const { userId: clerkUserId } = await auth();
     const pool = await getPool();
-    const { user, setCookie } = await resolveWebUser(pool, request);
+    const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId);
     userId = user.id;
     const res = json(await repo.getState(pool, user.id), setCookie);
     logRequest(request, res.status, startedAt, { userId });
@@ -81,8 +83,9 @@ export async function PUT(request: Request) {
     }
 
     const { goals, baseUpdatedAt } = parsed.data;
+    const { userId: clerkUserId } = await auth();
     const pool = await getPool();
-    const { user, setCookie } = await resolveWebUser(pool, request);
+    const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId);
     userId = user.id;
     const res = json(await repo.replaceAll(pool, user.id, goals, baseUpdatedAt ?? null), setCookie);
     logRequest(request, res.status, startedAt, { userId });
