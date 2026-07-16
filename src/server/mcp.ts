@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Pool } from "./db";
-import { goalProgress, goalStepCounts, type Goal } from "./domain";
+import { goalProgress, goalStatus, goalStepCounts, lastActivityAt, type Goal } from "./domain";
 import * as repo from "./repo";
 
 /** Every tool answers with JSON text — agents parse it, humans can read it. */
@@ -16,12 +16,27 @@ function summarize(goal: Goal) {
     id: goal.id,
     title: goal.title,
     why: goal.why,
+    status: goalStatus(goal),
     progressPct: goalProgress(goal),
     steps: { done, total },
     groups: goal.groups.length,
     notes: goal.notes?.length ?? 0,
+    updatedAt: lastActivityAt(goal),
+    ...(goal.pausedAt ? { pausedAt: goal.pausedAt } : {}),
+    ...(goal.dueDate ? { dueDate: goal.dueDate } : {}),
   };
 }
+
+/** Shared shape and docs for the optional due-date inputs below. */
+const dueDateInput = z
+  .number()
+  .optional()
+  .describe("Optional deadline: epoch ms of UTC midnight of the due day");
+const dueDateChange = z
+  .number()
+  .nullable()
+  .optional()
+  .describe("New deadline (epoch ms of UTC midnight); pass null to clear it");
 
 /**
  * Build the MCP surface over one user's goals store. `ownerId` is the user the
@@ -35,10 +50,12 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     { name: "goals-app", version: "1.0.0" },
     {
       instructions:
-        "Read and manage the user's goals. A goal breaks down into groups of steps, " +
-        "and carries a notes feed where the user records thinking about the goal as " +
-        "a whole — what's working, what's stuck. Read the notes before advising on a " +
-        "goal; they hold the context the structure doesn't.",
+        "Read and manage the user's goals. A goal breaks down into steps — either " +
+        "directly on the goal, or organized into groups — and carries a notes feed " +
+        "where the user records thinking about the goal as a whole — what's working, " +
+        "what's stuck. Read the notes before advising on a goal; they hold the " +
+        "context the structure doesn't. Goals, groups and steps can each carry an " +
+        "optional due date.",
     }
   );
 
@@ -77,9 +94,10 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
       inputSchema: {
         title: z.string().min(1).describe("What the user wants to achieve"),
         why: z.string().optional().describe("Why it matters to them — optional but motivating"),
+        dueDate: dueDateInput,
       },
     },
-    async ({ title, why }) => json(await repo.createGoal(pool, ownerId, title, why))
+    async ({ title, why, dueDate }) => json(await repo.createGoal(pool, ownerId, title, why, dueDate))
   );
 
   server.registerTool(
@@ -94,13 +112,14 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
         goalId: z.string(),
         title: z.string().min(1).optional().describe("The new title, if it should change"),
         why: z.string().optional().describe("The new reason; pass an empty string to clear it"),
+        dueDate: dueDateChange,
       },
     },
-    async ({ goalId, title, why }) => {
-      if (title === undefined && why === undefined) {
-        throw new Error("Nothing to update — pass a title, a why, or both.");
+    async ({ goalId, title, why, dueDate }) => {
+      if (title === undefined && why === undefined && dueDate === undefined) {
+        throw new Error("Nothing to update — pass a title, a why, a dueDate, or several.");
       }
-      return json(await repo.updateGoal(pool, ownerId, goalId, { title, why }));
+      return json(await repo.updateGoal(pool, ownerId, goalId, { title, why, dueDate }));
     }
   );
 
@@ -118,6 +137,21 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     }
   );
 
+  server.registerTool(
+    "set_goal_status",
+    {
+      title: "Pause or resume a goal",
+      description:
+        "Set a goal's status: 'paused' shelves it without losing progress, 'active' resumes " +
+        "it. Completion is not a status — it's derived from the steps being done.",
+      inputSchema: {
+        goalId: z.string(),
+        status: z.enum(["active", "paused"]).describe("'paused' to shelve, 'active' to resume"),
+      },
+    },
+    async ({ goalId, status }) => json(await repo.setGoalStatus(pool, ownerId, goalId, status))
+  );
+
   // ---- groups ----
 
   server.registerTool(
@@ -125,20 +159,21 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     {
       title: "Add a group",
       description: "Add a group of steps to a goal, e.g. 'Recording' or 'Promotion'.",
-      inputSchema: { goalId: z.string(), title: z.string().min(1) },
+      inputSchema: { goalId: z.string(), title: z.string().min(1), dueDate: dueDateInput },
     },
-    async ({ goalId, title }) => json(await repo.addGroup(pool, ownerId, goalId, title))
+    async ({ goalId, title, dueDate }) =>
+      json(await repo.addGroup(pool, ownerId, goalId, title, dueDate))
   );
 
   server.registerTool(
     "rename_group",
     {
       title: "Rename a group",
-      description: "Change a group's title.",
-      inputSchema: { groupId: z.string(), title: z.string().min(1) },
+      description: "Change a group's title and/or its due date.",
+      inputSchema: { groupId: z.string(), title: z.string().min(1), dueDate: dueDateChange },
     },
-    async ({ groupId, title }) => {
-      await repo.renameGroup(pool, ownerId, groupId, title);
+    async ({ groupId, title, dueDate }) => {
+      await repo.renameGroup(pool, ownerId, groupId, title, dueDate);
       return json({ groupId, title });
     }
   );
@@ -164,16 +199,19 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     {
       title: "Add a step",
       description:
-        "Add a step to a group. Keep the title small — one sitting's worth of work. " +
-        "`description` is an optional longer note beneath it.",
+        "Add a step to a group (`groupId`) or directly to a goal (`goalId`) for a step " +
+        "outside any group — pass exactly one. Keep the title small — one sitting's " +
+        "worth of work. `description` is an optional longer note beneath it.",
       inputSchema: {
-        groupId: z.string(),
+        goalId: z.string().optional().describe("The goal to add an ungrouped step to"),
+        groupId: z.string().optional().describe("The group to add the step to"),
         text: z.string().min(1).describe("The step's title"),
         description: z.string().optional().describe("An optional longer note — details, links, context"),
+        dueDate: dueDateInput,
       },
     },
-    async ({ groupId, text, description }) =>
-      json(await repo.addStep(pool, ownerId, groupId, text, description))
+    async ({ goalId, groupId, text, description, dueDate }) =>
+      json(await repo.addStep(pool, ownerId, { goalId, groupId }, text, description, dueDate))
   );
 
   server.registerTool(
@@ -190,13 +228,14 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
           .string()
           .optional()
           .describe("The new note; pass an empty string to clear it"),
+        dueDate: dueDateChange,
       },
     },
-    async ({ stepId, text, description }) => {
-      if (text === undefined && description === undefined) {
-        throw new Error("Nothing to update — pass a title, a description, or both.");
+    async ({ stepId, text, description, dueDate }) => {
+      if (text === undefined && description === undefined && dueDate === undefined) {
+        throw new Error("Nothing to update — pass a title, a description, a dueDate, or several.");
       }
-      return json(await repo.editStep(pool, ownerId, stepId, { text, description }));
+      return json(await repo.editStep(pool, ownerId, stepId, { text, description, dueDate }));
     }
   );
 

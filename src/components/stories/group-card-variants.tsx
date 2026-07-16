@@ -17,22 +17,31 @@ export type DemoStep = { id: string; text: string; done: boolean };
 export type GroupCardVariantProps = {
   title: string;
   steps: DemoStep[];
+  /** Highlight the first undone step with the "next" badge + Done button. */
+  highlightNext?: boolean;
+  /** Render the collapsible variant, starting folded. */
+  collapsible?: boolean;
 };
 
 let counter = 0;
 const nextId = () => `sb-lab-step-${counter++}`;
 
-export function GroupCardLive({ title, steps }: GroupCardVariantProps) {
+export function GroupCardLive({ title, steps, highlightNext, collapsible }: GroupCardVariantProps) {
   const [group, setGroup] = useState<Group>({
     id: "sb-lab-group",
     title,
     steps: steps.map((s) => ({ ...s })),
   });
+  const [collapsed, setCollapsed] = useState(Boolean(collapsible));
 
   return (
     <div className="w-72">
       <GroupCard
         group={group}
+        collapsible={collapsible}
+        collapsed={collapsed}
+        onToggleCollapse={() => setCollapsed((c) => !c)}
+        nextStepId={highlightNext ? group.steps.find((s) => !s.done)?.id ?? null : null}
         onToggleStep={(stepId) =>
           setGroup((g) => ({
             ...g,

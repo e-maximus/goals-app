@@ -2,7 +2,30 @@ import { randomBytes } from "node:crypto";
 import { withTransaction, type Pool } from "./db";
 import { uid } from "./domain";
 import { insertGoals } from "./repo";
-import { seedGoals, withFreshIds } from "./seed";
+import { seedGoals, starterGoals, withFreshIds } from "./seed";
+
+/**
+ * The friendly faces an anonymous account can wear in the topbar. Name and
+ * emoji are minted together at creation and stored on the row; a signed-in
+ * user is shown their Clerk profile instead, but every account has one.
+ * Mirrored by the backfill in migration 010 — keep the two lists in sync.
+ */
+export const IDENTITIES: readonly { name: string; avatar: string }[] = [
+  { name: "Shiny Fox", avatar: "🦊" },
+  { name: "Bright Capybara", avatar: "🦫" },
+  { name: "Quiet Owl", avatar: "🦉" },
+  { name: "Swift Otter", avatar: "🦦" },
+  { name: "Calm Panda", avatar: "🐼" },
+  { name: "Bold Tiger", avatar: "🐯" },
+  { name: "Sunny Koala", avatar: "🐨" },
+  { name: "Brave Penguin", avatar: "🐧" },
+  { name: "Gentle Whale", avatar: "🐋" },
+  { name: "Curious Lynx", avatar: "🐱" },
+  { name: "Steady Tortoise", avatar: "🐢" },
+  { name: "Merry Dolphin", avatar: "🐬" },
+  { name: "Wise Badger", avatar: "🦡" },
+  { name: "Clever Raven", avatar: "🐦" },
+];
 
 /**
  * Identity for the app. A user is an id plus the keys that resolve to it:
@@ -36,6 +59,10 @@ export type User = {
   pat: string;
   /** The linked Clerk identity, or null while the account is purely anonymous. */
   clerkUserId: string | null;
+  /** Generated adjective-animal name, e.g. "Shiny Fox". */
+  displayName: string | null;
+  /** Emoji matching the display name, e.g. "🦊". */
+  avatar: string | null;
 };
 
 /** A URL-safe, unguessable token. 32 bytes of randomness, base64url encoded. */
@@ -48,9 +75,11 @@ type UserRow = {
   session_token: string;
   pat: string;
   clerk_user_id: string | null;
+  display_name: string | null;
+  avatar: string | null;
 };
 
-const USER_COLS = "id, session_token, pat, clerk_user_id";
+const USER_COLS = "id, session_token, pat, clerk_user_id, display_name, avatar";
 
 function toUser(row: UserRow): User {
   return {
@@ -58,24 +87,34 @@ function toUser(row: UserRow): User {
     sessionToken: row.session_token,
     pat: row.pat,
     clerkUserId: row.clerk_user_id,
+    displayName: row.display_name,
+    avatar: row.avatar,
   };
 }
 
 /**
- * Create a brand-new user and seed them their own copy of the example goals,
- * all in one transaction. The seed is given fresh ids because goal ids are a
- * global primary key (see seed.withFreshIds).
+ * Create a brand-new user — with a generated animal identity — and seed them
+ * the starter goal, all in one transaction. The seed is given fresh ids
+ * because goal ids are a global primary key (see seed.withFreshIds).
  */
 export async function createUser(pool: Pool): Promise<User> {
   return withTransaction(pool, async (client) => {
     const now = Date.now();
-    const user: User = { id: uid(), sessionToken: newToken(), pat: newToken(), clerkUserId: null };
+    const identity = IDENTITIES[Math.floor(Math.random() * IDENTITIES.length)]!;
+    const user: User = {
+      id: uid(),
+      sessionToken: newToken(),
+      pat: newToken(),
+      clerkUserId: null,
+      displayName: identity.name,
+      avatar: identity.avatar,
+    };
     await client.query(
-      `INSERT INTO users (id, session_token, pat, goals_updated_at, created_at)
-       VALUES ($1, $2, $3, $4, $4)`,
-      [user.id, user.sessionToken, user.pat, now]
+      `INSERT INTO users (id, session_token, pat, goals_updated_at, created_at, display_name, avatar)
+       VALUES ($1, $2, $3, $4, $4, $5, $6)`,
+      [user.id, user.sessionToken, user.pat, now, user.displayName, user.avatar]
     );
-    await insertGoals(client, user.id, withFreshIds(seedGoals()));
+    await insertGoals(client, user.id, withFreshIds(starterGoals()));
     return user;
   });
 }
@@ -224,12 +263,16 @@ export async function resetTestUser(pool: Pool): Promise<{ sessionToken: string 
   await withTransaction(pool, async (client) => {
     const now = Date.now();
     await client.query(
-      `INSERT INTO users (id, session_token, pat, goals_updated_at, created_at)
-       VALUES ($1, $2, $3, $4, $4)
-       ON CONFLICT (id) DO UPDATE SET goals_updated_at = $4`,
+      `INSERT INTO users (id, session_token, pat, goals_updated_at, created_at, display_name, avatar)
+       VALUES ($1, $2, $3, $4, $4, 'Shiny Fox', '🦊')
+       ON CONFLICT (id) DO UPDATE SET goals_updated_at = $4, display_name = 'Shiny Fox', avatar = '🦊'`,
       [TEST_USER.id, TEST_USER.sessionToken, TEST_USER.pat, now]
     );
     await client.query("DELETE FROM goals WHERE owner_id = $1", [TEST_USER.id]);
+    // The canonical seed's ids are global PKs, and the server test suite plants
+    // the same fixture ids (goal-podcast, …) under its own throwaway owners in
+    // the same test database. Clear any strays so the re-seed can't collide.
+    await client.query("DELETE FROM goals WHERE id = ANY($1)", [seedGoals().map((g) => g.id)]);
     await insertGoals(client, TEST_USER.id, seedGoals());
   });
   return { sessionToken: TEST_USER.sessionToken };

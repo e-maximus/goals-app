@@ -25,6 +25,13 @@ function sampleGoal(overrides: Partial<Goal> = {}): Goal {
     title: "Launch my podcast",
     why: "Ship something creative",
     createdAt: 1_700_000_000_000,
+    // What the repo defaults an incoming goal to when the client sends neither
+    // (getState always reports both, so the round-trip assertions see them).
+    updatedAt: 1_700_000_000_000,
+    status: "active",
+    // getState always reports the ungrouped-steps list, so round-trip
+    // assertions need it present even when empty.
+    steps: [],
     groups: [
       {
         id: "g-1",
@@ -74,6 +81,232 @@ describe("store state", () => {
     assert.equal(rows[0].n, 0);
     const notes = await pool.query("SELECT COUNT(*)::int AS n FROM notes");
     assert.equal(notes.rows[0].n, 0);
+  });
+});
+
+describe("status and activity", () => {
+  it("defaults a legacy-shaped goal to active, with updatedAt = createdAt", async () => {
+    const legacy = sampleGoal({ groups: [], notes: [] });
+    // A payload from a tab predating these fields carries neither.
+    delete legacy.status;
+    delete legacy.updatedAt;
+    await repo.replaceAll(pool, owner, [legacy], null);
+
+    const goal = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.equal(goal.status, "active");
+    assert.equal(goal.updatedAt, goal.createdAt);
+    assert.equal(goal.pausedAt, undefined);
+  });
+
+  it("round-trips an explicit status, updatedAt and pausedAt verbatim", async () => {
+    const paused = sampleGoal({
+      groups: [],
+      notes: [],
+      status: "paused",
+      updatedAt: 1_700_000_500_000,
+      pausedAt: 1_700_000_500_000,
+    });
+    await repo.replaceAll(pool, owner, [paused], null);
+    assert.deepEqual((await repo.getState(pool, owner)).goals, [paused]);
+  });
+
+  it("pauses and resumes a goal via setGoalStatus", async () => {
+    await repo.replaceAll(pool, owner, [sampleGoal()], null);
+    const before = Date.now();
+
+    const pausedGoal = await repo.setGoalStatus(pool, owner, "goal-podcast", "paused");
+    assert.equal(pausedGoal.status, "paused");
+    assert.ok(pausedGoal.pausedAt! >= before);
+    assert.ok(pausedGoal.updatedAt! >= before);
+
+    const resumed = await repo.setGoalStatus(pool, owner, "goal-podcast", "active");
+    assert.equal(resumed.status, "active");
+    assert.equal(resumed.pausedAt, undefined);
+  });
+
+  it("refuses to set status on a goal that isn't there", async () => {
+    await assert.rejects(
+      () => repo.setGoalStatus(pool, owner, "nope", "paused"),
+      (err: unknown) => err instanceof repo.NotFoundError
+    );
+  });
+
+  it("bumps only the mutated goal's updatedAt on targeted mutations", async () => {
+    const a = sampleGoal();
+    const b = sampleGoal({ id: "goal-other", title: "Other", groups: [], notes: [] });
+    await repo.replaceAll(pool, owner, [a, b], null);
+
+    const stampsOf = async () =>
+      new Map((await repo.getState(pool, owner)).goals.map((g) => [g.id, g.updatedAt!]));
+
+    let previous = await stampsOf();
+    const mutations: [string, () => Promise<unknown>][] = [
+      ["updateGoal", () => repo.updateGoal(pool, owner, "goal-podcast", { title: "Renamed" })],
+      ["addGroup", () => repo.addGroup(pool, owner, "goal-podcast", "New group")],
+      ["renameGroup", () => repo.renameGroup(pool, owner, "g-1", "Renamed group")],
+      ["addStep", () => repo.addStep(pool, owner, { groupId: "g-1" }, "New step")],
+      ["setStepDone", () => repo.setStepDone(pool, owner, "s-2", true)],
+      ["editStep", () => repo.editStep(pool, owner, "s-2", { text: "Edited step" })],
+      ["deleteStep", () => repo.deleteStep(pool, owner, "s-2")],
+      ["addNote", () => repo.addNote(pool, owner, "goal-podcast", "A note")],
+      ["deleteNote", () => repo.deleteNote(pool, owner, "c-1")],
+    ];
+
+    for (const [name, mutate] of mutations) {
+      await new Promise((r) => setTimeout(r, 2));
+      await mutate();
+      const current = await stampsOf();
+      assert.ok(
+        current.get("goal-podcast")! > previous.get("goal-podcast")!,
+        `${name} should bump the mutated goal's updatedAt`
+      );
+      assert.equal(
+        current.get("goal-other"),
+        previous.get("goal-other"),
+        `${name} must not touch the other goal's updatedAt`
+      );
+      previous = current;
+    }
+  });
+});
+
+describe("ungrouped steps", () => {
+  it("round-trips a goal with steps directly on it", async () => {
+    const goal = sampleGoal({
+      groups: [],
+      notes: [],
+      steps: [
+        { id: "u-1", text: "First", done: true },
+        { id: "u-2", text: "Second", done: false, description: "With detail" },
+      ],
+    });
+    await repo.replaceAll(pool, owner, [goal], null);
+    assert.deepEqual((await repo.getState(pool, owner)).goals, [goal]);
+  });
+
+  it("adds an ungrouped step via addStep({ goalId })", async () => {
+    await repo.replaceAll(pool, owner, [sampleGoal({ groups: [], notes: [], steps: [] })], null);
+
+    const step = await repo.addStep(pool, owner, { goalId: "goal-podcast" }, "Do the thing");
+    const goal = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.deepEqual(goal.steps!.map((s) => s.id), [step.id]);
+    assert.equal(goal.groups.length, 0);
+  });
+
+  it("rejects addStep with both parents, or neither", async () => {
+    await repo.replaceAll(pool, owner, [sampleGoal()], null);
+    await assert.rejects(
+      () => repo.addStep(pool, owner, { goalId: "goal-podcast", groupId: "g-1" }, "x"),
+      (err: unknown) => err instanceof repo.ValidationError
+    );
+    await assert.rejects(
+      () => repo.addStep(pool, owner, {}, "x"),
+      (err: unknown) => err instanceof repo.ValidationError
+    );
+  });
+
+  it("edits, toggles and deletes an ungrouped step", async () => {
+    await repo.replaceAll(
+      pool,
+      owner,
+      [sampleGoal({ groups: [], notes: [], steps: [{ id: "u-1", text: "Loose end", done: false }] })],
+      null
+    );
+
+    const toggled = await repo.setStepDone(pool, owner, "u-1");
+    assert.equal(toggled.done, true);
+
+    const edited = await repo.editStep(pool, owner, "u-1", { text: "Tied up" });
+    assert.equal(edited.text, "Tied up");
+    assert.equal(edited.done, true);
+
+    await repo.deleteStep(pool, owner, "u-1");
+    const goal = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.deepEqual(goal.steps, []);
+  });
+
+  it("links a note to an ungrouped step", async () => {
+    await repo.replaceAll(
+      pool,
+      owner,
+      [sampleGoal({ groups: [], notes: [], steps: [{ id: "u-1", text: "Loose end", done: false }] })],
+      null
+    );
+
+    const note = await repo.addNote(pool, owner, "goal-podcast", "About that", "u-1");
+    assert.equal(note.stepId, "u-1");
+  });
+
+  it("won't let one owner touch another's ungrouped step", async () => {
+    const other = await createOwner(pool, "owner-2");
+    await repo.replaceAll(
+      pool,
+      owner,
+      [sampleGoal({ groups: [], notes: [], steps: [{ id: "u-1", text: "Mine", done: false }] })],
+      null
+    );
+
+    await assert.rejects(() => repo.setStepDone(pool, other, "u-1"));
+    await assert.rejects(() => repo.editStep(pool, other, "u-1", { text: "x" }));
+    await assert.rejects(() => repo.deleteStep(pool, other, "u-1"));
+  });
+});
+
+describe("due dates", () => {
+  const DUE = Date.UTC(2026, 7, 1); // Aug 1, 2026
+
+  it("round-trips due dates on the goal, a group and a step", async () => {
+    const goal = sampleGoal({
+      notes: [],
+      dueDate: DUE,
+      groups: [
+        {
+          id: "g-1",
+          title: "Preparation",
+          dueDate: DUE,
+          steps: [{ id: "s-1", text: "Pick a name", done: false, dueDate: DUE }],
+        },
+      ],
+    });
+    await repo.replaceAll(pool, owner, [goal], null);
+    assert.deepEqual((await repo.getState(pool, owner)).goals, [goal]);
+  });
+
+  it("sets and clears a due date through the targeted mutations", async () => {
+    await repo.replaceAll(pool, owner, [sampleGoal({ notes: [] })], null);
+
+    const withDue = await repo.updateGoal(pool, owner, "goal-podcast", { dueDate: DUE });
+    assert.equal(withDue.dueDate, DUE);
+    const cleared = await repo.updateGoal(pool, owner, "goal-podcast", { dueDate: null });
+    assert.equal(cleared.dueDate, undefined);
+
+    const stepDue = await repo.editStep(pool, owner, "s-2", { dueDate: DUE });
+    assert.equal(stepDue.dueDate, DUE);
+    const stepCleared = await repo.editStep(pool, owner, "s-2", { dueDate: null });
+    assert.equal(stepCleared.dueDate, undefined);
+
+    await repo.renameGroup(pool, owner, "g-1", "Preparation", DUE);
+    let goal = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.equal(goal.groups[0]!.dueDate, DUE);
+    await repo.renameGroup(pool, owner, "g-1", "Preparation", null);
+    goal = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.equal(goal.groups[0]!.dueDate, undefined);
+  });
+
+  it("carries a due date through createGoal, addGroup and addStep", async () => {
+    const goal = await repo.createGoal(pool, owner, "Ship it", undefined, DUE);
+    assert.equal(goal.dueDate, DUE);
+
+    const group = await repo.addGroup(pool, owner, goal.id, "Phase 1", DUE);
+    assert.equal(group.dueDate, DUE);
+
+    const step = await repo.addStep(pool, owner, { goalId: goal.id }, "First move", undefined, DUE);
+    assert.equal(step.dueDate, DUE);
+
+    const stored = await repo.getGoal(pool, owner, goal.id);
+    assert.equal(stored.dueDate, DUE);
+    assert.equal(stored.groups[0]!.dueDate, DUE);
+    assert.equal(stored.steps![0]!.dueDate, DUE);
   });
 });
 
@@ -216,7 +449,7 @@ describe("groups and steps", () => {
 
   it("adds a group with a step and toggles it", async () => {
     const group = await repo.addGroup(pool, owner, "goal-podcast", "Recording");
-    const step = await repo.addStep(pool, owner, group.id, "Record ep. 1");
+    const step = await repo.addStep(pool, owner, { groupId: group.id }, "Record ep. 1");
     assert.equal(step.done, false);
 
     const toggled = await repo.setStepDone(pool, owner, step.id);
@@ -229,7 +462,7 @@ describe("groups and steps", () => {
 
   it("rewrites a step's text without touching whether it is done", async () => {
     const group = await repo.addGroup(pool, owner, "goal-podcast", "Recording");
-    const step = await repo.addStep(pool, owner, group.id, "Record ep 1");
+    const step = await repo.addStep(pool, owner, { groupId: group.id }, "Record ep 1");
     await repo.setStepDone(pool, owner, step.id, true);
 
     const edited = await repo.editStep(pool, owner, step.id, { text: "Record episode 1" });
@@ -239,7 +472,7 @@ describe("groups and steps", () => {
 
   it("carries a step's description through add, read and edit", async () => {
     const group = await repo.addGroup(pool, owner, "goal-podcast", "Recording");
-    const step = await repo.addStep(pool, owner, group.id, "Record ep 1", "  In the home studio  ");
+    const step = await repo.addStep(pool, owner, { groupId: group.id }, "Record ep 1", "  In the home studio  ");
     assert.equal(step.description, "In the home studio");
 
     // It survives a reload from the database.
@@ -258,7 +491,7 @@ describe("groups and steps", () => {
 
   it("refuses to blank out a step's title", async () => {
     const group = await repo.addGroup(pool, owner, "goal-podcast", "Recording");
-    const step = await repo.addStep(pool, owner, group.id, "Record ep 1");
+    const step = await repo.addStep(pool, owner, { groupId: group.id }, "Record ep 1");
 
     await assert.rejects(
       () => repo.editStep(pool, owner, step.id, { text: "  " }),
@@ -309,7 +542,7 @@ describe("per-user isolation", () => {
     await assert.rejects(() => repo.updateGoal(pool, other, "goal-podcast", { title: "x" }));
     await assert.rejects(() => repo.deleteGoal(pool, other, "goal-podcast"));
     await assert.rejects(() => repo.renameGroup(pool, other, groupId, "x"));
-    await assert.rejects(() => repo.addStep(pool, other, groupId, "x"));
+    await assert.rejects(() => repo.addStep(pool, other, { groupId }, "x"));
     await assert.rejects(() => repo.editStep(pool, other, stepId, { text: "x" }));
     await assert.rejects(() => repo.deleteStep(pool, other, stepId));
     await assert.rejects(() => repo.editNote(pool, other, noteId, { text: "x" }));

@@ -69,6 +69,7 @@ describe("MCP surface", () => {
       "list_goals",
       "list_notes",
       "rename_group",
+      "set_goal_status",
       "toggle_step",
       "update_goal",
     ]);
@@ -146,15 +147,107 @@ describe("MCP surface", () => {
     await client.close();
   });
 
-  it("lists goals with progress and a note count", async () => {
+  it("lists goals with progress, a note count, status and activity", async () => {
     const client = await connect();
     const result = await client.callTool({ name: "list_goals", arguments: {} });
-    const goals = payload<{ id: string; progressPct: number; notes: number }[]>(result);
+    const goals = payload<
+      { id: string; progressPct: number; notes: number; status: string; updatedAt: number }[]
+    >(result);
 
     assert.equal(goals.length, 1);
     assert.equal(goals[0]!.id, "goal-podcast");
     assert.equal(goals[0]!.progressPct, 100); // the one step is done
     assert.equal(goals[0]!.notes, 1);
+    assert.equal(goals[0]!.status, "active");
+    assert.equal(goals[0]!.updatedAt, goal.createdAt); // untouched since the seed
+    await client.close();
+  });
+
+  it("pauses and resumes a goal", async () => {
+    const client = await connect();
+
+    const paused = payload<Goal>(
+      await client.callTool({
+        name: "set_goal_status",
+        arguments: { goalId: "goal-podcast", status: "paused" },
+      })
+    );
+    assert.equal(paused.status, "paused");
+    assert.ok(paused.pausedAt! > 0);
+
+    const resumed = payload<Goal>(
+      await client.callTool({
+        name: "set_goal_status",
+        arguments: { goalId: "goal-podcast", status: "active" },
+      })
+    );
+    assert.equal(resumed.status, "active");
+    assert.equal(resumed.pausedAt, undefined);
+    await client.close();
+  });
+
+  it("adds an ungrouped step with add_step({ goalId })", async () => {
+    const client = await connect();
+    const added = payload<{ id: string; text: string }>(
+      await client.callTool({
+        name: "add_step",
+        arguments: { goalId: "goal-podcast", text: "A loose end" },
+      })
+    );
+
+    const stored = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.deepEqual(stored.steps!.map((s) => s.id), [added.id]);
+    await client.close();
+  });
+
+  it("rejects add_step with both parents, or neither", async () => {
+    const client = await connect();
+    const both = await client.callTool({
+      name: "add_step",
+      arguments: { goalId: "goal-podcast", groupId: "g-1", text: "x" },
+    });
+    assert.equal((both as { isError?: boolean }).isError, true);
+
+    const neither = await client.callTool({ name: "add_step", arguments: { text: "x" } });
+    assert.equal((neither as { isError?: boolean }).isError, true);
+    await client.close();
+  });
+
+  it("sets and clears a due date over MCP", async () => {
+    const client = await connect();
+    const due = Date.UTC(2026, 7, 1);
+
+    const withDue = payload<Goal>(
+      await client.callTool({
+        name: "update_goal",
+        arguments: { goalId: "goal-podcast", dueDate: due },
+      })
+    );
+    assert.equal(withDue.dueDate, due);
+
+    const cleared = payload<Goal>(
+      await client.callTool({
+        name: "update_goal",
+        arguments: { goalId: "goal-podcast", dueDate: null },
+      })
+    );
+    assert.equal(cleared.dueDate, undefined);
+
+    const step = payload<{ dueDate?: number }>(
+      await client.callTool({ name: "edit_step", arguments: { stepId: "s-1", dueDate: due } })
+    );
+    assert.equal(step.dueDate, due);
+    await client.close();
+  });
+
+  it("bumps the goal's activity stamp when an agent toggles a step", async () => {
+    const client = await connect();
+    const before = (await repo.getGoal(pool, owner, "goal-podcast")).updatedAt!;
+
+    await client.callTool({ name: "toggle_step", arguments: { stepId: "s-1" } });
+
+    const after = (await repo.getGoal(pool, owner, "goal-podcast")).updatedAt!;
+    assert.ok(after > before);
     await client.close();
   });
 

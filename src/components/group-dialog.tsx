@@ -11,24 +11,21 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DueDateField } from "@/components/due-date-field";
 
 /**
- * The step form — a title, an optional description, and an optional due date.
- * Serves both adding a step and editing one; they ask for exactly the same
- * thing, so they share a dialog rather than having two that drift apart. The
- * title field keeps the label "Step" so it reads naturally in both flows.
+ * The group form — a name and an optional due date. Serves both adding a group
+ * and renaming one (they ask for the same thing), replacing the generic
+ * PromptDialog those flows used before groups had deadlines.
  */
-export function StepDialog({
+export function GroupDialog({
   open,
   onOpenChange,
   title,
   description,
   submitLabel,
-  initialText = "",
-  initialDescription = "",
+  initialTitle = "",
   initialDueDate,
   onSubmit,
 }: {
@@ -37,13 +34,11 @@ export function StepDialog({
   title: string;
   description?: React.ReactNode;
   submitLabel: string;
-  initialText?: string;
-  initialDescription?: string;
+  initialTitle?: string;
   initialDueDate?: number;
-  onSubmit: (text: string, description?: string, dueDate?: number) => void;
+  onSubmit: (title: string, dueDate?: number) => void;
 }) {
-  const [text, setText] = useState(initialText);
-  const [desc, setDesc] = useState(initialDescription);
+  const [name, setName] = useState(initialTitle);
   const [dueDate, setDueDate] = useState<number | undefined>(initialDueDate);
 
   // Reset fields each time the dialog transitions to open. Adjusting state during
@@ -53,15 +48,14 @@ export function StepDialog({
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
-      setText(initialText);
-      setDesc(initialDescription);
+      setName(initialTitle);
       setDueDate(initialDueDate);
     }
   }
 
   const submit = () => {
-    if (!text.trim()) return;
-    onSubmit(text, desc, dueDate);
+    if (!name.trim()) return;
+    onSubmit(name, dueDate);
     onOpenChange(false);
   };
 
@@ -80,29 +74,13 @@ export function StepDialog({
           className="space-y-4"
         >
           <div className="space-y-2">
-            <Label htmlFor="step-title">Step</Label>
+            <Label htmlFor="group-name">Group name</Label>
             <Input
-              id="step-title"
+              id="group-name"
               autoFocus
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="e.g. Record ep. 3"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="step-description">Description (optional)</Label>
-            <Textarea
-              id="step-description"
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              placeholder="Add detail, context, or a link — anything that helps."
-              className="resize-none"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Editing & Mixing"
             />
           </div>
           <DueDateField value={dueDate} onChange={setDueDate} />
@@ -110,7 +88,7 @@ export function StepDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!text.trim()}>
+            <Button type="submit" disabled={!name.trim()}>
               {submitLabel}
             </Button>
           </DialogFooter>
