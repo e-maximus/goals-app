@@ -25,6 +25,8 @@ import {
 import { GoalBanner } from "@/components/goal-banner";
 import { GoalStepper } from "@/components/goal-stepper";
 import { NotesSection } from "@/components/notes-section";
+import { TaskDialog } from "@/components/task-dialog";
+import { TaskRow } from "@/components/task-row";
 import { LoadingState, SectionLabel } from "@/components/ui-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useGoalView, type GoalView } from "@/lib/use-goal-view";
@@ -54,6 +56,63 @@ function ViewToggle({ view, onChange }: { view: GoalView; onChange: (v: GoalView
       {option("list", "List", List)}
       {option("timeline", "Timeline", Milestone)}
     </div>
+  );
+}
+
+/**
+ * The tasks tied to this goal — the day-to-day to-dos living next to the plan.
+ * They never feed the goal's progress; that stays derived from steps alone.
+ * Renders nothing when the goal has no tasks beyond the add button.
+ */
+function GoalTasksSection({ goalId }: { goalId: string }) {
+  const tasks = useStore((s) => s.tasks);
+  const goals = useStore((s) => s.goals);
+  const addTask = useStore((s) => s.addTask);
+  const [addOpen, setAddOpen] = useState(false);
+
+  const goalTasks = tasks.filter((t) => t.goalId === goalId);
+
+  return (
+    <section className="mt-10">
+      <SectionLabel
+        action={
+          <Button variant="ghost" size="sm" onClick={() => setAddOpen(true)}>
+            <Plus data-icon="inline-start" /> Add task
+          </Button>
+        }
+      >
+        Tasks
+        {goalTasks.length > 0 && (
+          <span className="font-medium normal-case tracking-normal text-muted-foreground/70">
+            {" "}
+            — {goalTasks.length}
+          </span>
+        )}
+      </SectionLabel>
+      {goalTasks.length > 0 ? (
+        <div className="rounded-2xl border border-border bg-card px-3 py-2 shadow-sm">
+          {goalTasks.map((t) => (
+            <TaskRow key={t.id} task={t} showGoal={false} fixedGoalId={goalId} />
+          ))}
+        </div>
+      ) : (
+        <p className="text-[13px] text-muted-foreground">
+          No tasks tied to this goal yet — day-to-day to-dos live here, separate from the
+          plan&apos;s steps.
+        </p>
+      )}
+
+      <TaskDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        title="Add task"
+        description="Add a to-do tied to this goal. It won't affect the goal's progress."
+        submitLabel="Add task"
+        goals={goals}
+        fixedGoalId={goalId}
+        onSubmit={(title, values) => addTask(title, values)}
+      />
+    </section>
   );
 }
 
@@ -277,6 +336,8 @@ export function GoalDetail({ goalId }: { goalId: string }) {
             </div>
           </div>
         )}
+
+        <GoalTasksSection goalId={goal.id} />
 
         <NotesSection goalId={goal.id} groups={linkableGroups} notes={goal.notes ?? []} />
       </main>

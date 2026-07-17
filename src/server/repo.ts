@@ -1,5 +1,15 @@
 import { withTransaction, type Client, type Pool } from "./db";
-import { uid, type Note, type Goal, type GoalStatus, type Group, type Step } from "./domain";
+import {
+  isTaskDone,
+  uid,
+  utcMidnight,
+  type Note,
+  type Goal,
+  type GoalStatus,
+  type Group,
+  type Step,
+  type Task,
+} from "./domain";
 
 export type StoreState = {
   /**
@@ -12,6 +22,7 @@ export type StoreState = {
   initialized: boolean;
   updatedAt: number;
   goals: Goal[];
+  tasks: Task[];
 };
 
 /** Raised when a write targets something that isn't there. Mapped to 404 / an MCP error. */
@@ -185,7 +196,85 @@ export async function insertGoals(client: Client, ownerId: string, goals: Goal[]
   }
 }
 
-/** Assemble one owner's whole store: four flat queries, stitched together in memory. */
+/** Shape a task row into a domain Task, omitting absent optional fields. */
+function toTask(row: {
+  id: string;
+  goal_id: string | null;
+  title: string;
+  description: string | null;
+  daily: boolean;
+  due_date: number | null;
+  done: boolean;
+  completed_on: number | null;
+  created_at: number;
+}): Task {
+  return {
+    id: row.id,
+    title: row.title,
+    ...(row.description ? { description: row.description } : {}),
+    ...(row.goal_id ? { goalId: row.goal_id } : {}),
+    ...(row.daily ? { daily: true } : {}),
+    ...(row.due_date ? { dueDate: row.due_date } : {}),
+    done: row.done,
+    ...(row.completed_on ? { completedOn: row.completed_on } : {}),
+    createdAt: row.created_at,
+  };
+}
+
+const TASK_COLS = "id, goal_id, title, description, daily, due_date, done, completed_on, created_at";
+
+/**
+ * Insert an owner's task list in order. A task's `goalId` must land on one of
+ * the owner's goals; anything else (a since-deleted goal, someone else's id) is
+ * stored as NULL rather than tripping the foreign key — mirroring how notes
+ * treat a stale `stepId`.
+ */
+async function insertTasks(client: Client, ownerId: string, tasks: Task[]): Promise<void> {
+  const { rows } = await client.query<{ id: string }>(
+    "SELECT id FROM goals WHERE owner_id = $1",
+    [ownerId]
+  );
+  const goalIds = new Set(rows.map((r) => r.id));
+
+  for (const [index, task] of tasks.entries()) {
+    const goalId = task.goalId && goalIds.has(task.goalId) ? task.goalId : null;
+    await client.query(
+      `INSERT INTO tasks (id, owner_id, goal_id, title, description, daily, due_date, done, completed_on, created_at, position)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        task.id,
+        ownerId,
+        goalId,
+        task.title,
+        task.description ?? null,
+        task.daily ?? false,
+        task.dueDate ?? null,
+        task.done,
+        task.completedOn ?? null,
+        task.createdAt,
+        index,
+      ]
+    );
+  }
+}
+
+/** One owner's tasks, in their arranged order. */
+async function readTasks(client: Client | Pool, ownerId: string): Promise<Task[]> {
+  const { rows } = await client.query<{
+    id: string;
+    goal_id: string | null;
+    title: string;
+    description: string | null;
+    daily: boolean;
+    due_date: number | null;
+    done: boolean;
+    completed_on: number | null;
+    created_at: number;
+  }>(`SELECT ${TASK_COLS} FROM tasks WHERE owner_id = $1 ORDER BY position, id`, [ownerId]);
+  return rows.map(toTask);
+}
+
+/** Assemble one owner's whole store: five flat queries, stitched together in memory. */
 export async function getState(pool: Pool, ownerId: string): Promise<StoreState> {
   const updatedAt = await readUpdatedAt(pool, ownerId);
 
@@ -289,6 +378,8 @@ export async function getState(pool: Pool, ownerId: string): Promise<StoreState>
     notesByGoal.set(n.goal_id, list);
   }
 
+  const tasks = await readTasks(pool, ownerId);
+
   const goals: Goal[] = goalRows.rows.map((g) => ({
     id: g.id,
     title: g.title,
@@ -303,7 +394,7 @@ export async function getState(pool: Pool, ownerId: string): Promise<StoreState>
     notes: notesByGoal.get(g.id) ?? [],
   }));
 
-  return { initialized: updatedAt !== null, updatedAt: updatedAt ?? 0, goals };
+  return { initialized: updatedAt !== null, updatedAt: updatedAt ?? 0, goals, tasks };
 }
 
 export async function getGoal(pool: Pool, ownerId: string, goalId: string): Promise<Goal> {
@@ -314,9 +405,14 @@ export async function getGoal(pool: Pool, ownerId: string, goalId: string): Prom
 }
 
 /**
- * Replace one owner's entire store with `goals` — the write path for the web
- * app's sync. Runs in one transaction, so a reader never sees a half-applied
- * state.
+ * Replace one owner's entire store with `goals` (and `tasks`) — the write path
+ * for the web app's sync. Runs in one transaction, so a reader never sees a
+ * half-applied state.
+ *
+ * `tasks` left undefined leaves the tasks table alone — a client from before
+ * tasks existed can still save its goals without silently wiping them. (The
+ * goals rewrite would null the tasks' goal links via ON DELETE SET NULL, so the
+ * kept tasks are re-pointed at the re-inserted goals afterwards.)
  *
  * `baseUpdatedAt` is the version the client believed it was editing. If the
  * server has moved on since (an MCP tool wrote in the meantime), we reject
@@ -326,7 +422,8 @@ export async function replaceAll(
   pool: Pool,
   ownerId: string,
   goals: Goal[],
-  baseUpdatedAt: number | null
+  baseUpdatedAt: number | null,
+  tasks?: Task[]
 ): Promise<StoreState> {
   return withTransaction(pool, async (client) => {
     // Lock this owner's row for the duration so a concurrent writer for the same
@@ -343,11 +440,19 @@ export async function replaceAll(
       throw new ConflictError(current);
     }
 
+    // A legacy save keeps the stored tasks; snapshot them before the goals
+    // rewrite severs their goal links.
+    const keptTasks = tasks === undefined ? await readTasks(client, ownerId) : undefined;
+
     await client.query("DELETE FROM goals WHERE owner_id = $1", [ownerId]);
     await insertGoals(client, ownerId, goals);
 
+    await client.query("DELETE FROM tasks WHERE owner_id = $1", [ownerId]);
+    const nextTasks = tasks ?? keptTasks ?? [];
+    await insertTasks(client, ownerId, nextTasks);
+
     const updatedAt = await touch(client, ownerId);
-    return { initialized: true, updatedAt, goals };
+    return { initialized: true, updatedAt, goals, tasks: await readTasks(client, ownerId) };
   });
 }
 
@@ -813,6 +918,206 @@ export async function deleteNote(pool: Pool, ownerId: string, noteId: string): P
     );
     if (!rows[0]) throw new NotFoundError("Note", noteId);
     await touchGoal(client, rows[0].goal_id);
+    await touch(client, ownerId);
+  });
+}
+
+// ---- tasks ----
+//
+// Tasks are owned directly (owner_id on the row), so scoping is a plain WHERE.
+// Task mutations bump the owner's store stamp — the web app's whole-store PUT
+// carries tasks too, so an agent's task edit must trip the same conflict check.
+
+export async function listTasks(pool: Pool, ownerId: string): Promise<Task[]> {
+  return readTasks(pool, ownerId);
+}
+
+export async function createTask(
+  pool: Pool,
+  ownerId: string,
+  title: string,
+  options: { description?: string; goalId?: string; daily?: boolean; dueDate?: number } = {}
+): Promise<Task> {
+  return withTransaction(pool, async (client) => {
+    if (options.goalId) await requireGoal(client, ownerId, options.goalId);
+    const desc = options.description?.trim() || undefined;
+    const task: Task = {
+      id: uid(),
+      title: title.trim(),
+      ...(desc ? { description: desc } : {}),
+      ...(options.goalId ? { goalId: options.goalId } : {}),
+      ...(options.daily ? { daily: true } : {}),
+      ...(options.dueDate ? { dueDate: options.dueDate } : {}),
+      done: false,
+      createdAt: Date.now(),
+    };
+    // New tasks go to the top of the list, matching the app's addTask.
+    await client.query("UPDATE tasks SET position = position + 1 WHERE owner_id = $1", [ownerId]);
+    await client.query(
+      `INSERT INTO tasks (id, owner_id, goal_id, title, description, daily, due_date, done, created_at, position)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, 0)`,
+      [
+        task.id,
+        ownerId,
+        task.goalId ?? null,
+        task.title,
+        desc ?? null,
+        task.daily ?? false,
+        task.dueDate ?? null,
+        task.createdAt,
+      ]
+    );
+    await touch(client, ownerId);
+    return task;
+  });
+}
+
+/**
+ * Edit a task's title, description, goal link, daily flag and/or due date.
+ * Fields left undefined are untouched; an empty `description` clears it, an
+ * empty `goalId` unlinks it from its goal, and a null `dueDate` clears the
+ * deadline. Its done state is left alone — use setTaskDone for that.
+ */
+export async function updateTask(
+  pool: Pool,
+  ownerId: string,
+  taskId: string,
+  changes: {
+    title?: string;
+    description?: string;
+    goalId?: string;
+    daily?: boolean;
+    dueDate?: number | null;
+  }
+): Promise<Task> {
+  return withTransaction(pool, async (client) => {
+    const { rowCount } = await client.query(
+      "SELECT 1 FROM tasks WHERE id = $1 AND owner_id = $2",
+      [taskId, ownerId]
+    );
+    if (!rowCount) throw new NotFoundError("Task", taskId);
+
+    if (changes.title !== undefined) {
+      const next = changes.title.trim();
+      if (!next) throw new ValidationError("A task needs a title");
+      await client.query("UPDATE tasks SET title = $3 WHERE id = $1 AND owner_id = $2", [
+        taskId,
+        ownerId,
+        next,
+      ]);
+    }
+
+    if (changes.description !== undefined) {
+      await client.query("UPDATE tasks SET description = $3 WHERE id = $1 AND owner_id = $2", [
+        taskId,
+        ownerId,
+        changes.description.trim() || null,
+      ]);
+    }
+
+    if (changes.goalId !== undefined) {
+      let linkedGoal: string | null = null;
+      if (changes.goalId) {
+        await requireGoal(client, ownerId, changes.goalId);
+        linkedGoal = changes.goalId;
+      }
+      await client.query("UPDATE tasks SET goal_id = $3 WHERE id = $1 AND owner_id = $2", [
+        taskId,
+        ownerId,
+        linkedGoal,
+      ]);
+    }
+
+    if (changes.daily !== undefined) {
+      // Switching kind resets the completion state — a fresh daily starts
+      // undone today, and a fresh one-off starts unchecked.
+      await client.query(
+        "UPDATE tasks SET daily = $3, done = FALSE, completed_on = NULL WHERE id = $1 AND owner_id = $2",
+        [taskId, ownerId, changes.daily]
+      );
+    }
+
+    if (changes.dueDate !== undefined) {
+      await client.query("UPDATE tasks SET due_date = $3 WHERE id = $1 AND owner_id = $2", [
+        taskId,
+        ownerId,
+        changes.dueDate,
+      ]);
+    }
+
+    const { rows } = await client.query<{
+      id: string;
+      goal_id: string | null;
+      title: string;
+      description: string | null;
+      daily: boolean;
+      due_date: number | null;
+      done: boolean;
+      completed_on: number | null;
+      created_at: number;
+    }>(`SELECT ${TASK_COLS} FROM tasks WHERE id = $1 AND owner_id = $2`, [taskId, ownerId]);
+    await touch(client, ownerId);
+    return toTask(rows[0]!);
+  });
+}
+
+/**
+ * Mark a task done or not done, or flip it when `done` is omitted. For a daily
+ * task "done" means done *today* — completing stamps today's UTC midnight, and
+ * the stamp expiring overnight is what resets it for tomorrow.
+ */
+export async function setTaskDone(
+  pool: Pool,
+  ownerId: string,
+  taskId: string,
+  done?: boolean
+): Promise<Task> {
+  return withTransaction(pool, async (client) => {
+    const { rows } = await client.query<{
+      id: string;
+      goal_id: string | null;
+      title: string;
+      description: string | null;
+      daily: boolean;
+      due_date: number | null;
+      done: boolean;
+      completed_on: number | null;
+      created_at: number;
+    }>(`SELECT ${TASK_COLS} FROM tasks WHERE id = $1 AND owner_id = $2`, [taskId, ownerId]);
+    const row = rows[0];
+    if (!row) throw new NotFoundError("Task", taskId);
+
+    const task = toTask(row);
+    const next = done ?? !isTaskDone(task);
+    if (task.daily) {
+      await client.query(
+        "UPDATE tasks SET completed_on = $3 WHERE id = $1 AND owner_id = $2",
+        [taskId, ownerId, next ? utcMidnight() : null]
+      );
+    } else {
+      await client.query("UPDATE tasks SET done = $3 WHERE id = $1 AND owner_id = $2", [
+        taskId,
+        ownerId,
+        next,
+      ]);
+    }
+
+    const { rows: updated } = await client.query<typeof row>(
+      `SELECT ${TASK_COLS} FROM tasks WHERE id = $1 AND owner_id = $2`,
+      [taskId, ownerId]
+    );
+    await touch(client, ownerId);
+    return toTask(updated[0]!);
+  });
+}
+
+export async function deleteTask(pool: Pool, ownerId: string, taskId: string): Promise<void> {
+  await withTransaction(pool, async (client) => {
+    const { rowCount } = await client.query(
+      "DELETE FROM tasks WHERE id = $1 AND owner_id = $2",
+      [taskId, ownerId]
+    );
+    if (!rowCount) throw new NotFoundError("Task", taskId);
     await touch(client, ownerId);
   });
 }

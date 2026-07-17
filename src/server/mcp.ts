@@ -55,7 +55,9 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
         "where the user records thinking about the goal as a whole — what's working, " +
         "what's stuck. Read the notes before advising on a goal; they hold the " +
         "context the structure doesn't. Goals, groups and steps can each carry an " +
-        "optional due date.",
+        "optional due date. Alongside the goals lives a flat task list — one-off " +
+        "to-dos and daily habits, optionally linked to a goal but never counted in " +
+        "its progress (see list_tasks).",
     }
   );
 
@@ -332,6 +334,104 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
     async ({ noteId }) => {
       await repo.deleteNote(pool, ownerId, noteId);
       return json({ deleted: noteId });
+    }
+  );
+
+  // ---- tasks ----
+
+  server.registerTool(
+    "list_tasks",
+    {
+      title: "List tasks",
+      description:
+        "The user's whole task list — one-off to-dos and daily habits, separate from the " +
+        "goals' steps. A daily task's `completedOn` is the UTC midnight of the day it was " +
+        "last checked off: it counts as done only if that is today. `goalId` optionally " +
+        "links a task to a goal without affecting the goal's progress.",
+      inputSchema: {},
+    },
+    async () => json(await repo.listTasks(pool, ownerId))
+  );
+
+  server.registerTool(
+    "create_task",
+    {
+      title: "Create a task",
+      description:
+        "Add a task: a one-off to-do (optionally with a due date) or a daily habit " +
+        "(`daily: true` — it resets each day). Optionally link it to a goal with `goalId`.",
+      inputSchema: {
+        title: z.string().min(1).describe("What needs doing"),
+        description: z.string().optional().describe("An optional longer note — details, links, context"),
+        goalId: z.string().optional().describe("A goal to tie the task to (from list_goals)"),
+        daily: z.boolean().optional().describe("True for a habit that repeats every day"),
+        dueDate: dueDateInput,
+      },
+    },
+    async ({ title, description, goalId, daily, dueDate }) =>
+      json(await repo.createTask(pool, ownerId, title, { description, goalId, daily, dueDate }))
+  );
+
+  server.registerTool(
+    "update_task",
+    {
+      title: "Update a task",
+      description:
+        "Change a task's title, description, goal link, daily flag or due date. Anything you " +
+        "leave out stays as it is; pass an empty `description` to clear it, an empty `goalId` " +
+        "to unlink it from its goal. Changing `daily` resets the task's completion. Its done " +
+        "state is otherwise left alone — use set_task_done for that.",
+      inputSchema: {
+        taskId: z.string(),
+        title: z.string().min(1).optional().describe("The new title, if it should change"),
+        description: z.string().optional().describe("The new note; pass an empty string to clear it"),
+        goalId: z.string().optional().describe("A goal to link to; pass an empty string to unlink"),
+        daily: z.boolean().optional().describe("Switch between a daily habit and a one-off to-do"),
+        dueDate: dueDateChange,
+      },
+    },
+    async ({ taskId, title, description, goalId, daily, dueDate }) => {
+      if (
+        title === undefined &&
+        description === undefined &&
+        goalId === undefined &&
+        daily === undefined &&
+        dueDate === undefined
+      ) {
+        throw new Error("Nothing to update — pass at least one field.");
+      }
+      return json(
+        await repo.updateTask(pool, ownerId, taskId, { title, description, goalId, daily, dueDate })
+      );
+    }
+  );
+
+  server.registerTool(
+    "set_task_done",
+    {
+      title: "Complete a task",
+      description:
+        "Mark a task done or not done. Omit `done` to flip whatever it is now. For a daily " +
+        "task 'done' means done today — it resets by itself tomorrow.",
+      inputSchema: {
+        taskId: z.string(),
+        done: z.boolean().optional().describe("Set explicitly, or omit to toggle"),
+      },
+    },
+    async ({ taskId, done }) => json(await repo.setTaskDone(pool, ownerId, taskId, done))
+  );
+
+  server.registerTool(
+    "delete_task",
+    {
+      title: "Delete a task",
+      description: "Remove a task from the list. This cannot be undone.",
+      inputSchema: { taskId: z.string() },
+      annotations: { destructiveHint: true },
+    },
+    async ({ taskId }) => {
+      await repo.deleteTask(pool, ownerId, taskId);
+      return json({ deleted: taskId });
     }
   );
 

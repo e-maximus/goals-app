@@ -29,8 +29,10 @@ import {
   completedIn,
   type Goal,
 } from "@/lib/types";
+import { todayTasks } from "@/lib/types";
 import { Topbar, Crumbs } from "@/components/topbar";
 import { LoadError } from "@/components/load-error";
+import { TaskRow } from "@/components/task-row";
 import { GoalDialog, NewGoalDialog } from "@/components/new-goal-dialog";
 import { ShareDialog } from "@/components/share-dialog";
 import { Button } from "@/components/ui/button";
@@ -332,6 +334,38 @@ function CompletedRow({ goal, prevId, nextId }: { goal: Goal; prevId?: string; n
   );
 }
 
+/**
+ * The dashboard's compact task strip: every daily task plus anything due today
+ * or overdue, checkable in place. The full list lives on /tasks.
+ */
+function TodaySection() {
+  const tasks = useStore((s) => s.tasks);
+  const today = todayTasks(tasks);
+  if (today.length === 0) return null;
+
+  return (
+    <section>
+      <SectionLabel
+        action={
+          <Link
+            href="/tasks"
+            className="font-semibold normal-case tracking-normal text-muted-foreground transition-colors hover:text-foreground"
+          >
+            All tasks →
+          </Link>
+        }
+      >
+        Today
+      </SectionLabel>
+      <div className="rounded-2xl border border-border bg-card px-3 py-2 shadow-sm">
+        {today.map((t) => (
+          <TaskRow key={t.id} task={t} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function Dashboard() {
   const goals = useStore((s) => s.goals);
   const loadStatus = useStore((s) => s.loadStatus);
@@ -350,7 +384,7 @@ export function Dashboard() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <Topbar crumbs={<Crumbs />} />
+      <Topbar crumbs={<Crumbs />} tab="goals" />
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-8 sm:px-10">
         {loadStatus === "loading" ? (
@@ -358,9 +392,13 @@ export function Dashboard() {
         ) : loadStatus === "error" ? (
           <LoadError />
         ) : goals.length === 0 ? (
-          <EmptyState onNewGoal={() => setDialogOpen(true)} />
+          <div className="space-y-8">
+            <TodaySection />
+            <EmptyState onNewGoal={() => setDialogOpen(true)} />
+          </div>
         ) : (
           <div className="space-y-8">
+            <TodaySection />
             {inProgress.length > 0 && (
               <section>
                 <SectionLabel>In progress · {inProgress.length}</SectionLabel>
