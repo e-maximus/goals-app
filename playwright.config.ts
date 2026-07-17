@@ -5,7 +5,9 @@ import { defineConfig, devices } from "@playwright/test";
 // an automatic fixture resets the store to the seeded goals before each test
 // (see e2e/fixtures.ts) and the suite runs serially — no two tests may race on
 // the one database.
-const PORT = 3000;
+// Overridable so parallel checkouts (e.g. agent worktrees) can run the suite
+// side by side without fighting over one port.
+const PORT = Number(process.env.E2E_PORT ?? 3000);
 const baseURL = `http://localhost:${PORT}`;
 
 // A database dedicated to the tests, kept apart from the dev `goals` database so
@@ -42,6 +44,7 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
+      PORT: String(PORT),
       DATABASE_URL: TEST_DATABASE_URL,
       ENABLE_TEST_RESET: "1",
     },

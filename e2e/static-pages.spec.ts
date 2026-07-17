@@ -1,0 +1,39 @@
+import { test, expect } from "./fixtures";
+
+test.describe("Static pages", () => {
+  test("the footer links to About, Privacy, and Terms", async ({ page }) => {
+    await page.goto("/");
+    const footer = page.getByRole("contentinfo");
+    await expect(footer.getByRole("link", { name: "About" })).toBeVisible();
+    await expect(footer.getByRole("link", { name: "Privacy" })).toBeVisible();
+    await expect(footer.getByRole("link", { name: "Terms" })).toBeVisible();
+  });
+
+  test("the About page tells the story and links back to the dashboard", async ({ page }) => {
+    await page.goto("/about");
+    await expect(page.getByRole("heading", { name: "Keep going.", level: 1 })).toBeVisible();
+    await expect(page.getByText("Why this exists")).toBeVisible();
+    await page.getByRole("link", { name: "My Goals" }).click();
+    // The dev server can be slow to serve the dashboard on a busy full run.
+    await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
+  });
+
+  test("the Privacy Policy page renders", async ({ page }) => {
+    await page.goto("/privacy");
+    await expect(page.getByRole("heading", { name: "Privacy Policy", level: 1 })).toBeVisible();
+    await expect(page.getByText("The short version")).toBeVisible();
+  });
+
+  test("the Terms of Use page renders", async ({ page }) => {
+    await page.goto("/terms");
+    await expect(page.getByRole("heading", { name: "Terms of Use", level: 1 })).toBeVisible();
+    await expect(page.getByText("Fair use")).toBeVisible();
+  });
+
+  test("an unknown URL shows the branded 404 with a way home", async ({ page }) => {
+    await page.goto("/no-such-page");
+    await expect(page.getByRole("heading", { name: "This page gave up." })).toBeVisible();
+    await page.getByRole("link", { name: "Back to My Goals" }).click();
+    await expect(page).toHaveURL(/\/$/);
+  });
+});
