@@ -25,6 +25,11 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   workers: 1,
+  // Tighter than Playwright's 30s default: every test here drives a local dev
+  // server against a local database, so a test that needs more than 10s is
+  // waiting on something that will never arrive, and the sooner it says so the
+  // sooner the run finishes.
+  timeout: 10_000,
   forbidOnly: !!process.env.CI, // fail CI if a test is left `.only`
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
