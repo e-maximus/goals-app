@@ -67,6 +67,13 @@ test.describe("Goal detail — groups and steps", () => {
     await expect(row.getByText("Buy brushes")).toBeVisible();
     await expect(row.getByText("Round sizes 6 and 10")).toBeVisible();
 
+    // Base UI keeps a closing dialog mounted through its exit animation, and the
+    // add-step dialog we just submitted still holds the very values we're about to
+    // assert on. Without waiting for it to leave, `getByRole("dialog")` below can
+    // resolve to that corpse: the assertions pass against it and then hang looking
+    // for a Save button it never had.
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
     // The edit dialog is prefilled with both fields, and edits persist.
     await row.getByRole("button", { name: "Edit step" }).click({ force: true });
     dialog = page.getByRole("dialog");

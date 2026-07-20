@@ -51,6 +51,10 @@ test.describe("settings (anonymous)", () => {
   });
 
   test("shows a loader, then an error, when Clerk fails to initialize", async ({ page }) => {
+    // The one test here that legitimately outlives the suite's 10s cap: it waits
+    // out the page's own 8s Clerk deadline before the error state can appear.
+    test.setTimeout(30_000);
+
     // The page waits for Clerk before loading the identity. Block clerk-js so
     // it never initializes — the page must show a loader instead of staying
     // blank, and give up with the error state once the deadline passes. Block
