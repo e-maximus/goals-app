@@ -45,4 +45,21 @@ test.describe("settings (signed in with Clerk)", () => {
       page.getByText("This account is linked to your sign-in", { exact: false })
     ).toBeVisible();
   });
+
+  test("signs out from the account card", async ({ page }) => {
+    await setupClerkTestingToken({ page });
+
+    await page.goto("/settings");
+    await clerk.signIn({
+      page,
+      signInParams: { strategy: "password", identifier: email, password },
+    });
+    await page.reload();
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+
+    // Back to the anonymous state: sign in is offered again and MCP re-gates.
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+    await expect(page.getByText("Sign in above to enable MCP access")).toBeVisible();
+  });
 });

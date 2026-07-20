@@ -30,6 +30,10 @@ function getMe(): Promise<Me> {
 function UserChip() {
   const { isLoaded, isSignedIn, user } = useUser();
   const [me, setMe] = useState<Me | null>(null);
+  // Clerk failing to initialize (missing key, blocked script) leaves `isLoaded`
+  // false forever. Give it a deadline so the chip falls back to the account's own
+  // identity rather than pulsing for the rest of the session.
+  const [authTimedOut, setAuthTimedOut] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,9 +48,19 @@ function UserChip() {
     };
   }, []);
 
+  useEffect(() => {
+    if (isLoaded) return;
+    const timer = setTimeout(() => setAuthTimedOut(true), 8_000);
+    return () => clearTimeout(timer);
+  }, [isLoaded]);
+
+  // Clerk resolves the session client-side, a beat after /api/me answers. Until
+  // it has, we don't know *which* identity to show — rendering the anonymous one
+  // meanwhile would flash a stranger's name at a signed-in user and then swap it.
+  // Hold a same-sized placeholder instead, so the chip settles in place.
   const signedIn = isLoaded && isSignedIn && user;
   const name = signedIn ? (user.fullName ?? user.username ?? "Account") : me?.displayName;
-  if (!name) return null;
+  if ((!isLoaded && !authTimedOut) || !name) return <UserChipSkeleton />;
 
   return (
     <Link
@@ -73,6 +87,20 @@ function UserChip() {
       )}
       <span className="hidden max-w-32 truncate text-sm font-medium sm:block">{name}</span>
     </Link>
+  );
+}
+
+/** The chip's footprint while the identity is still resolving. */
+function UserChipSkeleton() {
+  return (
+    <div
+      aria-hidden
+      className="flex animate-pulse items-center gap-2 py-1 pl-1 pr-3"
+      data-testid="user-chip-loading"
+    >
+      <span className="h-7 w-7 rounded-full bg-muted" />
+      <span className="hidden h-3.5 w-24 rounded bg-muted sm:block" />
+    </div>
   );
 }
 
