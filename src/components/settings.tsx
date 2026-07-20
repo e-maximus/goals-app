@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Show, SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
+import { Show, SignInButton, SignOutButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 import { Check, Copy, Lock, ShieldCheck, TriangleAlert } from "lucide-react";
 import { PageShell, Crumbs } from "@/components/page-shell";
@@ -170,11 +170,16 @@ function StableAuthCard() {
           </div>
         </Show>
         <Show when="signed-in">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <UserButton />
-            <p className="text-sm text-muted-foreground">
+            <p className="min-w-0 flex-1 text-sm text-muted-foreground">
               You&apos;re signed in. This account is now yours to keep.
             </p>
+            <SignOutButton>
+              <Button size="sm" variant="outline">
+                Sign out
+              </Button>
+            </SignOutButton>
           </div>
         </Show>
       </CardContent>
