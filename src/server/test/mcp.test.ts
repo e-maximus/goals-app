@@ -59,20 +59,78 @@ describe("MCP surface", () => {
       "add_note",
       "add_step",
       "create_goal",
+      "create_task",
       "delete_goal",
       "delete_group",
       "delete_note",
       "delete_step",
+      "delete_task",
       "edit_note",
       "edit_step",
       "get_goal",
       "list_goals",
       "list_notes",
+      "list_tasks",
       "rename_group",
       "set_goal_status",
+      "set_task_done",
       "toggle_step",
       "update_goal",
+      "update_task",
     ]);
+    await client.close();
+  });
+
+  it("creates, completes and lists a task", async () => {
+    const client = await connect();
+    const created = payload<{ id: string; goalId?: string; daily?: boolean }>(
+      await client.callTool({
+        name: "create_task",
+        arguments: { title: "Answer the editor", goalId: "goal-podcast" },
+      })
+    );
+    assert.equal(created.goalId, "goal-podcast");
+
+    const done = payload<{ done: boolean }>(
+      await client.callTool({ name: "set_task_done", arguments: { taskId: created.id } })
+    );
+    assert.equal(done.done, true);
+
+    const tasks = payload<{ id: string; done: boolean }[]>(
+      await client.callTool({ name: "list_tasks", arguments: {} })
+    );
+    assert.deepEqual(tasks.map((t) => [t.id, t.done]), [[created.id, true]]);
+    await client.close();
+  });
+
+  it("completing a daily task stamps today rather than done", async () => {
+    const client = await connect();
+    const created = payload<{ id: string }>(
+      await client.callTool({
+        name: "create_task",
+        arguments: { title: "Morning pages", daily: true },
+      })
+    );
+
+    const completed = payload<{ done: boolean; completedOn?: number }>(
+      await client.callTool({ name: "set_task_done", arguments: { taskId: created.id, done: true } })
+    );
+    assert.equal(completed.done, false);
+    const today = Date.now() - (Date.now() % 86_400_000);
+    assert.equal(completed.completedOn, today);
+    await client.close();
+  });
+
+  it("rejects a task update that asks for no change", async () => {
+    const client = await connect();
+    const created = payload<{ id: string }>(
+      await client.callTool({ name: "create_task", arguments: { title: "A task" } })
+    );
+    const result = await client.callTool({
+      name: "update_task",
+      arguments: { taskId: created.id },
+    });
+    assert.equal((result as { isError?: boolean }).isError, true);
     await client.close();
   });
 

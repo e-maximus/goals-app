@@ -269,6 +269,7 @@ export async function resetTestUser(pool: Pool): Promise<{ sessionToken: string 
       [TEST_USER.id, TEST_USER.sessionToken, TEST_USER.pat, now]
     );
     await client.query("DELETE FROM goals WHERE owner_id = $1", [TEST_USER.id]);
+    await client.query("DELETE FROM tasks WHERE owner_id = $1", [TEST_USER.id]);
     // The canonical seed's ids are global PKs, and the server test suite plants
     // the same fixture ids (goal-podcast, …) under its own throwaway owners in
     // the same test database. Clear any strays so the re-seed can't collide.

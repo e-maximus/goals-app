@@ -1,6 +1,6 @@
 "use client";
 
-import type { Goal } from "./types";
+import type { Goal, Task } from "./types";
 
 /**
  * The client half of talking to the goals server. The API is same-origin now
@@ -16,6 +16,7 @@ export type ServerState = {
   initialized: boolean;
   updatedAt: number;
   goals: Goal[];
+  tasks: Task[];
 };
 
 /** The server moved on since the state we based this write on. */
@@ -50,14 +51,15 @@ export async function fetchMe(): Promise<Me> {
   return (await res.json()) as Me;
 }
 
-export async function pushGoals(
+export async function pushState(
   goals: Goal[],
+  tasks: Task[],
   baseUpdatedAt: number | null
 ): Promise<ServerState> {
   const res = await fetch("/api/goals", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ goals, baseUpdatedAt }),
+    body: JSON.stringify({ goals, tasks, baseUpdatedAt }),
   });
 
   if (res.status === 409) {

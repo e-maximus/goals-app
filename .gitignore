@@ -42,6 +42,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# claude code (local scratch; settings.json stays committable)
+.claude/worktrees/
+.claude/settings.local.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
