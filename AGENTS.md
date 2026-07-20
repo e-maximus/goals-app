@@ -84,6 +84,14 @@ All committed and user-facing text is in **English**.
    ```
    All must pass. Don't leave a test as `.only` — CI fails on it.
 
+   Working in Claude Code? The `checklist` agent runs all five and returns a
+   pass/fail summary instead of the full logs.
+3. **If the diff touches `src/server/`, check per-user scoping.** Every query
+   must stay inside one owner: `goals`, `tasks` and `users` carry `owner_id` on
+   the row; `groups`, `steps` and `notes` reach it through their goal. A query
+   filtering on a bare row id leaks across accounts — ids are globally unique.
+   In Claude Code, the `tenant-isolation` agent audits the diff for this.
+
 ## Branching & PRs
 
 - Branch off `main`; don't commit directly to `main`. Open a PR — CI (lint +
