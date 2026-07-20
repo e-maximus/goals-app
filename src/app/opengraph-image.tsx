@@ -26,7 +26,7 @@ export default function Image() {
       >
         <div style={{ fontSize: 96, fontWeight: 700, letterSpacing: -2 }}>Keep going.</div>
         <div style={{ fontSize: 36, color: "#9db5a6" }}>
-          Every big goal is just a long line of small steps.
+          Everything starts with a small step.
         </div>
         <div
           style={{

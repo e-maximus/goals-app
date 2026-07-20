@@ -16,7 +16,7 @@ export default function AboutPage() {
         </p>
         <h1 className="text-3xl font-bold tracking-tight">Keep going.</h1>
         <p className="text-lg text-muted-foreground">
-          Every big goal is just a long line of small steps.
+          Everything starts with a small step.
         </p>
       </section>
 
