@@ -39,7 +39,7 @@ export const test = base.extend<{ seededStore: void }>({
       const { sessionToken } = (await res.json()) as { sessionToken: string };
 
       await context.addCookies([
-        { name: SESSION_COOKIE, value: sessionToken, url: baseURL ?? "http://localhost:3000" },
+        { name: SESSION_COOKIE, value: sessionToken, url: baseURL ?? "http://localhost:3100" },
       ]);
       await use();
     },

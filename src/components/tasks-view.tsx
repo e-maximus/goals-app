@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { isTaskDone, isTaskOverdue, type Task } from "@/lib/types";
-import { Topbar, Crumbs } from "@/components/topbar";
+import { PageShell, Crumbs } from "@/components/page-shell";
 import { LoadError } from "@/components/load-error";
 import { TaskDialog } from "@/components/task-dialog";
 import { TaskRow } from "@/components/task-row";
@@ -53,50 +53,46 @@ export function TasksView() {
   const dailyDone = daily.filter((t) => isTaskDone(t)).length;
 
   return (
-    <div className="flex flex-1 flex-col">
-      <Topbar crumbs={<Crumbs root="My Tasks" />} tab="tasks" />
+    <PageShell crumbs={<Crumbs root="My Tasks" />} tab="tasks" width="md">
+      {loadStatus === "loading" ? (
+        <LoadingState label="Loading your tasks…" />
+      ) : loadStatus === "error" ? (
+        <LoadError />
+      ) : tasks.length === 0 ? (
+        <EmptyState onNewTask={() => setDialogOpen(true)} />
+      ) : (
+        <div className="space-y-8">
+          {daily.length > 0 && (
+            <section>
+              <SectionLabel>
+                Daily · {dailyDone}/{daily.length} today
+              </SectionLabel>
+              <TaskCard tasks={daily} />
+            </section>
+          )}
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-8 sm:px-10">
-        {loadStatus === "loading" ? (
-          <LoadingState label="Loading your tasks…" />
-        ) : loadStatus === "error" ? (
-          <LoadError />
-        ) : tasks.length === 0 ? (
-          <EmptyState onNewTask={() => setDialogOpen(true)} />
-        ) : (
-          <div className="space-y-8">
-            {daily.length > 0 && (
-              <section>
-                <SectionLabel>
-                  Daily · {dailyDone}/{daily.length} today
-                </SectionLabel>
-                <TaskCard tasks={daily} />
-              </section>
-            )}
+          {sortedOpen.length > 0 && (
+            <section>
+              <SectionLabel>To-dos · {sortedOpen.length}</SectionLabel>
+              <TaskCard tasks={sortedOpen} />
+            </section>
+          )}
 
-            {sortedOpen.length > 0 && (
-              <section>
-                <SectionLabel>To-dos · {sortedOpen.length}</SectionLabel>
-                <TaskCard tasks={sortedOpen} />
-              </section>
-            )}
+          <button
+            onClick={() => setDialogOpen(true)}
+            className="mx-auto flex w-full max-w-md items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong px-4 py-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+          >
+            + New Task
+          </button>
 
-            <button
-              onClick={() => setDialogOpen(true)}
-              className="mx-auto flex w-full max-w-md items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong px-4 py-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-            >
-              + New Task
-            </button>
-
-            {completed.length > 0 && (
-              <section>
-                <SectionLabel>Done · {completed.length}</SectionLabel>
-                <TaskCard tasks={completed} />
-              </section>
-            )}
-          </div>
-        )}
-      </main>
+          {completed.length > 0 && (
+            <section>
+              <SectionLabel>Done · {completed.length}</SectionLabel>
+              <TaskCard tasks={completed} />
+            </section>
+          )}
+        </div>
+      )}
 
       <TaskDialog
         open={dialogOpen}
@@ -107,7 +103,7 @@ export function TasksView() {
         goals={goals}
         onSubmit={(title, values) => addTask(title, values)}
       />
-    </div>
+    </PageShell>
   );
 }
 

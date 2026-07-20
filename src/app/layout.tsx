@@ -1,6 +1,7 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Link from "next/link";
 import "./globals.css";
 import { StoreHydration } from "@/lib/store";
 import { Toaster } from "@/components/ui/sonner";
@@ -17,8 +18,19 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Goals — break big things into steps",
+  metadataBase: new URL("https://keepgoing.you"),
+  title: "Keep Going — break big goals into small steps",
   description: "Decompose a goal into groups and steps, and make progress one step at a time.",
+  openGraph: {
+    title: "Keep Going — break big goals into small steps",
+    description: "Decompose a goal into groups and steps, and make progress one step at a time.",
+    url: "/",
+    siteName: "Keep Going",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
 };
 
 export default function RootLayout({
@@ -35,8 +47,20 @@ export default function RootLayout({
         <ClerkProvider>
           <StoreHydration />
           {children}
-          <footer className="mt-auto py-2 text-center text-xs text-muted-foreground">
-            v{packageJson.version}
+          <footer className="mt-auto flex items-center justify-center gap-3 py-2 text-center text-xs text-muted-foreground">
+            <Link href="/about" className="transition-colors hover:text-foreground">
+              About
+            </Link>
+            <span aria-hidden>·</span>
+            <Link href="/privacy" className="transition-colors hover:text-foreground">
+              Privacy
+            </Link>
+            <span aria-hidden>·</span>
+            <Link href="/terms" className="transition-colors hover:text-foreground">
+              Terms
+            </Link>
+            <span aria-hidden>·</span>
+            <span>v{packageJson.version}</span>
           </footer>
           <Toaster />
         </ClerkProvider>
