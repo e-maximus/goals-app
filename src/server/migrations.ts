@@ -208,4 +208,32 @@ export const migrations: Migration[] = [
         ])[(abs(hashtext(id)) % 14) + 1];
     `,
   },
+  {
+    name: "011_tasks",
+    sql: `
+      -- Standalone to-dos, living next to the goals. A task may optionally point
+      -- at one goal (ON DELETE SET NULL: deleting the goal just unlinks it) but
+      -- never feeds that goal's progress. \`daily\` marks a recurring task whose
+      -- done-ness is derived from \`completed_on\` — the UTC midnight of the day
+      -- it was last checked off — so it resets each day without a cron.
+      -- \`done\` is the completion flag for one-off tasks. Timestamps are epoch
+      -- milliseconds, matching the rest of the schema.
+      CREATE TABLE IF NOT EXISTS tasks (
+        id           TEXT    PRIMARY KEY,
+        owner_id     TEXT    NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        goal_id      TEXT    REFERENCES goals (id) ON DELETE SET NULL,
+        title        TEXT    NOT NULL,
+        description  TEXT,
+        daily        BOOLEAN NOT NULL DEFAULT FALSE,
+        due_date     BIGINT,
+        done         BOOLEAN NOT NULL DEFAULT FALSE,
+        completed_on BIGINT,
+        created_at   BIGINT  NOT NULL,
+        position     INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS tasks_owner_id_idx ON tasks (owner_id);
+      CREATE INDEX IF NOT EXISTS tasks_goal_id_idx  ON tasks (goal_id);
+    `,
+  },
 ];

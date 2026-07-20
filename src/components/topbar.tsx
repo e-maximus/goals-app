@@ -9,6 +9,7 @@ import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { SaveStatus } from "@/components/save-status";
 import { fetchMe, type Me } from "@/lib/sync";
+import { cn } from "@/lib/utils";
 
 // The identity is per-session, not per-render — fetch it once and share the
 // promise across every Topbar mount (each page renders its own).
@@ -75,12 +76,42 @@ function UserChip() {
   );
 }
 
-export function Topbar({ crumbs }: { crumbs: React.ReactNode }) {
+/**
+ * The Goals | Tasks switcher, shown on the two top-level pages. Detail pages
+ * keep the breadcrumb alone — the tabs only make sense at the top level.
+ */
+function NavTabs({ active }: { active: "goals" | "tasks" }) {
+  const tab = (value: "goals" | "tasks", href: string, label: string) => (
+    <Link
+      href={href}
+      aria-current={active === value ? "page" : undefined}
+      className={cn(
+        "rounded-md px-3 py-1 text-sm font-semibold transition-colors",
+        active === value
+          ? "bg-card text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground"
+      )}
+    >
+      {label}
+    </Link>
+  );
+  return (
+    <nav aria-label="Sections" className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+      {tab("goals", "/", "Goals")}
+      {tab("tasks", "/tasks", "Tasks")}
+    </nav>
+  );
+}
+
+export function Topbar({ crumbs, tab }: { crumbs: React.ReactNode; tab?: "goals" | "tasks" }) {
   const saveStatus = useStore((s) => s.saveStatus);
 
   return (
-    <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-border bg-background px-5 sm:px-9">
-      <div className="min-w-0 truncate text-sm text-muted-foreground">{crumbs}</div>
+    <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-4 border-b border-border bg-background px-5 sm:px-9">
+      <div className="flex min-w-0 items-center gap-4">
+        <div className="min-w-0 truncate text-sm text-muted-foreground">{crumbs}</div>
+        {tab && <NavTabs active={tab} />}
+      </div>
       <div className="flex flex-shrink-0 items-center gap-2.5">
         <SaveStatus status={saveStatus} />
         <UserChip />
@@ -100,11 +131,14 @@ export function Topbar({ crumbs }: { crumbs: React.ReactNode }) {
 
 export function Crumbs({
   goalTitle,
+  root = "My Goals",
 }: {
   goalTitle?: string;
+  /** The top-level label — "My Goals" on goal pages, "My Tasks" on /tasks. */
+  root?: string;
 }) {
   if (!goalTitle) {
-    return <span className="font-semibold text-foreground">My Goals</span>;
+    return <span className="font-semibold text-foreground">{root}</span>;
   }
   return (
     <span>

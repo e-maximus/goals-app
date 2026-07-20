@@ -3,8 +3,8 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { create } from "zustand";
-import type { Goal, GoalStatus, Step } from "./types";
-import { SyncConflictError, fetchState, pushGoals } from "./sync";
+import { isTaskDone, utcMidnight, type Goal, type GoalStatus, type Step, type Task } from "./types";
+import { SyncConflictError, fetchState, pushState } from "./sync";
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -59,6 +59,7 @@ export type SaveStatus = "saved" | "saving" | "error";
 
 type StoreState = {
   goals: Goal[];
+  tasks: Task[];
   loadStatus: LoadStatus;
   saveStatus: SaveStatus;
   /** The server version our goals are based on — sent back to detect conflicts. */
@@ -106,10 +107,26 @@ type StoreState = {
   addNote: (goalId: string, text: string, stepId?: string) => void;
   editNote: (goalId: string, noteId: string, text: string, stepId?: string) => void;
   deleteNote: (goalId: string, noteId: string) => void;
+
+  // Task actions. Tasks live next to the goals: linking one to a goal is
+  // optional and never feeds that goal's progress.
+  addTask: (
+    title: string,
+    options?: { description?: string; goalId?: string; daily?: boolean; dueDate?: number }
+  ) => void;
+  editTask: (
+    taskId: string,
+    title: string,
+    options?: { description?: string; goalId?: string; daily?: boolean; dueDate?: number }
+  ) => void;
+  /** Flip a task's done state. For a daily task that means done *today*. */
+  toggleTask: (taskId: string) => void;
+  deleteTask: (taskId: string) => void;
 };
 
 export const useStore = create<StoreState>((set) => ({
   goals: [],
+  tasks: [],
   loadStatus: "loading",
   saveStatus: "saved",
   serverUpdatedAt: null,
@@ -126,17 +143,21 @@ export const useStore = create<StoreState>((set) => ({
       // it). Keep such local-only goals ahead of the server's rather than letting
       // the load clobber them, and persist them below.
       let localOnly: Goal[] = [];
+      let localOnlyTasks: Task[] = [];
       set((s) => {
         const serverIds = new Set(state.goals.map((g) => g.id));
         localOnly = s.goals.filter((g) => !serverIds.has(g.id));
+        const serverTaskIds = new Set(state.tasks.map((t) => t.id));
+        localOnlyTasks = s.tasks.filter((t) => !serverTaskIds.has(t.id));
         return {
           goals: [...localOnly, ...state.goals],
+          tasks: [...localOnlyTasks, ...state.tasks],
           serverUpdatedAt: state.updatedAt,
           loadStatus: "ready",
         };
       });
       applyingRemote = false;
-      if (localOnly.length > 0) void pushToServer();
+      if (localOnly.length > 0 || localOnlyTasks.length > 0) void pushToServer();
     } catch {
       set({ loadStatus: "error" });
     }
@@ -312,7 +333,12 @@ export const useStore = create<StoreState>((set) => ({
     })),
 
   deleteGoal: (goalId) =>
-    set((s) => ({ goals: s.goals.filter((g) => g.id !== goalId) })),
+    set((s) => ({
+      goals: s.goals.filter((g) => g.id !== goalId),
+      // Tasks pointing at the deleted goal are kept, just unlinked — matching
+      // the server's ON DELETE SET NULL.
+      tasks: s.tasks.map((t) => (t.goalId === goalId ? { ...t, goalId: undefined } : t)),
+    })),
 
   deleteGroup: (goalId, groupId) =>
     set((s) => ({
@@ -375,6 +401,58 @@ export const useStore = create<StoreState>((set) => ({
           : g
       ),
     })),
+
+  addTask: (title, options = {}) => {
+    const desc = options.description?.trim() || undefined;
+    const task: Task = {
+      id: uid(),
+      title: title.trim(),
+      ...(desc ? { description: desc } : {}),
+      ...(options.goalId ? { goalId: options.goalId } : {}),
+      ...(options.daily ? { daily: true } : {}),
+      ...(options.dueDate ? { dueDate: options.dueDate } : {}),
+      done: false,
+      createdAt: Date.now(),
+    };
+    set((s) => ({ tasks: [task, ...s.tasks] }));
+  },
+
+  editTask: (taskId, title, options = {}) => {
+    const next = title.trim();
+    if (!next) return;
+    // The dialog always submits the full picture: an empty description clears
+    // it, an absent goalId unlinks, an absent dueDate clears the deadline.
+    const desc = options.description?.trim() || undefined;
+    set((s) => ({
+      tasks: s.tasks.map((t) => {
+        if (t.id !== taskId) return t;
+        const daily = options.daily ?? false;
+        return {
+          ...t,
+          title: next,
+          description: desc,
+          goalId: options.goalId || undefined,
+          daily: daily || undefined,
+          dueDate: options.dueDate,
+          // Switching kind resets completion, matching the server's updateTask.
+          ...(daily !== (t.daily ?? false) ? { done: false, completedOn: undefined } : {}),
+        };
+      }),
+    }));
+  },
+
+  toggleTask: (taskId) =>
+    set((s) => ({
+      tasks: s.tasks.map((t) => {
+        if (t.id !== taskId) return t;
+        const next = !isTaskDone(t);
+        if (t.daily) return { ...t, completedOn: next ? utcMidnight() : undefined };
+        return { ...t, done: next };
+      }),
+    })),
+
+  deleteTask: (taskId) =>
+    set((s) => ({ tasks: s.tasks.filter((t) => t.id !== taskId) })),
 }));
 
 // ---- persistence ----
@@ -391,11 +469,11 @@ let applyingRemote = false;
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
 
 async function pushToServer(): Promise<void> {
-  const { goals, serverUpdatedAt } = useStore.getState();
+  const { goals, tasks, serverUpdatedAt } = useStore.getState();
   useStore.setState({ saveStatus: "saving" });
 
   try {
-    const result = await pushGoals(goals, serverUpdatedAt);
+    const result = await pushState(goals, tasks, serverUpdatedAt);
     useStore.setState({ serverUpdatedAt: result.updatedAt, saveStatus: "saved" });
   } catch (err) {
     useStore.setState({ saveStatus: "error" });
@@ -410,6 +488,7 @@ async function pushToServer(): Promise<void> {
         const state = await fetchState();
         useStore.setState({
           goals: state.goals,
+          tasks: state.tasks,
           serverUpdatedAt: state.updatedAt,
           saveStatus: "saved",
         });
@@ -433,7 +512,7 @@ async function pushToServer(): Promise<void> {
 if (typeof window !== "undefined") {
   useStore.subscribe((state, prev) => {
     if (state.loadStatus !== "ready") return;
-    if (state.goals === prev.goals) return;
+    if (state.goals === prev.goals && state.tasks === prev.tasks) return;
     if (applyingRemote) return;
 
     clearTimeout(pushTimer);

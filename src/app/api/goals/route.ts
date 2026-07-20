@@ -44,8 +44,23 @@ const goalSchema = z.object({
   dueDate: z.number().optional(),
 });
 
+const taskSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string().optional(),
+  goalId: z.string().optional(),
+  daily: z.boolean().optional(),
+  dueDate: z.number().optional(),
+  done: z.boolean(),
+  completedOn: z.number().optional(),
+  createdAt: z.number(),
+});
+
 const putBodySchema = z.object({
   goals: z.array(goalSchema),
+  // Optional so a tab from before tasks existed can still save its goals
+  // without wiping the task list (see repo.replaceAll).
+  tasks: z.array(taskSchema).optional(),
   /**
    * The `updatedAt` the client last saw. Sent back so we can reject a write
    * built on a stale read (an MCP tool may have written since). Omit to force.
@@ -92,12 +107,15 @@ export async function PUT(request: Request) {
       );
     }
 
-    const { goals, baseUpdatedAt } = parsed.data;
+    const { goals, tasks, baseUpdatedAt } = parsed.data;
     const { userId: clerkUserId } = await auth();
     const pool = await getPool();
     const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId);
     userId = user.id;
-    const res = json(await repo.replaceAll(pool, user.id, goals, baseUpdatedAt ?? null), setCookie);
+    const res = json(
+      await repo.replaceAll(pool, user.id, goals, baseUpdatedAt ?? null, tasks),
+      setCookie
+    );
     logRequest(request, res.status, startedAt, { userId });
     return res;
   } catch (err) {

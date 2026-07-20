@@ -183,3 +183,72 @@ export function isOverdue(dueDate: number | undefined, done: boolean, now: numbe
   if (dueDate === undefined || done) return false;
   return now >= dueDate + DAY_MS;
 }
+
+// ---- tasks ----
+
+/**
+ * A standalone to-do, living next to the goals rather than inside one. A task
+ * may optionally point at a goal (`goalId`) but never participates in that
+ * goal's progress — progress stays derived from steps alone.
+ */
+export type Task = {
+  id: string;
+  title: string;
+  // Optional longer note beneath the title, mirroring Step.description.
+  description?: string;
+  // Optionally ties the task to one goal. Cleared to undefined if the goal it
+  // pointed at is deleted.
+  goalId?: string;
+  // A daily task recurs: completing it counts for today only and it resets the
+  // next day. Done-ness is derived — see isTaskDone. Optional so payloads
+  // written before this existed still parse; absent means one-off.
+  daily?: boolean;
+  // Optional deadline (see Step.dueDate for the format). Meaningful for
+  // one-off tasks; daily tasks ignore it.
+  dueDate?: number;
+  // Completion of a one-off task. For daily tasks this stays false and
+  // `completedOn` carries the state instead.
+  done: boolean;
+  // For daily tasks: UTC midnight (epoch ms) of the day it was last completed.
+  // "Done today" means completedOn === today; any older value reads as not
+  // done, which is what makes the reset automatic.
+  completedOn?: number;
+  createdAt: number;
+};
+
+/** Epoch ms of UTC midnight of the day `now` falls on, in UTC. */
+export function utcMidnight(now: number = Date.now()): number {
+  return now - (now % DAY_MS);
+}
+
+/**
+ * Whether a task counts as done right now. A one-off task is done when checked
+ * off; a daily task is done only if it was completed today — yesterday's
+ * completion has expired.
+ */
+export function isTaskDone(task: Task, now: number = Date.now()): boolean {
+  if (task.daily) return task.completedOn === utcMidnight(now);
+  return task.done;
+}
+
+/** True for an unfinished one-off task whose due day has fully passed. */
+export function isTaskOverdue(task: Task, now: number = Date.now()): boolean {
+  if (task.daily) return false;
+  return isOverdue(task.dueDate, task.done, now);
+}
+
+/**
+ * The tasks worth surfacing on the home dashboard: every daily task, plus
+ * one-off tasks that are due today or overdue. Undone first, dailies before
+ * dated ones, each subgroup keeping the store's order.
+ */
+export function todayTasks(tasks: Task[], now: number = Date.now()): Task[] {
+  const today = utcMidnight(now);
+  const relevant = tasks.filter(
+    (t) => t.daily || (!t.done && t.dueDate !== undefined && t.dueDate <= today)
+  );
+  const rank = (t: Task) => (isTaskDone(t, now) ? 2 : t.daily ? 0 : 1);
+  return relevant.map((t, i) => [t, i] as const)
+    .sort(([a, ai], [b, bi]) => rank(a) - rank(b) || ai - bi)
+    .map(([t]) => t);
+}
