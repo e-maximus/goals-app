@@ -12,7 +12,7 @@ import {
   nextStep,
   ungroupedSteps,
 } from "@/lib/types";
-import { Topbar, Crumbs } from "@/components/topbar";
+import { PageShell, Crumbs } from "@/components/page-shell";
 import { LoadError } from "@/components/load-error";
 import { GoalDialog } from "@/components/new-goal-dialog";
 import { GroupDialog } from "@/components/group-dialog";
@@ -140,26 +140,23 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
   if (loadStatus === "loading") {
     return (
-      <div className="flex flex-1 flex-col">
-        <Topbar crumbs={<Crumbs goalTitle="…" />} />
+      <PageShell crumbs={<Crumbs page="…" />} width="xl">
         <LoadingState label="Loading goal…" />
-      </div>
+      </PageShell>
     );
   }
 
   if (loadStatus === "error") {
     return (
-      <div className="flex flex-1 flex-col">
-        <Topbar crumbs={<Crumbs />} />
+      <PageShell crumbs={<Crumbs />} width="xl">
         <LoadError />
-      </div>
+      </PageShell>
     );
   }
 
   if (!goal) {
     return (
-      <div className="flex flex-1 flex-col">
-        <Topbar crumbs={<Crumbs />} />
+      <PageShell crumbs={<Crumbs />} width="xl">
         <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
           <h2 className="text-xl font-bold">Goal not found</h2>
           <p className="text-sm text-muted-foreground">
@@ -169,7 +166,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
             Back to my goals
           </Link>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
@@ -206,141 +203,137 @@ export function GoalDetail({ goalId }: { goalId: string }) {
   };
 
   return (
-    <div className="flex flex-1 flex-col">
-      <Topbar crumbs={<Crumbs goalTitle={goal.title} />} />
+    <PageShell crumbs={<Crumbs page={goal.title} />} width="xl">
+      {/* Goal banner */}
+      <div className="mb-7">
+        <GoalBanner
+          title={goal.title}
+          why={goal.why}
+          pct={pct}
+          dueDate={goal.dueDate}
+          complete={complete}
+          onEdit={() => setEditGoalOpen(true)}
+          onShare={() => setShareOpen(true)}
+          onDelete={() => {
+            deleteGoal(goal.id);
+            router.push("/");
+          }}
+        />
+      </div>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-8 sm:px-10">
-        {/* Goal banner */}
-        <div className="mb-7">
-          <GoalBanner
-            title={goal.title}
-            why={goal.why}
-            pct={pct}
-            dueDate={goal.dueDate}
-            complete={complete}
-            onEdit={() => setEditGoalOpen(true)}
-            onShare={() => setShareOpen(true)}
-            onDelete={() => {
-              deleteGoal(goal.id);
-              router.push("/");
-            }}
-          />
+      {/* Paused banner — also legible when an agent paused the goal over MCP */}
+      {paused && !complete && (
+        <div className="mb-7 flex items-center justify-between gap-4 rounded-2xl border border-border bg-muted/50 px-7 py-4">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <Pause className="h-4 w-4 flex-shrink-0" aria-hidden />
+            <span>
+              This goal is paused
+              {goal.pausedAt
+                ? ` since ${new Date(goal.pausedAt).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                  })}`
+                : ""}
+              .
+            </span>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setGoalStatus(goal.id, "active")}>
+            <Play data-icon="inline-start" /> Resume
+          </Button>
         </div>
+      )}
 
-        {/* Paused banner — also legible when an agent paused the goal over MCP */}
-        {paused && !complete && (
-          <div className="mb-7 flex items-center justify-between gap-4 rounded-2xl border border-border bg-muted/50 px-7 py-4">
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              <Pause className="h-4 w-4 flex-shrink-0" aria-hidden />
-              <span>
-                This goal is paused
-                {goal.pausedAt
-                  ? ` since ${new Date(goal.pausedAt).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })}`
-                  : ""}
-                .
-              </span>
+      {/* Completion celebration */}
+      {complete && (
+        <div className="mb-7 flex items-center gap-4 rounded-2xl border border-primary/60 bg-secondary px-7 py-5">
+          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <Check className="h-5 w-5" strokeWidth={3} />
+          </span>
+          <div>
+            <div className="text-base font-bold">Goal complete</div>
+            <div className="text-[13px] text-muted-foreground">
+              {total === 1 ? "The only step is done" : `All ${total} steps are done`}. Nice work.
             </div>
-            <Button variant="outline" size="sm" onClick={() => setGoalStatus(goal.id, "active")}>
-              <Play data-icon="inline-start" /> Resume
+          </div>
+        </div>
+      )}
+
+      {hasAnything ? (
+        <>
+          <SectionLabel action={hasGroups ? <ViewToggle view={view} onChange={setView} /> : undefined}>
+            Steps
+            {total > 0 && (
+              <span className="font-medium normal-case tracking-normal text-muted-foreground/70">
+                {" "}
+                — {done}/{total} done
+              </span>
+            )}
+          </SectionLabel>
+          <div className="flex flex-col gap-4">
+            {/* In the timeline view the ungrouped steps become stages on the
+                rail itself, so the standalone card only renders in the list
+                view (or when there are no groups and thus no timeline). */}
+            {ungrouped.length > 0 && (view === "list" || !hasGroups) && (
+              <UngroupedStepsCard
+                goalId={goal.id}
+                steps={ungrouped}
+                nextStepId={next && next.group === null ? nextStepId : null}
+              />
+            )}
+            {hasGroups &&
+              (view === "timeline" ? (
+                <GoalStepper goal={goal} activeGroupId={activeGroupId} nextStepId={nextStepId} />
+              ) : (
+                goal.groups.map((group) => (
+                  <GroupCardConnected
+                    key={group.id}
+                    goalId={goal.id}
+                    group={group}
+                    collapsible
+                    collapsed={!expanded.has(group.id)}
+                    onToggleCollapse={() => toggleExpanded(group.id)}
+                    nextStepId={group.id === activeGroupId ? nextStepId : null}
+                  />
+                ))
+              ))}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              {ungrouped.length === 0 && (
+                <button
+                  onClick={() => setAddStepOpen(true)}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong px-4 py-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add step
+                </button>
+              )}
+              <div className="flex-1">
+                <AddGroupCard onClick={() => setAddGroupOpen(true)} />
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="mt-2 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border-strong px-5 py-14 text-center">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-border-strong text-2xl text-muted-foreground">
+            +
+          </span>
+          <div className="text-[15px] font-bold">No steps yet</div>
+          <p className="max-w-sm text-[13px] text-muted-foreground">
+            Break this goal down to get moving — start with a first step, or lay out groups of
+            steps for a bigger plan
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <Button onClick={() => setAddStepOpen(true)}>+ Add step</Button>
+            <Button variant="outline" onClick={() => setAddGroupOpen(true)}>
+              + Add group
             </Button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Completion celebration */}
-        {complete && (
-          <div className="mb-7 flex items-center gap-4 rounded-2xl border border-primary/60 bg-secondary px-7 py-5">
-            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Check className="h-5 w-5" strokeWidth={3} />
-            </span>
-            <div>
-              <div className="text-base font-bold">Goal complete</div>
-              <div className="text-[13px] text-muted-foreground">
-                {total === 1 ? "The only step is done" : `All ${total} steps are done`}. Nice work.
-              </div>
-            </div>
-          </div>
-        )}
+      <GoalTasksSection goalId={goal.id} />
 
-        {hasAnything ? (
-          <>
-            <SectionLabel action={hasGroups ? <ViewToggle view={view} onChange={setView} /> : undefined}>
-              Steps
-              {total > 0 && (
-                <span className="font-medium normal-case tracking-normal text-muted-foreground/70">
-                  {" "}
-                  — {done}/{total} done
-                </span>
-              )}
-            </SectionLabel>
-            <div className="flex flex-col gap-4">
-              {/* In the timeline view the ungrouped steps become stages on the
-                  rail itself, so the standalone card only renders in the list
-                  view (or when there are no groups and thus no timeline). */}
-              {ungrouped.length > 0 && (view === "list" || !hasGroups) && (
-                <UngroupedStepsCard
-                  goalId={goal.id}
-                  steps={ungrouped}
-                  nextStepId={next && next.group === null ? nextStepId : null}
-                />
-              )}
-              {hasGroups &&
-                (view === "timeline" ? (
-                  <GoalStepper goal={goal} activeGroupId={activeGroupId} nextStepId={nextStepId} />
-                ) : (
-                  goal.groups.map((group) => (
-                    <GroupCardConnected
-                      key={group.id}
-                      goalId={goal.id}
-                      group={group}
-                      collapsible
-                      collapsed={!expanded.has(group.id)}
-                      onToggleCollapse={() => toggleExpanded(group.id)}
-                      nextStepId={group.id === activeGroupId ? nextStepId : null}
-                    />
-                  ))
-                ))}
-              <div className="flex flex-col gap-2 sm:flex-row">
-                {ungrouped.length === 0 && (
-                  <button
-                    onClick={() => setAddStepOpen(true)}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong px-4 py-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add step
-                  </button>
-                )}
-                <div className="flex-1">
-                  <AddGroupCard onClick={() => setAddGroupOpen(true)} />
-                </div>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="mt-2 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border-strong px-5 py-14 text-center">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-border-strong text-2xl text-muted-foreground">
-              +
-            </span>
-            <div className="text-[15px] font-bold">No steps yet</div>
-            <p className="max-w-sm text-[13px] text-muted-foreground">
-              Break this goal down to get moving — start with a first step, or lay out groups of
-              steps for a bigger plan
-            </p>
-            <div className="mt-2 flex items-center gap-2">
-              <Button onClick={() => setAddStepOpen(true)}>+ Add step</Button>
-              <Button variant="outline" onClick={() => setAddGroupOpen(true)}>
-                + Add group
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <GoalTasksSection goalId={goal.id} />
-
-        <NotesSection goalId={goal.id} groups={linkableGroups} notes={goal.notes ?? []} />
-      </main>
+      <NotesSection goalId={goal.id} groups={linkableGroups} notes={goal.notes ?? []} />
 
       <GoalDialog
         open={editGoalOpen}
@@ -370,6 +363,6 @@ export function GoalDetail({ goalId }: { goalId: string }) {
         onSubmit={(text, description, dueDate) => addStep(goal.id, null, text, description, dueDate)}
       />
       <ShareDialog open={shareOpen} onOpenChange={setShareOpen} goal={goal} />
-    </div>
+    </PageShell>
   );
 }

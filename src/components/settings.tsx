@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { Show, SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Copy, Lock, ShieldCheck, TriangleAlert } from "lucide-react";
+import { Check, Copy, Lock, ShieldCheck, TriangleAlert } from "lucide-react";
+import { PageShell, Crumbs } from "@/components/page-shell";
 import { fetchMe, type Me } from "@/lib/sync";
 import { LoadingState } from "@/components/ui-bits";
 import { Button } from "@/components/ui/button";
@@ -62,20 +62,8 @@ export function Settings() {
   }, [authLoaded]);
 
   return (
-    <div className="flex flex-1 flex-col">
-      <header className="flex h-16 items-center border-b border-border px-5 sm:px-9">
-        <Link
-          href="/"
-          className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          My Goals
-        </Link>
-        <span className="mx-3 text-muted-foreground">/</span>
-        <span className="text-sm font-semibold text-foreground">Settings</span>
-      </header>
-
-      <main className="mx-auto w-full max-w-2xl flex-1 space-y-6 px-5 py-8 sm:px-10">
+    <PageShell crumbs={<Crumbs page="Settings" />} width="sm">
+      <div className="space-y-6">
         {status === "loading" ? (
           <LoadingState />
         ) : status === "error" ? (
@@ -96,8 +84,8 @@ export function Settings() {
             <McpCard endpoint={`${origin}/api/mcp`} />
           </>
         ) : null}
-      </main>
-    </div>
+      </div>
+    </PageShell>
   );
 }
 

@@ -31,10 +31,16 @@ export default function AboutPage() {
             so you do nothing today, and nothing tomorrow.
           </p>
           <p>
-            <span className="font-medium text-foreground">Keep Going</span> is a small tool
-            built around one idea: break a goal into groups and steps until the next step is
-            something you can actually do. Then do it, check it off, and watch the progress
-            bar move. That&apos;s the whole trick — momentum beats motivation.
+            <span className="font-medium text-foreground">Keep Going</span>{" "}
+            is a small tool built around one idea: break a goal into groups and steps until
+            the next step is something you can actually do. Then do it, check it off, and
+            watch the progress bar move. That&apos;s the whole trick — momentum beats
+            motivation.
+          </p>
+          <p>
+            It started as a personal project — built for its author&apos;s own use, not as a
+            product with a business plan behind it. It turned out useful, so it stayed online
+            for anyone who wants it.
           </p>
         </CardContent>
       </Card>
@@ -53,6 +59,23 @@ export default function AboutPage() {
               your goals with you.
             </li>
           </ol>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Free to use</CardTitle>
+          <CardDescription>A personal project, not a business.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm leading-relaxed text-muted-foreground">
+          <p>
+            Keep Going was made for personal use and is not run for profit. There is nothing to
+            buy, no plan to upgrade to, and no trial that runs out.
+          </p>
+          <p>
+            You&apos;re welcome to use it however it suits you — for your own goals, for as
+            long as it helps. It is offered as is, with no promises about uptime or support.
+          </p>
         </CardContent>
       </Card>
 

@@ -30,7 +30,7 @@ import {
   type Goal,
 } from "@/lib/types";
 import { todayTasks } from "@/lib/types";
-import { Topbar, Crumbs } from "@/components/topbar";
+import { PageShell, Crumbs } from "@/components/page-shell";
 import { LoadError } from "@/components/load-error";
 import { TaskRow } from "@/components/task-row";
 import { GoalDialog, NewGoalDialog } from "@/components/new-goal-dialog";
@@ -383,82 +383,78 @@ export function Dashboard() {
   };
 
   return (
-    <div className="flex flex-1 flex-col">
-      <Topbar crumbs={<Crumbs />} tab="goals" />
+    <PageShell crumbs={<Crumbs />} tab="goals" width="lg">
+      {loadStatus === "loading" ? (
+        <LoadingState label="Loading your goals…" />
+      ) : loadStatus === "error" ? (
+        <LoadError />
+      ) : goals.length === 0 ? (
+        <div className="space-y-8">
+          <TodaySection />
+          <EmptyState onNewGoal={() => setDialogOpen(true)} />
+        </div>
+      ) : (
+        <div className="space-y-8">
+          <TodaySection />
+          {inProgress.length > 0 && (
+            <section>
+              <SectionLabel>In progress · {inProgress.length}</SectionLabel>
+              <div className="flex flex-col gap-3.5">
+                {inProgress.map((g, i) => (
+                  <GoalRow
+                    key={g.id}
+                    goal={g}
+                    prevId={inProgress[i - 1]?.id}
+                    nextId={inProgress[i + 1]?.id}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-8 sm:px-10">
-        {loadStatus === "loading" ? (
-          <LoadingState label="Loading your goals…" />
-        ) : loadStatus === "error" ? (
-          <LoadError />
-        ) : goals.length === 0 ? (
-          <div className="space-y-8">
-            <TodaySection />
-            <EmptyState onNewGoal={() => setDialogOpen(true)} />
-          </div>
-        ) : (
-          <div className="space-y-8">
-            <TodaySection />
-            {inProgress.length > 0 && (
-              <section>
-                <SectionLabel>In progress · {inProgress.length}</SectionLabel>
-                <div className="flex flex-col gap-3.5">
-                  {inProgress.map((g, i) => (
-                    <GoalRow
-                      key={g.id}
-                      goal={g}
-                      prevId={inProgress[i - 1]?.id}
-                      nextId={inProgress[i + 1]?.id}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+          <button
+            onClick={() => setDialogOpen(true)}
+            className="mx-auto flex w-full max-w-md items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong px-4 py-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+          >
+            + New Goal
+          </button>
 
-            <button
-              onClick={() => setDialogOpen(true)}
-              className="mx-auto flex w-full max-w-md items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong px-4 py-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-            >
-              + New Goal
-            </button>
+          {paused.length > 0 && (
+            <section>
+              <SectionLabel>Paused · {paused.length}</SectionLabel>
+              <div className="flex flex-col gap-2.5">
+                {paused.map((g, i) => (
+                  <PausedRow
+                    key={g.id}
+                    goal={g}
+                    prevId={paused[i - 1]?.id}
+                    nextId={paused[i + 1]?.id}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
 
-            {paused.length > 0 && (
-              <section>
-                <SectionLabel>Paused · {paused.length}</SectionLabel>
-                <div className="flex flex-col gap-2.5">
-                  {paused.map((g, i) => (
-                    <PausedRow
-                      key={g.id}
-                      goal={g}
-                      prevId={paused[i - 1]?.id}
-                      nextId={paused[i + 1]?.id}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {completed.length > 0 && (
-              <section>
-                <SectionLabel>Completed · {completed.length}</SectionLabel>
-                <div className="flex flex-col gap-2.5">
-                  {completed.map((g, i) => (
-                    <CompletedRow
-                      key={g.id}
-                      goal={g}
-                      prevId={completed[i - 1]?.id}
-                      nextId={completed[i + 1]?.id}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
-          </div>
-        )}
-      </main>
+          {completed.length > 0 && (
+            <section>
+              <SectionLabel>Completed · {completed.length}</SectionLabel>
+              <div className="flex flex-col gap-2.5">
+                {completed.map((g, i) => (
+                  <CompletedRow
+                    key={g.id}
+                    goal={g}
+                    prevId={completed[i - 1]?.id}
+                    nextId={completed[i + 1]?.id}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
 
       <NewGoalDialog open={dialogOpen} onOpenChange={setDialogOpen} onCreate={handleCreate} />
-    </div>
+    </PageShell>
   );
 }
 

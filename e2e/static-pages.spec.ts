@@ -1,6 +1,14 @@
 import { test, expect } from "./fixtures";
 
 test.describe("Static pages", () => {
+  test("the topbar wordmark leads home from a deep page", async ({ page }) => {
+    await page.goto("/about");
+    await page.getByRole("banner").getByRole("link", { name: "Keep Going — home" }).click();
+
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByText("My Goals")).toBeVisible();
+  });
+
   test("the footer links to About, Privacy, and Terms", async ({ page }) => {
     await page.goto("/");
     const footer = page.getByRole("contentinfo");

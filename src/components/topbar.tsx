@@ -103,12 +103,33 @@ function NavTabs({ active }: { active: "goals" | "tasks" }) {
   );
 }
 
+/**
+ * The wordmark, home on every page. The footprints echo the app icon — the
+ * mark is "one step at a time", the same idea the crumbs sit under.
+ */
+function Brand() {
+  return (
+    <Link
+      href="/"
+      aria-label="Keep Going — home"
+      className="flex flex-shrink-0 items-center gap-2 transition-opacity hover:opacity-80"
+    >
+      <span aria-hidden className="text-lg leading-none">
+        👣
+      </span>
+      <span className="hidden text-sm font-semibold text-foreground sm:block">Keep Going</span>
+    </Link>
+  );
+}
+
 export function Topbar({ crumbs, tab }: { crumbs: React.ReactNode; tab?: "goals" | "tasks" }) {
   const saveStatus = useStore((s) => s.saveStatus);
 
   return (
-    <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-4 border-b border-border bg-background px-5 sm:px-9">
-      <div className="flex min-w-0 items-center gap-4">
+    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-4 border-b border-border bg-background px-5 sm:px-9">
+      <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+        <Brand />
+        <span aria-hidden className="h-5 w-px flex-shrink-0 bg-border" />
         <div className="min-w-0 truncate text-sm text-muted-foreground">{crumbs}</div>
         {tab && <NavTabs active={tab} />}
       </div>
@@ -130,22 +151,23 @@ export function Topbar({ crumbs, tab }: { crumbs: React.ReactNode; tab?: "goals"
 }
 
 export function Crumbs({
-  goalTitle,
+  page,
   root = "My Goals",
 }: {
-  goalTitle?: string;
+  /** The second segment — a goal title, "Settings", "About"… */
+  page?: string;
   /** The top-level label — "My Goals" on goal pages, "My Tasks" on /tasks. */
   root?: string;
 }) {
-  if (!goalTitle) {
+  if (!page) {
     return <span className="font-semibold text-foreground">{root}</span>;
   }
   return (
     <span>
       <Link href="/" className="transition-colors hover:text-foreground">
-        My Goals
+        {root}
       </Link>{" "}
-      / <span className="font-semibold text-foreground">{goalTitle}</span>
+      / <span className="font-semibold text-foreground">{page}</span>
     </span>
   );
 }
