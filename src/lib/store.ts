@@ -466,8 +466,31 @@ const PUSH_DEBOUNCE_MS = 500;
 /** Set while we're applying a server response, so the subscriber doesn't push it back. */
 let applyingRemote = false;
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
+// Single-flight: never overlap two PUTs. A second push that starts while one is
+// in flight would send the same baseUpdatedAt and lose the race against our own
+// earlier write — a self-inflicted 409. Chain it instead: mark the store dirty
+// and push again, with the fresh serverUpdatedAt, once the current one lands.
+let pushing = false;
+let pendingPush = false;
 
 async function pushToServer(): Promise<void> {
+  if (pushing) {
+    pendingPush = true;
+    return;
+  }
+  pushing = true;
+  try {
+    await pushOnce();
+  } finally {
+    pushing = false;
+    if (pendingPush) {
+      pendingPush = false;
+      void pushToServer();
+    }
+  }
+}
+
+async function pushOnce(): Promise<void> {
   const { goals, tasks, serverUpdatedAt } = useStore.getState();
   useStore.setState({ saveStatus: "saving" });
 
