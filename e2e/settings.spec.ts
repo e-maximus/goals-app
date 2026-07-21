@@ -21,6 +21,21 @@ test.describe("settings (anonymous)", () => {
     await expect(page.getByText("Sign in above to enable MCP access.")).toBeVisible();
   });
 
+  test("shows the generated name in read-only first/last fields", async ({ page }) => {
+    await page.goto("/settings");
+
+    // The e2e user's generated identity is "Shiny Fox", split across the fields.
+    const first = page.getByLabel("First name");
+    const last = page.getByLabel("Last name");
+    await expect(first).toHaveValue("Shiny", { timeout: 15_000 });
+    await expect(last).toHaveValue("Fox");
+
+    // Anonymous: nothing to edit here, and the reason is spelled out.
+    await expect(first).toBeDisabled();
+    await expect(last).toBeDisabled();
+    await expect(page.getByText("Sign in to set your own name.")).toBeVisible();
+  });
+
   test("warns that the anonymous session is temporary", async ({ page }) => {
     await page.goto("/settings");
 

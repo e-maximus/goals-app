@@ -42,8 +42,37 @@ test.describe("settings (signed in with Clerk)", () => {
 
     // The account now reports itself as linked rather than anonymous.
     await expect(
-      page.getByText("This account is linked to your sign-in", { exact: false })
+      page.getByText("You're signed in", { exact: false })
     ).toBeVisible();
+  });
+
+  test("lets an email account edit their first and last name", async ({ page }) => {
+    await setupClerkTestingToken({ page });
+
+    await page.goto("/settings");
+    await clerk.signIn({
+      page,
+      signInParams: { strategy: "password", identifier: email, password },
+    });
+    await page.reload();
+
+    // An email account (no OAuth provider) owns its name: the fields are editable.
+    const first = page.getByLabel("First name");
+    const last = page.getByLabel("Last name");
+    await expect(first).toBeEnabled({ timeout: 15_000 });
+    await expect(last).toBeEnabled();
+
+    // Save is idle until something changes, then commits the update to Clerk.
+    const save = page.getByRole("button", { name: "Save" });
+    await expect(save).toBeDisabled();
+
+    const stamp = String(Date.now()).slice(-6);
+    await first.fill("E2E");
+    await last.fill(`Tester ${stamp}`);
+    await save.click();
+
+    await expect(page.getByText("Name updated")).toBeVisible();
+    await expect(save).toBeDisabled();
   });
 
   test("signs out from the account card", async ({ page }) => {
