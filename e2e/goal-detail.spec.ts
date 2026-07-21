@@ -527,6 +527,21 @@ test.describe("Goal detail — completion celebration", () => {
     await expect(page.locator("canvas")).toHaveCount(1);
   });
 
+  test("still fires the confetti burst under prefers-reduced-motion", async ({ page }) => {
+    // The burst is a deliberate exception to reduced motion in this app, so a
+    // reduced-motion visitor gets the same canvas as everyone else.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await makeTwoStepGoal(page, "Reduced-motion goal");
+
+    const toggle = page.getByRole("button", { name: "Mark step complete" });
+    for (let remaining = await toggle.count(); remaining > 0; remaining--) {
+      await toggle.first().click();
+    }
+
+    await expect(page.getByText(/All 2 steps are done\. Nice work\./)).toBeVisible();
+    await expect(page.locator("canvas")).toHaveCount(1);
+  });
+
   test("does not re-fire when re-opening an already-complete goal", async ({ page }) => {
     await makeTwoStepGoal(page, "Already-done goal");
     const url = page.url();

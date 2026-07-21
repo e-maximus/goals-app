@@ -1,6 +1,6 @@
 "use client";
 
-import { useSectionMemory } from "@/lib/last-section";
+import { useSectionMemory } from "@/hooks/use-section-memory";
 
 /**
  * Remembers the last main section visited and, once per session, resumes to it

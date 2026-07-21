@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import { toast } from "sonner";
 import { create } from "zustand";
 import { isTaskDone, utcMidnight, type Goal, type GoalStatus, type Step, type Task } from "./types";
@@ -518,20 +517,4 @@ if (typeof window !== "undefined") {
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => void pushToServer(), PUSH_DEBOUNCE_MS);
   });
-}
-
-/**
- * Mount once (in the root layout) to load the goals after the client mounts.
- * Renders nothing. The store is global, so consumers just call `useStore`.
- *
- * The load runs on the client rather than during render because the goals come
- * from the server at request time — there is nothing to prerender into the
- * static markup, and fetching in an effect keeps server and client markup in
- * sync on first paint.
- */
-export function StoreHydration() {
-  useEffect(() => {
-    void useStore.getState().load();
-  }, []);
-  return null;
 }

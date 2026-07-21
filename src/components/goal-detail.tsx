@@ -29,7 +29,7 @@ import { TaskDialog } from "@/components/task-dialog";
 import { TaskRow } from "@/components/task-row";
 import { LoadingState, SectionLabel } from "@/components/ui-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { useGoalView, type GoalView } from "@/lib/use-goal-view";
+import { useGoalView, type GoalView } from "@/hooks/use-goal-view";
 import { celebrate } from "@/lib/confetti";
 import { cn, goalIdMatchesPath } from "@/lib/utils";
 import { Check, List, Milestone, Pause, Play, Plus } from "lucide-react";
