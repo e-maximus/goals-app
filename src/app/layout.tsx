@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
-import { StoreHydration } from "@/lib/store";
+import { StoreHydration } from "@/components/store-hydration";
+import { SectionMemory } from "@/components/section-memory";
 import { Toaster } from "@/components/ui/sonner";
 import packageJson from "../../package.json";
 
@@ -46,6 +47,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <ClerkProvider>
           <StoreHydration />
+          <SectionMemory />
           {children}
           <footer className="mt-auto flex items-center justify-center gap-3 py-2 text-center text-xs text-muted-foreground">
             <Link href="/about" className="transition-colors hover:text-foreground">

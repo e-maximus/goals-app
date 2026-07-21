@@ -21,7 +21,7 @@ import { LoadError } from "@/components/load-error";
 import { LoadingState, SectionLabel } from "@/components/ui-bits";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, goalHref } from "@/lib/utils";
 
 /** General advice for the slider — deliberately more than a slogan each. */
 const TIPS = [
@@ -161,7 +161,7 @@ function Continue({ goals }: { goals: Goal[] }) {
       <SectionLabel>Continue</SectionLabel>
       <div className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-card px-5 py-4 shadow-sm">
         <div className="min-w-0">
-          <Link href={`/goal/${goal.id}`} className="text-sm font-semibold hover:underline">
+          <Link href={goalHref(goal)} className="text-sm font-semibold hover:underline">
             {goal.title}
           </Link>
           <div className="mt-0.5 truncate text-[13px] text-muted-foreground">
@@ -195,7 +195,7 @@ function Attention({ goals }: { goals: Goal[] }) {
         {stale.map((g) => (
           <Link
             key={g.id}
-            href={`/goal/${g.id}`}
+            href={goalHref(g)}
             className="flex items-center justify-between gap-4 rounded-xl border border-warning/60 bg-warning/10 px-5 py-3 transition-colors hover:border-warning"
           >
             <span className="min-w-0 truncate text-sm font-medium">{g.title}</span>

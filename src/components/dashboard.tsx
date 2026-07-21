@@ -45,7 +45,7 @@ import {
   menuItemDestructiveClass,
   menuPopupClass,
 } from "@/components/ui-bits";
-import { cn } from "@/lib/utils";
+import { cn, goalHref } from "@/lib/utils";
 
 function goalMeta(goal: Goal): string {
   const notes = noteCount(goal);
@@ -202,7 +202,7 @@ function GoalRow({ goal, prevId, nextId }: { goal: Goal; prevId?: string; nextId
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2.5">
             <Link
-              href={`/goal/${goal.id}`}
+              href={goalHref(goal)}
               className="min-w-0 text-base font-bold after:absolute after:inset-0 after:rounded-2xl"
             >
               <span className="block truncate">{goal.title}</span>
@@ -267,7 +267,7 @@ function GoalRow({ goal, prevId, nextId }: { goal: Goal; prevId?: string; nextId
               variant="outline"
               size="sm"
               className="relative z-10 flex-shrink-0"
-              onClick={() => router.push(`/goal/${goal.id}`)}
+              onClick={() => router.push(goalHref(goal))}
             >
               Break it down
             </Button>
@@ -286,7 +286,7 @@ function PausedRow({ goal, prevId, nextId }: { goal: Goal; prevId?: string; next
   return (
     <div className="relative flex items-center justify-between gap-4 rounded-xl border border-border bg-card px-6 py-2.5">
       <Link
-        href={`/goal/${goal.id}`}
+        href={goalHref(goal)}
         className="flex min-w-0 items-center gap-2 text-sm font-medium text-muted-foreground after:absolute after:inset-0 after:rounded-xl"
       >
         <Pause className="h-3.5 w-3.5 flex-shrink-0" aria-hidden />
@@ -318,7 +318,7 @@ function CompletedRow({ goal, prevId, nextId }: { goal: Goal; prevId?: string; n
   return (
     <div className="relative flex items-center justify-between gap-4 rounded-xl border border-primary/40 bg-secondary/60 px-6 py-2.5">
       <Link
-        href={`/goal/${goal.id}`}
+        href={goalHref(goal)}
         className="flex min-w-0 items-center gap-2 text-sm font-medium after:absolute after:inset-0 after:rounded-xl"
       >
         <Check className="h-4 w-4 flex-shrink-0 text-primary" aria-hidden />
@@ -379,7 +379,7 @@ export function Dashboard() {
 
   const handleCreate = (title: string, why?: string) => {
     const goal = addGoal(title, why);
-    router.push(`/goal/${goal.id}`);
+    router.push(goalHref(goal));
   };
 
   return (

@@ -53,7 +53,7 @@ export function TasksView() {
   const dailyDone = daily.filter((t) => isTaskDone(t)).length;
 
   return (
-    <PageShell crumbs={<Crumbs root="My Tasks" />} width="md">
+    <PageShell crumbs={<Crumbs root="My Tasks" />} width="lg">
       {loadStatus === "loading" ? (
         <LoadingState label="Loading your tasks…" />
       ) : loadStatus === "error" ? (
