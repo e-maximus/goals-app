@@ -21,7 +21,7 @@ export function Settings() {
 
   // Clerk sign-in state. Signing in can switch which account /api/me resolves to
   // (the linked one), so we re-fetch identity whenever it changes.
-  const { isLoaded: authLoaded, isSignedIn } = useUser();
+  const { isSignedIn } = useUser();
 
   // Fetch identity, settling state from the promise's callbacks — the state is
   // updated in response to an external system resolving, not synchronously.
@@ -40,26 +40,14 @@ export function Settings() {
     loadMe();
   };
 
-  // Load on mount, and reload once Clerk resolves / the sign-in state flips, so
-  // the account and MCP token reflect the identity the server now sees.
+  // Load on mount, and reload when the sign-in state flips, so the account and
+  // MCP token reflect the identity the server now sees. Deliberately NOT gated
+  // on Clerk finishing loading: if clerk-js never initializes (missing/
+  // misconfigured publishable key, blocked script) its `isLoaded` stays false
+  // forever, and the page must still show the account rather than hang blank.
   useEffect(() => {
-    if (!authLoaded) return;
     loadMe();
-  }, [authLoaded, isSignedIn, loadMe]);
-
-  // Clerk failing to initialize (missing publishable key, blocked script) leaves
-  // `isLoaded` false forever, and the effect above never fires — without a
-  // deadline the page would sit on the loader indefinitely. Give up after a
-  // while and surface the error state. Guard against a stale timer overwriting
-  // a load that succeeded in the meantime (e.g. after a manual retry).
-  useEffect(() => {
-    if (authLoaded) return;
-    const timer = setTimeout(
-      () => setStatus((s) => (s === "loading" ? "error" : s)),
-      8_000
-    );
-    return () => clearTimeout(timer);
-  }, [authLoaded]);
+  }, [isSignedIn, loadMe]);
 
   return (
     <PageShell crumbs={<Crumbs page="Settings" />} width="sm">

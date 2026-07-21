@@ -50,21 +50,17 @@ test.describe("settings (anonymous)", () => {
     await expect(page.getByText(/\/api\/mcp$/)).toHaveCount(0);
   });
 
-  test("shows a loader, then an error, when Clerk fails to initialize", async ({ page }) => {
-    // The one test here that legitimately outlives the suite's 10s cap: it waits
-    // out the page's own 8s Clerk deadline before the error state can appear.
-    test.setTimeout(30_000);
-
-    // The page waits for Clerk before loading the identity. Block clerk-js so
-    // it never initializes — the page must show a loader instead of staying
-    // blank, and give up with the error state once the deadline passes. Block
-    // only the external Clerk host: a broader pattern would also catch the
-    // app's own @clerk/nextjs chunk and break hydration entirely.
+  test("still renders the account when Clerk fails to initialize", async ({ page }) => {
+    // Simulate a deploy where clerk-js never initializes (missing/misconfigured
+    // publishable key, blocked script): loading the identity does not depend on
+    // Clerk, so the page must still show the account rather than hang blank or
+    // fall back to an error. Block only the external Clerk host — a broader
+    // pattern would also catch the app's own @clerk/nextjs chunk and break
+    // hydration entirely.
     await page.route(/clerk\.accounts\.dev/, (route) => route.abort());
     await page.goto("/settings");
 
-    await expect(page.getByRole("status")).toBeVisible();
-    await expect(page.getByText("Couldn't load your settings")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(page.getByText("User ID", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Temporary session")).toBeVisible();
   });
 });
