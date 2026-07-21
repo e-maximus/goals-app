@@ -9,6 +9,10 @@ import { fetchMe, type Me } from "@/lib/sync";
 import { LoadingState } from "@/components/ui-bits";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+
+/** The signed-in Clerk user, as `useUser()` exposes it once resolved. */
+type ClerkUser = NonNullable<ReturnType<typeof useUser>["user"]>;
 
 export function Settings() {
   const [me, setMe] = useState<Me | null>(null);
@@ -117,12 +121,156 @@ function AccountCard({ me }: { me: Me }) {
             : `You're using this app anonymously as ${me.displayName ?? "a guest"} — this browser is your account, and your goals are private to it.`}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-2">
-        <FieldLabel>User ID</FieldLabel>
-        <CopyRow value={me.userId} />
+      <CardContent className="space-y-4">
+        <AccountNameFields me={me} />
+        <div className="space-y-2">
+          <FieldLabel>User ID</FieldLabel>
+          <CopyRow value={me.userId} />
+        </div>
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * First and last name for the account. Where they come from — and whether they
+ * can be changed — depends on how the account was authenticated:
+ *
+ * - **Anonymous** (no Clerk identity, or Clerk not yet resolved): there's no
+ *   profile to edit, so the fields mirror the generated animal identity
+ *   (e.g. "Curious Lynx" → Curious / Lynx), read-only.
+ * - **Signed in via email**: the name is ours to set, so the fields are editable
+ *   and write back to Clerk.
+ * - **Signed in via Google/GitHub**: the name is owned by that provider, shown
+ *   read-only.
+ */
+function AccountNameFields({ me }: { me: Me }) {
+  const { isLoaded, isSignedIn, user } = useUser();
+
+  // Mirror the topbar's gate: only trust Clerk's profile once it has resolved a
+  // signed-in user. Until then (or when anonymous) fall back to the animal name.
+  if (!(isLoaded && isSignedIn && user)) {
+    const [first, last] = splitName(me.displayName);
+    return (
+      <NameFieldGrid
+        first={first}
+        last={last}
+        hint="Sign in to set your own name."
+      />
+    );
+  }
+
+  return <ClerkNameFields user={user} />;
+}
+
+/** The signed-in variant: editable for email accounts, locked for OAuth ones. */
+function ClerkNameFields({ user }: { user: ClerkUser }) {
+  // An OAuth account (Google/GitHub) carries an external account; a plain email
+  // sign-up has none. The provider owns the name in that case, so we lock it.
+  const oauthProvider = oauthProviderLabel(user);
+
+  const [first, setFirst] = useState(user.firstName ?? "");
+  const [last, setLast] = useState(user.lastName ?? "");
+  const [saving, setSaving] = useState(false);
+
+  if (oauthProvider) {
+    return (
+      <NameFieldGrid
+        first={user.firstName ?? ""}
+        last={user.lastName ?? ""}
+        hint={`Managed by your ${oauthProvider} sign-in.`}
+      />
+    );
+  }
+
+  const dirty = first !== (user.firstName ?? "") || last !== (user.lastName ?? "");
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await user.update({ firstName: first.trim(), lastName: last.trim() });
+      toast.success("Name updated");
+    } catch {
+      toast.error("Couldn't update your name");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-2">
+          <FieldLabel>First name</FieldLabel>
+          <Input
+            value={first}
+            onChange={(e) => setFirst(e.target.value)}
+            aria-label="First name"
+            autoComplete="given-name"
+          />
+        </div>
+        <div className="space-y-2">
+          <FieldLabel>Last name</FieldLabel>
+          <Input
+            value={last}
+            onChange={(e) => setLast(e.target.value)}
+            aria-label="Last name"
+            autoComplete="family-name"
+          />
+        </div>
+      </div>
+      <Button size="sm" onClick={save} disabled={!dirty || saving}>
+        {saving ? "Saving…" : "Save"}
+      </Button>
+    </div>
+  );
+}
+
+/** Read-only first/last name pair, with a lock hint explaining why. */
+function NameFieldGrid({ first, last, hint }: { first: string; last: string; hint: string }) {
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-2">
+          <FieldLabel>First name</FieldLabel>
+          <Input value={first} disabled readOnly aria-label="First name" />
+        </div>
+        <div className="space-y-2">
+          <FieldLabel>Last name</FieldLabel>
+          <Input value={last} disabled readOnly aria-label="Last name" />
+        </div>
+      </div>
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Lock className="h-3 w-3" aria-hidden />
+        {hint}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The human label for the OAuth provider a signed-in user came in through, or
+ * null for a plain email account (no external account to speak of).
+ */
+function oauthProviderLabel(user: ClerkUser): string | null {
+  const provider = user.externalAccounts[0]?.provider;
+  if (!provider) return null;
+  // Clerk provider slugs look like "google" / "github" (older ones "oauth_*").
+  const slug = provider.replace(/^oauth_/, "");
+  const labels: Record<string, string> = { google: "Google", github: "GitHub" };
+  return labels[slug] ?? slug.charAt(0).toUpperCase() + slug.slice(1);
+}
+
+/**
+ * Split a generated animal identity ("Curious Lynx") into first / last name.
+ * The first word is the first name, everything after it the last name; a
+ * missing name yields empty fields.
+ */
+function splitName(displayName: string | null): [string, string] {
+  const parts = (displayName ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return ["", ""];
+  const [first, ...rest] = parts;
+  return [first, rest.join(" ")];
 }
 
 /**
