@@ -6,7 +6,9 @@ test.describe("Static pages", () => {
     await page.getByRole("banner").getByRole("link", { name: "Keep Going — home" }).click();
 
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByText("My Goals")).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Home" })
+    ).toHaveAttribute("aria-current", "page");
   });
 
   test("the footer links to About, Privacy, and Terms", async ({ page }) => {
@@ -17,13 +19,16 @@ test.describe("Static pages", () => {
     await expect(footer.getByRole("link", { name: "Terms" })).toBeVisible();
   });
 
-  test("the About page tells the story and links back to the dashboard", async ({ page }) => {
+  test("the About page tells the story, standing on its own crumb", async ({ page }) => {
     await page.goto("/about");
     await expect(page.getByRole("heading", { name: "Keep going.", level: 1 })).toBeVisible();
     await expect(page.getByText("Why this exists")).toBeVisible();
-    await page.getByRole("link", { name: "My Goals" }).click();
-    // The dev server can be slow to serve the dashboard on a busy full run.
-    await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
+    // About belongs to no section, so its crumb is just "About" — no "My Goals /"
+    // parent in the content.
+    await expect(page.getByRole("main").getByRole("link", { name: "My Goals" })).toHaveCount(0);
+    // The persistent nav is how you get back to the goals.
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "My Goals" }).click();
+    await expect(page).toHaveURL(/\/goals$/, { timeout: 15_000 });
   });
 
   test("the Privacy Policy page renders", async ({ page }) => {
@@ -42,6 +47,6 @@ test.describe("Static pages", () => {
     await page.goto("/no-such-page");
     await expect(page.getByRole("heading", { name: "This page gave up." })).toBeVisible();
     await page.getByRole("link", { name: "Back to My Goals" }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/goals$/);
   });
 });

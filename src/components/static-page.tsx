@@ -12,7 +12,7 @@ export function StaticPage({
   children: React.ReactNode;
 }) {
   return (
-    <PageShell crumbs={<Crumbs page={title} />} width="sm">
+    <PageShell crumbs={<Crumbs page={title} root={null} />} width="sm">
       <div className="space-y-6">{children}</div>
     </PageShell>
   );

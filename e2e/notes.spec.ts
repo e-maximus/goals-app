@@ -123,7 +123,7 @@ test.describe("Goal notes — empty state", () => {
 // The dashboard row summarises notes alongside groups and steps.
 test.describe("Dashboard — note count", () => {
   test("shows the note count in the goal meta line", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/goals");
 
     // The meta line sits on the card, next to the stretched title link.
     const row = page.locator("div.group\\/goal").filter({ hasText: "Launch my podcast" });
