@@ -14,7 +14,8 @@
     "test:e2e:ui": "playwright test --ui",
     "release": "node scripts/release.mjs",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "test:lib": "vitest run --project lib"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
