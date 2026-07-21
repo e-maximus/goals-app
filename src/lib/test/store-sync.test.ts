@@ -21,6 +21,9 @@ const flush = async () => {
   for (let i = 0; i < 5; i++) await Promise.resolve();
 };
 
+// Must match PUSH_DEBOUNCE_MS in the store — advancing past it fires the push.
+const DEBOUNCE_MS = 1500;
+
 const serverState = (updatedAt: number): ServerState => ({
   initialized: true,
   updatedAt,
@@ -54,14 +57,14 @@ describe("store push scheduling", () => {
 
     // First edit → debounce fires → Push A goes out (base 100), left in flight.
     store.useStore.getState().addGoal("A");
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(pushState).toHaveBeenCalledTimes(1);
     expect(pushState.mock.calls[0]![2]).toBe(100); // baseUpdatedAt
 
     // A second edit while A is still in flight must NOT start a second PUT —
     // it would race A with the same stale base and self-inflict a 409.
     store.useStore.getState().addGoal("B");
-    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(pushState).toHaveBeenCalledTimes(1);
 
     // A lands and bumps the server version. The edit queued meanwhile now goes

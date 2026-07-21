@@ -461,7 +461,7 @@ export const useStore = create<StoreState>((set) => ({
 // of truth — if it moved on under us (an agent editing over MCP), the push comes
 // back a conflict and we reload rather than clobber the newer copy.
 
-const PUSH_DEBOUNCE_MS = 500;
+const PUSH_DEBOUNCE_MS = 1500;
 
 /** Set while we're applying a server response, so the subscriber doesn't push it back. */
 let applyingRemote = false;
