@@ -42,7 +42,7 @@ test.describe("settings (signed in with Clerk)", () => {
 
     // The account now reports itself as linked rather than anonymous.
     await expect(
-      page.getByText("This account is linked to your sign-in", { exact: false })
+      page.getByText("You're signed in", { exact: false })
     ).toBeVisible();
   });
 

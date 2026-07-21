@@ -117,8 +117,8 @@ function AccountCard({ me }: { me: Me }) {
         </CardTitle>
         <CardDescription>
           {linked
-            ? "This account is linked to your sign-in, so it follows you across browsers and devices."
-            : `You're using this app anonymously as ${me.displayName ?? "a guest"} — this browser is your account, and your goals are private to it.`}
+            ? "You're signed in — sign in with the same email on any browser or device to get back to these goals."
+            : `You're using this app anonymously as ${me.displayName ?? "a guest"} — your account lives only in this browser's cookie, and your goals are tied to it.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
