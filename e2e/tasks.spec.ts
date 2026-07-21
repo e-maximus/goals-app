@@ -62,9 +62,9 @@ test.describe("Tasks", () => {
     await dialog.getByRole("button", { name: "Add task" }).click();
     await saved;
 
-    // The row carries a chip linking to the goal.
+    // The row carries a chip linking to the goal — the path carries a title slug.
     await page.getByRole("link", { name: "Launch my podcast" }).click();
-    await expect(page).toHaveURL(/\/goal\/goal-podcast$/);
+    await expect(page).toHaveURL(/\/goal\/goal-podcast-launch-my-podcast$/);
 
     // The goal page lists the task, without repeating the goal chip.
     await expect(page.getByText("Order foam panels")).toBeVisible();

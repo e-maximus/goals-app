@@ -472,3 +472,79 @@ test.describe("Goal detail — completion banner singular/plural", () => {
     await expect(page.getByText("The only step is done. Nice work.")).toBeVisible();
   });
 });
+
+test.describe("Goal detail — completion celebration", () => {
+  // A whole-store write landing successfully. The store persists with a
+  // debounced PUT, so callers arm this before an action and await it after to
+  // know the change reached the server (a plain networkidle races the debounce).
+  const storeWritten = (page: import("@playwright/test").Page) =>
+    page.waitForResponse(
+      (r) => r.url().includes("/api/goals") && r.request().method() === "PUT" && r.ok()
+    );
+
+  // Create a fresh goal with two ungrouped steps, persisted, on its detail page.
+  async function makeTwoStepGoal(page: import("@playwright/test").Page, name: string) {
+    await page.goto("/goals");
+    await page.getByRole("button", { name: "+ New Goal" }).click();
+    let d = page.getByRole("dialog");
+    await d.getByLabel("Goal name").fill(name);
+    await d.getByRole("button", { name: "Create goal" }).click();
+    await expect(page).toHaveURL(/\/goal\//);
+
+    // First step from the empty state, second from the dashed "Add step" button.
+    await page.getByRole("button", { name: "+ Add step" }).click();
+    d = page.getByRole("dialog");
+    await d.getByLabel("Step").fill("First step");
+    await d.getByRole("button", { name: "Add step" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    const written = storeWritten(page);
+    await page.getByRole("button", { name: "Add step" }).click();
+    d = page.getByRole("dialog");
+    await d.getByLabel("Step").fill("Second step");
+    await d.getByRole("button", { name: "Add step" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // Wait for the goal + both steps to persist before returning, so a later
+    // wait can't mistake this write for the completion one.
+    await written;
+  }
+
+  test("fires a confetti burst when the last step is completed", async ({ page }) => {
+    await makeTwoStepGoal(page, "Confetti goal");
+
+    // No canvas until the goal is finished — the burst is lazy.
+    await expect(page.locator("canvas")).toHaveCount(0);
+
+    // Complete every step; the toggle relabels itself once each is done, so
+    // clicking the still-incomplete one repeatedly walks through all of them.
+    const toggle = page.getByRole("button", { name: "Mark step complete" });
+    for (let remaining = await toggle.count(); remaining > 0; remaining--) {
+      await toggle.first().click();
+    }
+
+    // The completion banner appears, and confetti injects a canvas over the page.
+    await expect(page.getByText(/All 2 steps are done\. Nice work\./)).toBeVisible();
+    await expect(page.locator("canvas")).toHaveCount(1);
+  });
+
+  test("does not re-fire when re-opening an already-complete goal", async ({ page }) => {
+    await makeTwoStepGoal(page, "Already-done goal");
+    const url = page.url();
+
+    // Arm the write wait before completing, so the debounced PUT can't slip past
+    // — the completion must reach the server before we reload the goal.
+    const written = storeWritten(page);
+    const toggle = page.getByRole("button", { name: "Mark step complete" });
+    for (let remaining = await toggle.count(); remaining > 0; remaining--) {
+      await toggle.first().click();
+    }
+    await expect(page.getByText(/steps are done\. Nice work\./)).toBeVisible();
+    await written;
+
+    // Navigate away and back — opening a finished goal must not celebrate again.
+    await page.goto("/goals");
+    await page.goto(url);
+    await expect(page.getByText(/steps are done\. Nice work\./)).toBeVisible();
+    await expect(page.locator("canvas")).toHaveCount(0);
+  });
+});

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
@@ -30,7 +30,8 @@ import { TaskRow } from "@/components/task-row";
 import { LoadingState, SectionLabel } from "@/components/ui-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useGoalView, type GoalView } from "@/lib/use-goal-view";
-import { cn } from "@/lib/utils";
+import { celebrate } from "@/lib/confetti";
+import { cn, goalIdMatchesPath } from "@/lib/utils";
 import { Check, List, Milestone, Pause, Play, Plus } from "lucide-react";
 import { ShareDialog } from "@/components/share-dialog";
 
@@ -117,7 +118,15 @@ function GoalTasksSection({ goalId }: { goalId: string }) {
 }
 
 export function GoalDetail({ goalId }: { goalId: string }) {
-  const goal = useStore((s) => s.goals.find((g) => g.id === goalId));
+  // The route param is `<id>-<slug>` (or a bare id from an old link). Resolve it
+  // to the goal whose id it carries, preferring the longest matching id so a
+  // shorter id can't shadow a longer one that happens to share its prefix.
+  const goal = useStore((s) =>
+    s.goals.reduce<(typeof s.goals)[number] | undefined>((best, g) => {
+      if (!goalIdMatchesPath(g.id, goalId)) return best;
+      return !best || g.id.length > best.id.length ? g : best;
+    }, undefined)
+  );
   const loadStatus = useStore((s) => s.loadStatus);
   const updateGoal = useStore((s) => s.updateGoal);
   const addGroup = useStore((s) => s.addGroup);
@@ -129,7 +138,9 @@ export function GoalDetail({ goalId }: { goalId: string }) {
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [addStepOpen, setAddStepOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const [view, setView] = useGoalView(goalId);
+  // Key the view preference by the resolved goal id, not the slugged route
+  // param, so a title change (and thus a new slug) doesn't reset it.
+  const [view, setView] = useGoalView(goal?.id ?? goalId);
   // Which groups the user explicitly opened/closed. Until they touch one, the
   // default applies: only the active group (the one holding the next step) is
   // expanded. Keyed by goal id so navigating to another goal starts fresh.
@@ -138,9 +149,20 @@ export function GoalDetail({ goalId }: { goalId: string }) {
     ids: Set<string>;
   } | null>(null);
 
+  // Fire the celebration only on the transition into completion — never when
+  // opening an already-finished goal, and never for the same goal twice. The
+  // ref seeds `undefined` so the first run just records the current state.
+  const wasComplete = useRef<boolean | undefined>(undefined);
+  const complete = goal ? isGoalComplete(goal) : false;
+  useEffect(() => {
+    if (!goal) return;
+    if (wasComplete.current === false && complete) void celebrate();
+    wasComplete.current = complete;
+  }, [goal, complete]);
+
   if (loadStatus === "loading") {
     return (
-      <PageShell crumbs={<Crumbs page="…" />} width="xl">
+      <PageShell crumbs={<Crumbs page="…" />} width="lg">
         <LoadingState label="Loading goal…" />
       </PageShell>
     );
@@ -148,7 +170,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
   if (loadStatus === "error") {
     return (
-      <PageShell crumbs={<Crumbs />} width="xl">
+      <PageShell crumbs={<Crumbs />} width="lg">
         <LoadError />
       </PageShell>
     );
@@ -156,7 +178,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
   if (!goal) {
     return (
-      <PageShell crumbs={<Crumbs />} width="xl">
+      <PageShell crumbs={<Crumbs />} width="lg">
         <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
           <h2 className="text-xl font-bold">Goal not found</h2>
           <p className="text-sm text-muted-foreground">
@@ -172,7 +194,6 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
   const pct = goalProgress(goal);
   const { done, total } = goalStepCounts(goal);
-  const complete = isGoalComplete(goal);
   const paused = goalStatus(goal) === "paused";
   const ungrouped = ungroupedSteps(goal);
   const hasGroups = goal.groups.length > 0;
@@ -203,7 +224,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
   };
 
   return (
-    <PageShell crumbs={<Crumbs page={goal.title} />} width="xl">
+    <PageShell crumbs={<Crumbs page={goal.title} />} width="lg">
       {/* Goal banner */}
       <div className="mb-7">
         <GoalBanner

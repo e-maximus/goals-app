@@ -73,10 +73,14 @@ test.describe("Dashboard", () => {
     await expect(page).toHaveURL(/\/goal\/goal-watercolor/);
   });
 
-  test("navigates to a goal's detail page", async ({ page }) => {
+  test("navigates to a goal's detail page, with a title slug in the URL", async ({ page }) => {
     await page.getByRole("link", { name: /Launch my podcast/ }).click();
 
-    await expect(page).toHaveURL(/\/goal\/goal-podcast/);
+    // The path is `<id>-<title-slug>`, and a bare-id deep link still resolves.
+    await expect(page).toHaveURL(/\/goal\/goal-podcast-launch-my-podcast$/);
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+
+    await page.goto("/goal/goal-podcast");
     await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
   });
 

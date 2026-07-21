@@ -85,7 +85,7 @@ export function starterGoals(): Goal[] {
           done: false,
           description: "Notes are the goal's diary: what's working, what's stuck, what's next.",
         },
-        { id: id("s"), text: "Delete this starter goal", done: false },
+        { id: id("s"), text: "Complete this step", done: false },
       ],
       groups: [],
     },

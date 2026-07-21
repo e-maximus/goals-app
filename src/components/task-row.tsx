@@ -9,7 +9,7 @@ import { useShallow } from "zustand/shallow";
 import { isTaskDone, type Task } from "@/lib/types";
 import { DueBadge, menuItemClass, menuItemDestructiveClass, menuPopupClass } from "@/components/ui-bits";
 import { TaskDialog } from "@/components/task-dialog";
-import { cn } from "@/lib/utils";
+import { cn, goalHref } from "@/lib/utils";
 
 /**
  * One task row, shared by the tasks page, the dashboard's Today block and the
@@ -76,7 +76,7 @@ export function TaskRow({
             <DueBadge dueDate={task.daily ? undefined : task.dueDate} done={task.done} />
             {showGoal && goal && (
               <Link
-                href={`/goal/${goal.id}`}
+                href={goalHref(goal)}
                 onClick={(e) => e.stopPropagation()}
                 className="inline-flex max-w-48 flex-shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
               >
