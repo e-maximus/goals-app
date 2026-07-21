@@ -13,7 +13,7 @@ export default function NotFound() {
         You don&apos;t have to. The page you&apos;re looking for doesn&apos;t exist — your
         goals are still where you left them.
       </p>
-      <Link href="/" className={cn(buttonVariants(), "mt-2")}>
+      <Link href="/goals" className={cn(buttonVariants(), "mt-2")}>
         Back to My Goals
       </Link>
     </main>

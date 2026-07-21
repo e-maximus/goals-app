@@ -1,15 +1,15 @@
 import { test, expect } from "./fixtures";
 
 test.describe("Tasks", () => {
-  test("navigates between Goals and Tasks via the topbar tabs", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Tasks" }).click();
+  test("navigates between Goals and Tasks via the topbar nav", async ({ page }) => {
+    await page.goto("/goals");
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Tasks" }).click();
 
     await expect(page).toHaveURL(/\/tasks$/);
     await expect(page.getByText("My Tasks")).toBeVisible();
 
-    await page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Goals" }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "My Goals" }).click();
+    await expect(page).toHaveURL(/\/goals$/);
   });
 
   test("creates a one-off task and checks it off", async ({ page }) => {
@@ -70,7 +70,7 @@ test.describe("Tasks", () => {
     await expect(page.getByText("Order foam panels")).toBeVisible();
 
     // A daily task also surfaces in the dashboard's Today block.
-    await page.goto("/");
+    await page.goto("/goals");
     await expect(page.getByText("Today")).toBeVisible();
     await expect(page.getByText("Order foam panels")).toBeVisible();
   });

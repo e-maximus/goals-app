@@ -383,7 +383,7 @@ export function Dashboard() {
   };
 
   return (
-    <PageShell crumbs={<Crumbs />} tab="goals" width="lg">
+    <PageShell crumbs={<Crumbs />} width="lg">
       {loadStatus === "loading" ? (
         <LoadingState label="Loading your goals…" />
       ) : loadStatus === "error" ? (

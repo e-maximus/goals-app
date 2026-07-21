@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Settings } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -105,35 +106,46 @@ function UserChipSkeleton() {
 }
 
 /**
- * The Goals | Tasks switcher, shown on the two top-level pages. Detail pages
- * keep the breadcrumb alone — the tabs only make sense at the top level.
+ * The primary site navigation — persistent on every page, rendered as plain
+ * links rather than a segmented control. The active link is derived from the
+ * current path, so no page has to declare which section it belongs to.
  */
-function NavTabs({ active }: { active: "goals" | "tasks" }) {
-  const tab = (value: "goals" | "tasks", href: string, label: string) => (
-    <Link
-      href={href}
-      aria-current={active === value ? "page" : undefined}
-      className={cn(
-        "rounded-md px-3 py-1 text-sm font-semibold transition-colors",
-        active === value
-          ? "bg-card text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      {label}
-    </Link>
-  );
+function NavLinks() {
+  const pathname = usePathname();
+  const items: { href: string; label: string; active: boolean }[] = [
+    { href: "/", label: "Home", active: pathname === "/" },
+    {
+      href: "/goals",
+      label: "My Goals",
+      active: pathname === "/goals" || pathname.startsWith("/goal/"),
+    },
+    { href: "/tasks", label: "Tasks", active: pathname === "/tasks" },
+    { href: "/about", label: "About", active: pathname === "/about" },
+  ];
   return (
-    <nav aria-label="Sections" className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-      {tab("goals", "/", "Goals")}
-      {tab("tasks", "/tasks", "Tasks")}
+    <nav aria-label="Main" className="flex items-center gap-0.5 sm:gap-1">
+      {items.map((it) => (
+        <Link
+          key={it.href}
+          href={it.href}
+          aria-current={it.active ? "page" : undefined}
+          className={cn(
+            "rounded-md px-2 py-1.5 text-sm transition-colors sm:px-2.5",
+            it.active
+              ? "font-semibold text-foreground"
+              : "font-medium text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {it.label}
+        </Link>
+      ))}
     </nav>
   );
 }
 
 /**
  * The wordmark, home on every page. The footprints echo the app icon — the
- * mark is "one step at a time", the same idea the crumbs sit under.
+ * mark is "one step at a time".
  */
 function Brand() {
   return (
@@ -150,16 +162,15 @@ function Brand() {
   );
 }
 
-export function Topbar({ crumbs, tab }: { crumbs: React.ReactNode; tab?: "goals" | "tasks" }) {
+export function Topbar() {
   const saveStatus = useStore((s) => s.saveStatus);
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-4 border-b border-border bg-background px-5 sm:px-9">
-      <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+      <div className="flex min-w-0 items-center gap-3 sm:gap-5">
         <Brand />
         <span aria-hidden className="h-5 w-px flex-shrink-0 bg-border" />
-        <div className="min-w-0 truncate text-sm text-muted-foreground">{crumbs}</div>
-        {tab && <NavTabs active={tab} />}
+        <NavLinks />
       </div>
       <div className="flex flex-shrink-0 items-center gap-2.5">
         <SaveStatus status={saveStatus} />
@@ -184,15 +195,22 @@ export function Crumbs({
 }: {
   /** The second segment — a goal title, "Settings", "About"… */
   page?: string;
-  /** The top-level label — "My Goals" on goal pages, "My Tasks" on /tasks. */
-  root?: string;
+  /**
+   * The top-level label the page hangs under — "My Goals" on goal pages,
+   * "My Tasks" on /tasks. Pass `null` for a standalone page (About, Settings…)
+   * that belongs to no section, so the crumb is just its own name.
+   */
+  root?: string | null;
 }) {
   if (!page) {
     return <span className="font-semibold text-foreground">{root}</span>;
   }
+  if (root === null) {
+    return <span className="font-semibold text-foreground">{page}</span>;
+  }
   return (
     <span>
-      <Link href="/" className="transition-colors hover:text-foreground">
+      <Link href="/goals" className="transition-colors hover:text-foreground">
         {root}
       </Link>{" "}
       / <span className="font-semibold text-foreground">{page}</span>

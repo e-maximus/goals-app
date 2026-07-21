@@ -14,7 +14,7 @@ test.describe("settings (anonymous)", () => {
     // The content waits for clerk-js from Clerk's CDN before loading the
     // identity, which can take longer than the default expect timeout.
     await expect(page.getByText("User ID", { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("Stable authentication")).toBeVisible();
+    await expect(page.getByText(/Sign in to give this account a durable identity/)).toBeVisible();
 
     // The MCP section is present but locked behind sign-in.
     await expect(page.getByText("MCP access", { exact: true })).toBeVisible();
@@ -31,7 +31,7 @@ test.describe("settings (anonymous)", () => {
   });
 
   test("shows the generated identity chip in the topbar", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/goals");
     await expect(page.getByRole("link", { name: /Launch my podcast/ })).toBeVisible();
 
     const chip = page.getByRole("link", { name: "Account" });

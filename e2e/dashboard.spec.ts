@@ -5,7 +5,7 @@ import { test, expect } from "./fixtures";
 // sections.
 test.describe("Dashboard", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/goals");
   });
 
   test("renders the seeded goals", async ({ page }) => {
@@ -39,7 +39,7 @@ test.describe("Dashboard", () => {
     await card.getByRole("button", { name: "Done" }).click();
 
     // No navigation — the line just advances to the following step.
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/goals$/);
     await expect(card.getByText(/Next:.*Record ep\. 2/)).toBeVisible();
     await expect(card.getByText("6 of 10 steps")).toBeVisible();
   });
@@ -151,7 +151,7 @@ test.describe("Dashboard", () => {
       }
     });
 
-    await page.goto("/");
+    await page.goto("/goals");
     await expect(page.getByRole("link", { name: /Launch my podcast/ })).toBeVisible();
     // Past the 500ms push debounce, so a spurious save would have fired by now.
     await expect(page.getByText("Saving…")).toHaveCount(0);

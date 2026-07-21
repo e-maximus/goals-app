@@ -62,7 +62,7 @@ export function Settings() {
   }, [authLoaded]);
 
   return (
-    <PageShell crumbs={<Crumbs page="Settings" />} width="sm">
+    <PageShell crumbs={<Crumbs page="Settings" root={null} />} width="sm">
       <div className="space-y-6">
         {status === "loading" ? (
           <LoadingState />
@@ -148,7 +148,7 @@ function StableAuthCard() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-          Stable authentication
+          Sign in
         </CardTitle>
         <CardDescription>
           Sign in to give this account a durable identity. It keeps your goals if this browser&apos;s
@@ -195,7 +195,7 @@ function McpCard({ endpoint }: { endpoint: string }) {
       <CardHeader>
         <CardTitle>MCP access</CardTitle>
         <CardDescription>
-          Connect an agent (Claude on Android, Claude Code, Cursor…) to read and edit these goals.
+          Connect an agent (Claude Desktop, Claude Code, Cursor…) to read and edit these goals.
           Access is authorized with your sign-in over OAuth — there&apos;s no token to copy or leak.
         </CardDescription>
       </CardHeader>

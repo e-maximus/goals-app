@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 
 test.describe("Creating a goal", () => {
   test("creates a goal from the dialog and opens its detail page", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/goals");
 
     // The button lives among the goals, not in the topbar.
     await page.getByRole("main").getByRole("button", { name: "+ New Goal" }).click();
@@ -28,7 +28,7 @@ test.describe("Creating a goal", () => {
   });
 
   test("disables the submit button until a title is entered", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/goals");
     await page.getByRole("button", { name: "+ New Goal" }).click();
 
     const create = page.getByRole("button", { name: "Create goal" });
@@ -39,15 +39,15 @@ test.describe("Creating a goal", () => {
   });
 
   test("the new goal appears back on the dashboard", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/goals");
     await page.getByRole("button", { name: "+ New Goal" }).click();
     await page.getByLabel("Goal name").fill("Learn to juggle");
     await page.getByRole("button", { name: "Create goal" }).click();
 
     await expect(page.getByRole("heading", { name: "Learn to juggle" })).toBeVisible();
 
-    await page.getByRole("link", { name: "My Goals" }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole("main").getByRole("link", { name: "My Goals" }).click();
+    await expect(page).toHaveURL(/\/goals$/);
     await expect(page.getByRole("link", { name: /Learn to juggle/ })).toBeVisible();
   });
 });

@@ -162,7 +162,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
           <p className="text-sm text-muted-foreground">
             It may have been deleted.
           </p>
-          <Link href="/" className={buttonVariants({ variant: "outline" })}>
+          <Link href="/goals" className={buttonVariants({ variant: "outline" })}>
             Back to my goals
           </Link>
         </div>
@@ -216,7 +216,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
           onShare={() => setShareOpen(true)}
           onDelete={() => {
             deleteGoal(goal.id);
-            router.push("/");
+            router.push("/goals");
           }}
         />
       </div>

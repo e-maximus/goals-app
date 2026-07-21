@@ -274,7 +274,7 @@ test.describe("Goal detail — toggling and deleting", () => {
     await page.getByRole("button", { name: "Goal options" }).click();
     await page.getByRole("menuitem", { name: "Delete" }).click();
 
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/goals$/);
     await expect(page.getByRole("link", { name: /Launch my podcast/ })).toHaveCount(0);
   });
 });
@@ -432,7 +432,7 @@ test.describe("Goal detail — deadlines", () => {
     await expect(banner.getByText(/due /)).toBeVisible();
 
     // The dashboard card carries the same badge.
-    await page.getByRole("link", { name: "My Goals" }).click();
+    await page.getByRole("main").getByRole("link", { name: "My Goals" }).click();
     const card = page.locator("div.group\\/goal").filter({ hasText: "Launch my podcast" });
     await expect(card.getByText(/due /)).toBeVisible();
   });
@@ -442,7 +442,7 @@ test.describe("Goal detail — deadlines", () => {
 // naturally when there is exactly one step, not always plural.
 test.describe("Goal detail — completion banner singular/plural", () => {
   test("uses the singular copy when a single step is completed", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/goals");
     await page.getByRole("button", { name: "+ New Goal" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Goal name").fill("Singular banner test");
