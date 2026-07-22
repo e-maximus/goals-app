@@ -94,6 +94,11 @@ All committed and user-facing text is in **English**.
 
 ## Branching & PRs
 
+- **Start every task from a fresh `main`.** Before writing any code, this is the
+  default flow: `git checkout main`, `git pull origin main`, then branch off it
+  (`git checkout -b <name>`). Never start a task from a stale local `main` or from
+  whatever branch happens to be checked out — branching off an out-of-date base is
+  what produces the merge conflicts you'll fight later.
 - Branch off `main`; don't commit directly to `main`. Open a PR — CI (lint +
   build + server + e2e) must be green before merge.
 - Pushing to `main` auto-deploys to **Railway** (via its GitHub integration,
