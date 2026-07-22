@@ -274,7 +274,11 @@ export async function resetTestUser(pool: Pool): Promise<{ sessionToken: string 
     // The canonical seed's ids are global PKs, and the server test suite plants
     // the same fixture ids (goal-podcast, …) under its own throwaway owners in
     // the same test database. Clear any strays so the re-seed can't collide.
-    await client.query("DELETE FROM goals WHERE id = ANY($1)", [seedGoals().map((g) => g.id)]);
+    // Positional placeholders (rather than `= ANY($1)`) keep this a plain
+    // scalar-parameter query, which the Prisma raw interface binds directly.
+    const seedIds = seedGoals().map((g) => g.id);
+    const placeholders = seedIds.map((_, i) => `$${i + 1}`).join(", ");
+    await client.query(`DELETE FROM goals WHERE id IN (${placeholders})`, seedIds);
     await insertGoals(client, TEST_USER.id, seedGoals());
   });
   return { sessionToken: TEST_USER.sessionToken };
