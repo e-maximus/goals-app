@@ -4,7 +4,10 @@
 
 FROM node:22-alpine AS deps
 WORKDIR /app
+# The postinstall hook runs `prisma generate`, which needs the schema — copy it
+# in before `npm ci` or the install fails with "Could not find Prisma Schema".
 COPY package.json package-lock.json ./
+COPY prisma ./prisma
 RUN npm ci
 
 
