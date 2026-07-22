@@ -3,7 +3,7 @@
 import { toast } from "sonner";
 import { create } from "zustand";
 import { isTaskDone, utcMidnight, type Goal, type GoalStatus, type Step, type Task } from "./types";
-import { SyncConflictError, fetchState, pushState } from "./sync";
+import { SyncConflictError, fetchState, pushState, type ServerState } from "./sync";
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -66,6 +66,12 @@ type StoreState = {
 
   /** Load the goals from the server. Called once on mount; safe to call again to retry. */
   load: () => Promise<void>;
+  /**
+   * Seed the store from state the server already loaded (RSC initial render),
+   * skipping the client fetch entirely. Used when the page was server-rendered
+   * for a known user; the first-visit path (no session yet) still calls `load`.
+   */
+  hydrate: (state: ServerState) => void;
 
   addGoal: (title: string, why?: string, dueDate?: number) => Goal;
   updateGoal: (goalId: string, title: string, why?: string, dueDate?: number) => void;
@@ -160,6 +166,19 @@ export const useStore = create<StoreState>((set) => ({
     } catch {
       set({ loadStatus: "error" });
     }
+  },
+
+  hydrate: (state) => {
+    // Applying server data — guard so the persistence subscriber doesn't echo the
+    // just-seeded goals straight back to the server as a "save".
+    applyingRemote = true;
+    set({
+      goals: state.goals,
+      tasks: state.tasks,
+      serverUpdatedAt: state.updatedAt,
+      loadStatus: "ready",
+    });
+    applyingRemote = false;
   },
 
   addGoal: (title, why, dueDate) => {
