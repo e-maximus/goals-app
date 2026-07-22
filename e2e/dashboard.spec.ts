@@ -146,11 +146,12 @@ test.describe("Dashboard", () => {
 
   test("just loading the page writes nothing back to the server", async ({ page }) => {
     // Loading fills the store from the server; that must not be echoed back as a
-    // save. Watch for the write (PUT /api/goals) — none should fire, and the
-    // "Saving…" indicator should never appear when we've made no edits.
+    // save. Watch for the write (the save Server Action — the only server-action
+    // POST, since reads go over GET) — none should fire, and the "Saving…"
+    // indicator should never appear when we've made no edits.
     const writes: string[] = [];
     page.on("request", (req) => {
-      if (req.method() === "PUT" && req.url().includes("/api/goals")) {
+      if (req.method() === "POST" && req.headers()["next-action"]) {
         writes.push(req.url());
       }
     });

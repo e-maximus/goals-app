@@ -1,6 +1,7 @@
 "use client";
 
 import type { Goal, Task } from "./types";
+import { saveState } from "@/features/goals/actions";
 
 /**
  * The client half of talking to the goals server. The API is same-origin now
@@ -26,6 +27,16 @@ export class SyncConflictError extends Error {
     this.name = "SyncConflictError";
   }
 }
+
+/**
+ * The result of a save Server Action. A conflict comes back as data ({ ok:
+ * false }) rather than a thrown error — errors lose their type crossing the
+ * Server Action boundary, so `pushState` turns this into a `SyncConflictError`
+ * on the client side instead.
+ */
+export type SaveResult =
+  | { ok: true; state: ServerState }
+  | { ok: false; serverUpdatedAt: number };
 
 export async function fetchState(): Promise<ServerState> {
   const res = await fetch("/api/goals");
@@ -56,17 +67,7 @@ export async function pushState(
   tasks: Task[],
   baseUpdatedAt: number | null
 ): Promise<ServerState> {
-  const res = await fetch("/api/goals", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ goals, tasks, baseUpdatedAt }),
-  });
-
-  if (res.status === 409) {
-    const body = (await res.json()) as { serverUpdatedAt?: number };
-    throw new SyncConflictError(body.serverUpdatedAt ?? 0);
-  }
-  if (!res.ok) throw new Error(`Server responded ${res.status}`);
-
-  return (await res.json()) as ServerState;
+  const result = await saveState({ goals, tasks, baseUpdatedAt });
+  if (!result.ok) throw new SyncConflictError(result.serverUpdatedAt);
+  return result.state;
 }

@@ -54,10 +54,10 @@ test.describe("Goal detail — groups and steps", () => {
     await dialog.getByLabel("Step").fill("Buy brushes");
     await dialog.getByLabel("Description (optional)").fill("Round sizes 6 and 10");
 
-    // The store saves on a debounce; wait for that PUT so it can't land mid-edit
+    // The store saves on a debounce; wait for that save so it can't land mid-edit
     // and race the dialog we open next.
     const saved = page.waitForResponse(
-      (r) => r.url().includes("/api/goals") && r.request().method() === "PUT"
+      (r) => r.request().method() === "POST" && !!r.request().headers()["next-action"]
     );
     await dialog.getByRole("button", { name: "Add step" }).click();
     await saved;
@@ -401,11 +401,12 @@ test.describe("Goal detail — completion banner singular/plural", () => {
 
 test.describe("Goal detail — completion celebration", () => {
   // A whole-store write landing successfully. The store persists with a
-  // debounced PUT, so callers arm this before an action and await it after to
-  // know the change reached the server (a plain networkidle races the debounce).
+  // debounced save Server Action, so callers arm this before an action and await
+  // it after to know the change reached the server (a plain networkidle races the
+  // debounce). The save is the only server-action POST — reads go over GET.
   const storeWritten = (page: import("@playwright/test").Page) =>
     page.waitForResponse(
-      (r) => r.url().includes("/api/goals") && r.request().method() === "PUT" && r.ok()
+      (r) => r.request().method() === "POST" && !!r.request().headers()["next-action"] && r.ok()
     );
 
   // Create a fresh goal with two ungrouped steps, persisted, on its detail page.

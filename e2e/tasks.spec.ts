@@ -57,7 +57,7 @@ test.describe("Tasks", () => {
     // The store pushes on a debounce; the test reloads the page below, so wait
     // for the save to land rather than racing it.
     const saved = page.waitForResponse(
-      (r) => r.url().includes("/api/goals") && r.request().method() === "PUT" && r.ok()
+      (r) => r.request().method() === "POST" && !!r.request().headers()["next-action"] && r.ok()
     );
     await dialog.getByRole("button", { name: "Add task" }).click();
     await saved;
