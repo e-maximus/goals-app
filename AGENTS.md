@@ -158,20 +158,40 @@ You are an expert senior frontend engineer specializing in React, Next.js (App R
 - **App Router Only:** Never use Pages Router conventions (`pages/` directory, `getServerSideProps`, `getStaticProps`).
 - **Server Components by Default:** All components must be React Server Components (RSC) unless interactivity is required.
 - **Client Components:** Use the `'use client'` directive ONLY when using React hooks (`useState`, `useEffect`, context) or event listeners. Keep client components at the leaves of the component tree.
-- **Asynchronous Parameters (Next.js 15+):** `params` and `searchParams` in `Page`, `Layout`, and `Route Handlers` are asynchronous. Always await them before accessing properties:
+- **Asynchronous Parameters (mandatory in Next.js 16):** `params` and `searchParams` in
+  `Page`, `Layout`, and `Route Handlers` are Promises — synchronous access was removed in
+  Next.js 16 (along with sync `cookies`/`headers`/`draftMode`). Always await them. Run
+  `npx next typegen` to get the generated `PageProps`/`LayoutProps`/`RouteContext` helpers
+  instead of hand-writing the prop types:
   ```tsx
-  // Correct
-  export default async function Page({ params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
+  // Correct — server Page/Layout/Route
+  export default async function Page(props: PageProps<'/goal/[id]'>) {
+    const { id } = await props.params;
     return <div>ID: {id}</div>;
   }
   ```
+  In a **client** component, read route params with the `useParams()` hook instead (as in
+  [src/app/(app)/goal/[id]/page.tsx](src/app/(app)/goal/[id]/page.tsx)) — the async-props
+  rule is for server Page/Layout/Route only.
+- **`middleware` → `proxy`:** the `middleware` file/export is deprecated in Next.js 16; the
+  convention is now `proxy.ts` (a `proxy` function or a default export), and it runs on the
+  `nodejs` runtime only (no `edge`). This repo already uses it — [src/proxy.ts](src/proxy.ts)
+  default-exports Clerk's `clerkMiddleware()` to populate auth for route handlers (it never
+  gates a route at the edge).
 
 ---
 
 ## 2. DATA FETCHING & MUTATIONS
 - **Server-Side Fetching:** Fetch data directly inside async Server Components using native `fetch` or direct database calls.
-- **No Client Fetching Cascades:** Never use `useEffect` for initial data loading.
+- **No Client Fetching Cascades:** Never use `useEffect` for initial data loading. **One
+  deliberate exception in this repo:** the client Zustand store
+  ([src/lib/store.ts](src/lib/store.ts)) is not a data-fetching cascade — it is shared,
+  optimistic, mutable client state (in-place mutations, a debounced whole-store `PUT`, and
+  `409` reconciliation with MCP edits). Its initial data is fetched **on the server**
+  ([src/features/goals/load.ts](src/features/goals/load.ts), awaited in the `(app)` layout)
+  and the store is only *hydrated* from that `initialData` — no client round-trip. The
+  client `load()` on mount survives solely as a fallback for a brand-new visitor with no
+  session cookie (a Server Component can't mint one). Don't "fix" this into RSC fetching.
 - **Parallel Fetching:** Prevent waterfalls by initializing multiple fetches in parallel using `Promise.all()` or initiate them concurrently.
 - **Server Actions for Mutations:** Handle form submissions, state changes, and data mutations using Server Actions (`'use server'`).
 - **Security in Actions:**
