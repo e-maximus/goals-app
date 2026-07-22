@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { Show, SignInButton, useUser } from "@clerk/nextjs";
 import { Settings } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -87,6 +87,11 @@ function UserChip() {
         </span>
       )}
       <span className="hidden max-w-32 truncate text-sm font-medium sm:block">{name}</span>
+      {!signedIn && (
+        <span className="hidden rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground sm:inline">
+          Guest
+        </span>
+      )}
     </Link>
   );
 }
@@ -162,11 +167,37 @@ function Brand() {
   );
 }
 
+/**
+ * True once the page has scrolled off the very top. Drives the header's
+ * "lifted" treatment (2b) — a stronger border and a soft drop shadow that only
+ * appear once content slides beneath it.
+ */
+function useScrolled(): boolean {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 0);
+    onScroll(); // honour an initial scroll position (e.g. a restored one)
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return scrolled;
+}
+
 export function Topbar() {
   const saveStatus = useStore((s) => s.saveStatus);
+  const scrolled = useScrolled();
 
   return (
-    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-4 border-b border-border bg-background px-5 sm:px-9">
+    <header
+      data-scrolled={scrolled ? "true" : undefined}
+      style={
+        scrolled ? { boxShadow: "0 8px 22px -14px oklch(0.22 0.06 150 / 0.5)" } : undefined
+      }
+      className={cn(
+        "fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-4 border-b bg-background px-5 transition-[border-color,box-shadow] duration-200 sm:px-9",
+        scrolled ? "border-border-strong" : "border-border"
+      )}
+    >
       <div className="flex min-w-0 items-center gap-3 sm:gap-5">
         <Brand />
         <span aria-hidden className="h-5 w-px flex-shrink-0 bg-border" />
@@ -175,6 +206,13 @@ export function Topbar() {
       <div className="flex flex-shrink-0 items-center gap-2.5">
         <SaveStatus status={saveStatus} />
         <UserChip />
+        {/* Only when definitively signed out — Show renders nothing while Clerk
+            is still resolving, so a signed-in user never flashes a Sign in CTA. */}
+        <Show when="signed-out">
+          <SignInButton mode="modal">
+            <Button size="sm">Sign in</Button>
+          </SignInButton>
+        </Show>
         <Button
           variant="ghost"
           size="icon-sm"

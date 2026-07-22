@@ -1,12 +1,28 @@
 import { test, expect } from "./fixtures";
 
-// The Home page is the app's landing at "/": a personal overview (greeting,
-// pulse, the next step to continue) plus evergreen guidance (a tips slider, an
-// MCP teaser, a short primer). The fixture resets the store to the seeded goals
-// for the anonymous e2e user ("Shiny Fox"), so the live sections have content.
+// The Home page is the app's landing at "/": a Focus Hero (greeting, quick
+// actions, the next step to pick up, and an at-a-glance pulse) plus a "Get more
+// out of it" grid (About, how it works, an MCP teaser, a tips card). The fixture
+// resets the store to the seeded goals for the anonymous e2e user ("Shiny Fox"),
+// so the live sections have content.
 test.describe("Home", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
+  });
+
+  test("lifts the header with a shadow once the page is scrolled", async ({ page }) => {
+    const header = page.locator("header").first();
+    // Wait for the loaded overview, so the page is tall enough to scroll.
+    await expect(page.getByRole("heading", { level: 1, name: /Keep going/ })).toBeVisible();
+    // Flush at the top: solid, no lifted treatment.
+    await expect(header).not.toHaveAttribute("data-scrolled", "true");
+
+    await page.evaluate(() => window.scrollTo(0, 200));
+    await expect(header).toHaveAttribute("data-scrolled", "true");
+
+    // Back at the very top, it settles flat again.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(header).not.toHaveAttribute("data-scrolled", "true");
   });
 
   test("greets the account and marks the Home nav link active", async ({ page }) => {
@@ -17,27 +33,31 @@ test.describe("Home", () => {
   });
 
   test("shows a pulse of at-a-glance counts", async ({ page }) => {
-    await expect(page.getByText("Your pulse")).toBeVisible();
     await expect(page.getByText("steps done")).toBeVisible();
-    await expect(page.getByText("active goals")).toBeVisible();
+    await expect(page.getByText(/active goals?/)).toBeVisible();
   });
 
   test("surfaces the next step and completes it in place", async ({ page }) => {
-    const section = page.locator("section").filter({ hasText: "Continue" });
+    await expect(page.getByText("Pick up where you left off")).toBeVisible();
     // The seeded podcast goal's first unchecked step is the next actionable one.
-    await expect(section.getByText(/Next:.*Edit ep\. 1/)).toBeVisible();
+    await expect(page.getByText(/Next:.*Edit ep\. 1/)).toBeVisible();
 
-    await section.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Done" }).click();
     // Checking it off advances the highlighted step without leaving Home.
     await expect(page).toHaveURL(/\/$/);
-    await expect(section.getByText(/Next:.*Record ep\. 2/)).toBeVisible();
+    await expect(page.getByText(/Next:.*Record ep\. 2/)).toBeVisible();
   });
 
-  test("pages through the tips slider", async ({ page }) => {
-    await expect(page.getByText("Not sure how to reach your first goal?")).toBeVisible();
-    await expect(page.getByText("Break it down until the next step is tiny")).toBeVisible();
+  test("opens the new-goal dialog from the hero", async ({ page }) => {
+    await page.getByRole("button", { name: "New goal" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+  });
 
-    await page.getByRole("button", { name: "Next tip" }).click();
+  test("pages through the tips card", async ({ page }) => {
+    await expect(page.getByText("Tip of the day")).toBeVisible();
+    await expect(page.getByText("If you can’t start, it’s still too big")).toBeVisible();
+
+    await page.getByRole("button", { name: "Go to tip 2" }).click();
     await expect(page.getByRole("button", { name: "Go to tip 2" })).toHaveAttribute(
       "aria-current",
       "true"
@@ -45,7 +65,7 @@ test.describe("Home", () => {
   });
 
   test("teases MCP and links to Settings for the setup", async ({ page }) => {
-    await expect(page.getByText("Connect your assistant")).toBeVisible();
+    await expect(page.getByText("Bring your assistant")).toBeVisible();
     await page.getByRole("link", { name: /Set it up in Settings/ }).click();
     await expect(page).toHaveURL(/\/settings$/);
   });

@@ -87,8 +87,9 @@ test.describe("settings (signed in with Clerk)", () => {
 
     await page.getByRole("button", { name: "Sign out" }).click();
 
-    // Back to the anonymous state: sign in is offered again and MCP re-gates.
-    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+    // Back to the anonymous state: the guest hero offers sign in again (the
+    // topbar and the hero each carry a Sign in button), and MCP re-gates.
+    await expect(page.getByRole("button", { name: "Sign in", exact: true }).first()).toBeVisible();
     await expect(page.getByText("Sign in above to enable MCP access")).toBeVisible();
   });
 });
