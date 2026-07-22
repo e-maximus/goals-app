@@ -30,12 +30,12 @@ test.describe("Goal notes", () => {
     await page.getByRole("button", { name: "Add note" }).click();
     await page.getByLabel("Note", { exact: true }).fill("Persisted thought.");
 
-    // Writes are pushed to the server on a short debounce, so wait for that PUT
+    // Writes are pushed to the server on a short debounce, so wait for that save
     // to land before reloading — otherwise the reload can race the save and pull
     // a copy from before the note existed. In the app the header's "Saving…"
     // indicator is the user-facing version of this wait.
     const saved = page.waitForResponse(
-      (r) => r.url().includes("/api/goals") && r.request().method() === "PUT" && r.ok()
+      (r) => r.request().method() === "POST" && !!r.request().headers()["next-action"] && r.ok()
     );
     await page.getByRole("button", { name: "Add note" }).click();
     await expect(page.getByText("Persisted thought.")).toBeVisible();

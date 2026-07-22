@@ -1,3 +1,4 @@
+import "server-only";
 import { createPool, migrate, type Pool } from "./db";
 
 /**

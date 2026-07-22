@@ -15,17 +15,17 @@ import {
 } from "@/lib/types";
 import { PageShell, Crumbs } from "@/components/page-shell";
 import { LoadError } from "@/components/load-error";
-import { GoalDialog } from "@/components/new-goal-dialog";
-import { GroupDialog } from "@/components/group-dialog";
-import { StepDialog } from "@/components/step-dialog";
+import { GoalDialog } from "./new-goal-dialog";
+import { GroupDialog } from "./group-dialog";
+import { StepDialog } from "./step-dialog";
 import {
   GroupCardConnected,
   AddGroupCard,
   UngroupedStepsList,
-} from "@/components/group-card";
-import { NotesSection } from "@/components/notes-section";
-import { TaskDialog } from "@/components/task-dialog";
-import { TaskRow } from "@/components/task-row";
+} from "./group-card";
+import { NotesSection } from "./notes-section";
+import { TaskDialog } from "@/features/tasks";
+import { TaskRow } from "@/features/tasks";
 import {
   DueBadge,
   LoadingState,
@@ -38,7 +38,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { celebrate } from "@/lib/confetti";
 import { goalIdMatchesPath } from "@/lib/utils";
 import { Check, MoreVertical, Pause, Pencil, Play, Plus, Share2, Trash2 } from "lucide-react";
-import { ShareDialog } from "@/components/share-dialog";
+import { ShareDialog } from "@/features/account";
 
 /**
  * The tasks tied to this goal — the day-to-day to-dos living next to the plan.

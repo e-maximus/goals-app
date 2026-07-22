@@ -1,3 +1,4 @@
+import "server-only";
 import { randomBytes } from "node:crypto";
 import { withTransaction, type Pool } from "./db";
 import { uid } from "./domain";
@@ -163,6 +164,26 @@ export async function getOrCreateUserByClerkId(pool: Pool, clerkUserId: string):
   return { ...user, clerkUserId };
 }
 
+/**
+ * Resolve the user for an RSC initial render — read-only, with none of
+ * resolveWebUser's side effects. A Server Component can't mint an account (it
+ * can't set the session cookie), so this only *looks up* an existing user: the
+ * Clerk-linked account when signed in, else the session-cookie account, else
+ * null (a brand-new visitor, whom the client's first load will mint).
+ */
+export async function resolveWebUserReadonly(
+  pool: Pool,
+  sessionToken: string | undefined,
+  clerkUserId: string | null
+): Promise<User | null> {
+  if (clerkUserId) {
+    const linked = await getUserByClerkId(pool, clerkUserId);
+    if (linked) return linked;
+  }
+  if (sessionToken) return getUserBySession(pool, sessionToken);
+  return null;
+}
+
 // ---- HTTP layer: cookie and bearer parsing ----
 
 export const SESSION_COOKIE = "session";
@@ -273,7 +294,11 @@ export async function resetTestUser(pool: Pool): Promise<{ sessionToken: string 
     // The canonical seed's ids are global PKs, and the server test suite plants
     // the same fixture ids (goal-podcast, …) under its own throwaway owners in
     // the same test database. Clear any strays so the re-seed can't collide.
-    await client.query("DELETE FROM goals WHERE id = ANY($1)", [seedGoals().map((g) => g.id)]);
+    // Positional placeholders (rather than `= ANY($1)`) keep this a plain
+    // scalar-parameter query, which the Prisma raw interface binds directly.
+    const seedIds = seedGoals().map((g) => g.id);
+    const placeholders = seedIds.map((_, i) => `$${i + 1}`).join(", ");
+    await client.query(`DELETE FROM goals WHERE id IN (${placeholders})`, seedIds);
     await insertGoals(client, TEST_USER.id, seedGoals());
   });
   return { sessionToken: TEST_USER.sessionToken };

@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ServerState } from "../sync";
 
+// `sync` statically imports the save Server Action, whose module pulls in the
+// server-only stack (Prisma, Clerk, next/headers). This is a pure client-logic
+// project — stub the action so importing `sync` never evaluates that chain.
+vi.mock("@/features/goals/actions", () => ({ saveState: vi.fn() }));
+
 // The server half is mocked: these tests exercise the store's own push
 // scheduling (debounce + single-flight), not the network. The real
 // SyncConflictError is kept so the conflict branch stays type-correct.

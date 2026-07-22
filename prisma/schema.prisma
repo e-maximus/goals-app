@@ -1,0 +1,135 @@
+// Prisma schema mapped onto the app's existing tables (created by the string
+// migrations in src/server/migrations.ts — Prisma does not own the schema, it
+// speaks to it). Field names mirror the real snake_case columns so the raw-SQL
+// repo layer keeps working verbatim. BIGINT columns are epoch-millisecond
+// timestamps; the data layer converts them to `number` at the boundary.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Relations below mirror the existing foreign keys (declared in the string
+// migrations, ON DELETE CASCADE / SET NULL enforced by Postgres). Prisma does
+// not own or migrate the schema, so no `onDelete` is set here — the database
+// enforces cascades; these relation fields exist only so the repo layer can
+// scope by owner through them (`where: { goal: { owner_id } }`) and read trees
+// with nested `include`.
+
+model User {
+  id               String  @id
+  session_token    String  @unique
+  pat              String  @unique
+  goals_updated_at BigInt?
+  created_at       BigInt
+  clerk_user_id    String? @unique
+  display_name     String?
+  avatar           String?
+
+  goals Goal[]
+  tasks Task[]
+
+  @@map("users")
+}
+
+model Goal {
+  id         String  @id
+  owner_id   String
+  title      String
+  why        String?
+  created_at BigInt
+  position   Int
+  status     String  @default("active")
+  updated_at BigInt
+  paused_at  BigInt?
+  due_date   BigInt?
+
+  owner  User    @relation(fields: [owner_id], references: [id])
+  groups Group[]
+  steps  Step[]
+  notes  Note[]
+  tasks  Task[]
+
+  @@index([owner_id])
+  @@map("goals")
+}
+
+model Group {
+  id       String  @id
+  goal_id  String
+  title    String
+  position Int
+  due_date BigInt?
+
+  goal  Goal   @relation(fields: [goal_id], references: [id])
+  steps Step[]
+
+  @@index([goal_id])
+  @@map("groups")
+}
+
+model Step {
+  id          String  @id
+  group_id    String?
+  goal_id     String?
+  text        String
+  description String?
+  done        Boolean @default(false)
+  position    Int
+  due_date    BigInt?
+
+  group Group? @relation(fields: [group_id], references: [id])
+  goal  Goal?  @relation(fields: [goal_id], references: [id])
+  notes Note[]
+
+  @@index([group_id])
+  @@index([goal_id])
+  @@map("steps")
+}
+
+model Note {
+  id         String  @id
+  goal_id    String
+  text       String
+  created_at BigInt
+  step_id    String?
+
+  goal Goal  @relation(fields: [goal_id], references: [id])
+  step Step? @relation(fields: [step_id], references: [id])
+
+  @@index([goal_id])
+  @@index([step_id])
+  @@map("notes")
+}
+
+model Task {
+  id           String  @id
+  owner_id     String
+  goal_id      String?
+  title        String
+  description  String?
+  daily        Boolean @default(false)
+  due_date     BigInt?
+  done         Boolean @default(false)
+  completed_on BigInt?
+  created_at   BigInt
+  position     Int
+
+  owner User  @relation(fields: [owner_id], references: [id])
+  goal  Goal? @relation(fields: [goal_id], references: [id])
+
+  @@index([owner_id])
+  @@index([goal_id])
+  @@map("tasks")
+}
+
+model SchemaMigration {
+  name       String   @id
+  applied_at DateTime @default(now())
+
+  @@map("schema_migrations")
+}

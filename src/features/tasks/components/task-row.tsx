@@ -8,7 +8,7 @@ import { useStore } from "@/lib/store";
 import { useShallow } from "zustand/shallow";
 import { isTaskDone, type Task } from "@/lib/types";
 import { DueBadge, menuItemClass, menuItemDestructiveClass, menuPopupClass } from "@/components/ui-bits";
-import { TaskDialog } from "@/components/task-dialog";
+import { TaskDialog } from "./task-dialog";
 import { cn, goalHref } from "@/lib/utils";
 
 /**

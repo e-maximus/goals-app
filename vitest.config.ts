@@ -23,6 +23,14 @@ export default defineConfig({
         // which would only prove the fake was called. They share one database and
         // truncate between tests, so the files must not run in parallel.
         extends: true,
+        resolve: {
+          alias: {
+            '@': path.join(dirname, 'src'),
+            // `server-only` throws outside a React Server Component; stub it out so
+            // the server modules under test import cleanly in plain Node.
+            'server-only': path.join(dirname, 'src/server/test/noop.ts'),
+          },
+        },
         test: {
           name: 'server',
           environment: 'node',

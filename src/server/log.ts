@@ -1,3 +1,4 @@
+import "server-only";
 /**
  * A tiny structured logger: one JSON object per line to stdout/stderr.
  *

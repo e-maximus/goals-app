@@ -9,7 +9,7 @@
  */
 
 import { useState } from "react";
-import { GroupCard } from "@/components/group-card";
+import { GroupCard } from "@/features/goals";
 import type { Group } from "@/lib/types";
 
 export type DemoStep = { id: string; text: string; done: boolean };

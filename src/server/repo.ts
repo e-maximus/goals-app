@@ -1,3 +1,5 @@
+import "server-only";
+import { Prisma } from "@prisma/client";
 import { withTransaction, type Client, type Pool } from "./db";
 import {
   isTaskDone,
@@ -49,151 +51,27 @@ export class ConflictError extends Error {
   }
 }
 
+// BIGINT columns are epoch-millisecond timestamps the app treats as plain
+// `number` (well within Number's safe range). Prisma's model-API hands them back
+// as JS `bigint`, so the row shapers below coerce at the boundary — the same job
+// the raw path's `fromDb` does for `client.query`.
+const ms = (v: bigint | number): number => Number(v);
+
 /** Shape a step row into a domain Step, omitting absent optional fields. */
 function toStep(row: {
   id: string;
   text: string;
   description: string | null;
   done: boolean;
-  due_date: number | null;
+  due_date: bigint | number | null;
 }): Step {
   return {
     id: row.id,
     text: row.text,
     ...(row.description ? { description: row.description } : {}),
     done: row.done,
-    ...(row.due_date ? { dueDate: row.due_date } : {}),
+    ...(row.due_date ? { dueDate: ms(row.due_date) } : {}),
   };
-}
-
-// Every read and write below is scoped to one owner (a user id). Goals carry
-// `owner_id`; groups, steps and notes reach it through their goal, so those
-// queries join up to `goals` and filter there. This is what keeps one user from
-// seeing or touching another's data even though ids are globally unique.
-
-/** Bump the owner's last-write stamp and return it. */
-async function touch(client: Client, ownerId: string): Promise<number> {
-  const now = Date.now();
-  await client.query("UPDATE users SET goals_updated_at = $2 WHERE id = $1", [ownerId, now]);
-  return now;
-}
-
-/**
- * Bump one goal's last-activity stamp. Called by the targeted mutations below
- * (the web app's whole-store PUT instead persists the client's own stamps —
- * see insertGoals). `goalId` is already ownership-checked by every caller.
- */
-async function touchGoal(client: Client, goalId: string): Promise<void> {
-  await client.query("UPDATE goals SET updated_at = $2 WHERE id = $1", [goalId, Date.now()]);
-}
-
-/** Resolve a group's goal, scoped to the owner; null if not theirs. */
-async function goalIdOfGroup(
-  client: Client,
-  ownerId: string,
-  groupId: string
-): Promise<string | null> {
-  const { rows } = await client.query<{ goal_id: string }>(
-    `SELECT gr.goal_id FROM groups gr JOIN goals g ON gr.goal_id = g.id
-      WHERE gr.id = $1 AND g.owner_id = $2`,
-    [groupId, ownerId]
-  );
-  return rows[0]?.goal_id ?? null;
-}
-
-/**
- * Resolve a step's goal, scoped to the owner; null if not theirs. A step's
- * parent is either its group's goal or — for an ungrouped step — the goal
- * itself, hence the LEFT JOIN + COALESCE.
- */
-async function goalIdOfStep(
-  client: Client,
-  ownerId: string,
-  stepId: string
-): Promise<string | null> {
-  const { rows } = await client.query<{ goal_id: string }>(
-    `SELECT g.id AS goal_id FROM steps s
-       LEFT JOIN groups gr ON s.group_id = gr.id
-       JOIN goals g ON g.id = COALESCE(s.goal_id, gr.goal_id)
-      WHERE s.id = $1 AND g.owner_id = $2`,
-    [stepId, ownerId]
-  );
-  return rows[0]?.goal_id ?? null;
-}
-
-/** The owner's last-write stamp, or null if they've never been written to. */
-async function readUpdatedAt(client: Client | Pool, ownerId: string): Promise<number | null> {
-  const { rows } = await client.query<{ goals_updated_at: number | null }>(
-    "SELECT goals_updated_at FROM users WHERE id = $1",
-    [ownerId]
-  );
-  return rows[0]?.goals_updated_at ?? null;
-}
-
-/**
- * Insert a whole goals tree (goals → groups → steps, plus notes) in order,
- * all owned by `ownerId`. Exported so user creation can seed a new owner in the
- * same transaction that inserts the user row.
- */
-export async function insertGoals(client: Client, ownerId: string, goals: Goal[]): Promise<void> {
-  for (const [goalIndex, goal] of goals.entries()) {
-    await client.query(
-      `INSERT INTO goals (id, owner_id, title, why, created_at, updated_at, status, paused_at, due_date, position)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [
-        goal.id,
-        ownerId,
-        goal.title,
-        goal.why ?? null,
-        goal.createdAt,
-        // Client-owned: the web app bumps only the goal it mutated, so stamps
-        // survive the whole-store rewrite. Absent on legacy payloads.
-        goal.updatedAt ?? goal.createdAt,
-        goal.status ?? "active",
-        goal.pausedAt ?? null,
-        goal.dueDate ?? null,
-        goalIndex,
-      ]
-    );
-
-    // The step ids this goal actually has, so a note's `stepId` that points at a
-    // since-deleted step is stored as NULL rather than tripping the foreign key.
-    const stepIds = new Set<string>();
-
-    // The goal's own steps, outside any group: goal_id set, group_id NULL.
-    for (const [stepIndex, step] of (goal.steps ?? []).entries()) {
-      stepIds.add(step.id);
-      await client.query(
-        `INSERT INTO steps (id, goal_id, text, description, done, due_date, position)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [step.id, goal.id, step.text, step.description ?? null, step.done, step.dueDate ?? null, stepIndex]
-      );
-    }
-
-    for (const [groupIndex, group] of goal.groups.entries()) {
-      await client.query(
-        "INSERT INTO groups (id, goal_id, title, due_date, position) VALUES ($1, $2, $3, $4, $5)",
-        [group.id, goal.id, group.title, group.dueDate ?? null, groupIndex]
-      );
-
-      for (const [stepIndex, step] of group.steps.entries()) {
-        stepIds.add(step.id);
-        await client.query(
-          `INSERT INTO steps (id, group_id, text, description, done, due_date, position)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [step.id, group.id, step.text, step.description ?? null, step.done, step.dueDate ?? null, stepIndex]
-        );
-      }
-    }
-
-    for (const note of goal.notes ?? []) {
-      const stepId = note.stepId && stepIds.has(note.stepId) ? note.stepId : null;
-      await client.query(
-        "INSERT INTO notes (id, goal_id, text, created_at, step_id) VALUES ($1, $2, $3, $4, $5)",
-        [note.id, goal.id, note.text, note.createdAt, stepId]
-      );
-    }
-  }
 }
 
 /** Shape a task row into a domain Task, omitting absent optional fields. */
@@ -203,10 +81,10 @@ function toTask(row: {
   title: string;
   description: string | null;
   daily: boolean;
-  due_date: number | null;
+  due_date: bigint | number | null;
   done: boolean;
-  completed_on: number | null;
-  created_at: number;
+  completed_on: bigint | number | null;
+  created_at: bigint | number;
 }): Task {
   return {
     id: row.id,
@@ -214,14 +92,193 @@ function toTask(row: {
     ...(row.description ? { description: row.description } : {}),
     ...(row.goal_id ? { goalId: row.goal_id } : {}),
     ...(row.daily ? { daily: true } : {}),
-    ...(row.due_date ? { dueDate: row.due_date } : {}),
+    ...(row.due_date ? { dueDate: ms(row.due_date) } : {}),
     done: row.done,
-    ...(row.completed_on ? { completedOn: row.completed_on } : {}),
-    createdAt: row.created_at,
+    ...(row.completed_on ? { completedOn: ms(row.completed_on) } : {}),
+    createdAt: ms(row.created_at),
   };
 }
 
-const TASK_COLS = "id, goal_id, title, description, daily, due_date, done, completed_on, created_at";
+/** Shape a note row into a domain Note, omitting an absent step link. */
+function toNote(row: {
+  id: string;
+  text: string;
+  created_at: bigint | number;
+  step_id: string | null;
+}): Note {
+  return {
+    id: row.id,
+    text: row.text,
+    createdAt: ms(row.created_at),
+    ...(row.step_id ? { stepId: row.step_id } : {}),
+  };
+}
+
+// Every read and write below is scoped to one owner (a user id). Goals and tasks
+// carry `owner_id`; groups, steps and notes reach it through their goal, so those
+// queries scope on the relation (`where: { goal: { owner_id } }`) rather than a
+// bare row id. This is what keeps one user from seeing or touching another's data
+// even though ids are globally unique.
+
+/** A step reaches its owner through its parent — the group's goal, or the goal
+ *  itself for an ungrouped step. This where-fragment scopes a step id to an owner. */
+function ownedStep(ownerId: string, stepId: string): Prisma.StepWhereInput {
+  return {
+    id: stepId,
+    OR: [{ goal: { owner_id: ownerId } }, { group: { goal: { owner_id: ownerId } } }],
+  };
+}
+
+/** Notes reach their owner through their goal; this scopes a note id to an owner. */
+function ownedNote(ownerId: string, noteId: string): Prisma.NoteWhereInput {
+  return { id: noteId, goal: { owner_id: ownerId } };
+}
+
+/** Bump the owner's last-write stamp and return it. */
+async function touch(client: Client, ownerId: string): Promise<number> {
+  const now = Date.now();
+  await client.db.user.updateMany({ where: { id: ownerId }, data: { goals_updated_at: BigInt(now) } });
+  return now;
+}
+
+/**
+ * Bump one goal's last-activity stamp. Called by the targeted mutations below
+ * (the web app's whole-store PUT instead persists the client's own stamps —
+ * see insertGoals). `goalId` is already ownership-checked by every caller.
+ */
+async function touchGoal(client: Client, goalId: string): Promise<void> {
+  await client.db.goal.updateMany({ where: { id: goalId }, data: { updated_at: BigInt(Date.now()) } });
+}
+
+/** Resolve a group's goal, scoped to the owner; null if not theirs. */
+async function goalIdOfGroup(
+  client: Client,
+  ownerId: string,
+  groupId: string
+): Promise<string | null> {
+  const group = await client.db.group.findFirst({
+    where: { id: groupId, goal: { owner_id: ownerId } },
+    select: { goal_id: true },
+  });
+  return group?.goal_id ?? null;
+}
+
+/**
+ * Resolve a step's goal, scoped to the owner; null if not theirs. A step's
+ * parent is either its group's goal or — for an ungrouped step — the goal
+ * itself, hence the two branches.
+ */
+async function goalIdOfStep(
+  client: Client,
+  ownerId: string,
+  stepId: string
+): Promise<string | null> {
+  const step = await client.db.step.findFirst({
+    where: ownedStep(ownerId, stepId),
+    select: { goal_id: true, group: { select: { goal_id: true } } },
+  });
+  if (!step) return null;
+  return step.goal_id ?? step.group?.goal_id ?? null;
+}
+
+/** The owner's last-write stamp, or null if they've never been written to. */
+async function readUpdatedAt(client: Client | Pool, ownerId: string): Promise<number | null> {
+  const user = await client.db.user.findUnique({
+    where: { id: ownerId },
+    select: { goals_updated_at: true },
+  });
+  return user?.goals_updated_at != null ? ms(user.goals_updated_at) : null;
+}
+
+/**
+ * Insert a whole goals tree (goals → groups → steps, plus notes) in order,
+ * all owned by `ownerId`. Exported so user creation can seed a new owner in the
+ * same transaction that inserts the user row.
+ *
+ * Flattened into one `createMany` per table (goals, then groups, then steps,
+ * then notes) — FK order is satisfied because the whole tree lands inside the
+ * caller's transaction.
+ */
+export async function insertGoals(client: Client, ownerId: string, goals: Goal[]): Promise<void> {
+  const goalRows: Prisma.GoalCreateManyInput[] = [];
+  const groupRows: Prisma.GroupCreateManyInput[] = [];
+  const stepRows: Prisma.StepCreateManyInput[] = [];
+  const noteRows: Prisma.NoteCreateManyInput[] = [];
+
+  for (const [goalIndex, goal] of goals.entries()) {
+    goalRows.push({
+      id: goal.id,
+      owner_id: ownerId,
+      title: goal.title,
+      why: goal.why ?? null,
+      created_at: BigInt(goal.createdAt),
+      // Client-owned: the web app bumps only the goal it mutated, so stamps
+      // survive the whole-store rewrite. Absent on legacy payloads.
+      updated_at: BigInt(goal.updatedAt ?? goal.createdAt),
+      status: goal.status ?? "active",
+      paused_at: goal.pausedAt != null ? BigInt(goal.pausedAt) : null,
+      due_date: goal.dueDate != null ? BigInt(goal.dueDate) : null,
+      position: goalIndex,
+    });
+
+    // The step ids this goal actually has, so a note's `stepId` that points at a
+    // since-deleted step is stored as NULL rather than tripping the foreign key.
+    const stepIds = new Set<string>();
+
+    // The goal's own steps, outside any group: goal_id set, group_id NULL.
+    (goal.steps ?? []).forEach((step, stepIndex) => {
+      stepIds.add(step.id);
+      stepRows.push({
+        id: step.id,
+        goal_id: goal.id,
+        text: step.text,
+        description: step.description ?? null,
+        done: step.done,
+        due_date: step.dueDate != null ? BigInt(step.dueDate) : null,
+        position: stepIndex,
+      });
+    });
+
+    goal.groups.forEach((group, groupIndex) => {
+      groupRows.push({
+        id: group.id,
+        goal_id: goal.id,
+        title: group.title,
+        due_date: group.dueDate != null ? BigInt(group.dueDate) : null,
+        position: groupIndex,
+      });
+
+      group.steps.forEach((step, stepIndex) => {
+        stepIds.add(step.id);
+        stepRows.push({
+          id: step.id,
+          group_id: group.id,
+          text: step.text,
+          description: step.description ?? null,
+          done: step.done,
+          due_date: step.dueDate != null ? BigInt(step.dueDate) : null,
+          position: stepIndex,
+        });
+      });
+    });
+
+    for (const note of goal.notes ?? []) {
+      const stepId = note.stepId && stepIds.has(note.stepId) ? note.stepId : null;
+      noteRows.push({
+        id: note.id,
+        goal_id: goal.id,
+        text: note.text,
+        created_at: BigInt(note.createdAt),
+        step_id: stepId,
+      });
+    }
+  }
+
+  if (goalRows.length) await client.db.goal.createMany({ data: goalRows });
+  if (groupRows.length) await client.db.group.createMany({ data: groupRows });
+  if (stepRows.length) await client.db.step.createMany({ data: stepRows });
+  if (noteRows.length) await client.db.note.createMany({ data: noteRows });
+}
 
 /**
  * Insert an owner's task list in order. A task's `goalId` must land on one of
@@ -230,47 +287,32 @@ const TASK_COLS = "id, goal_id, title, description, daily, due_date, done, compl
  * treat a stale `stepId`.
  */
 async function insertTasks(client: Client, ownerId: string, tasks: Task[]): Promise<void> {
-  const { rows } = await client.query<{ id: string }>(
-    "SELECT id FROM goals WHERE owner_id = $1",
-    [ownerId]
-  );
-  const goalIds = new Set(rows.map((r) => r.id));
+  const goals = await client.db.goal.findMany({ where: { owner_id: ownerId }, select: { id: true } });
+  const goalIds = new Set(goals.map((g) => g.id));
 
-  for (const [index, task] of tasks.entries()) {
-    const goalId = task.goalId && goalIds.has(task.goalId) ? task.goalId : null;
-    await client.query(
-      `INSERT INTO tasks (id, owner_id, goal_id, title, description, daily, due_date, done, completed_on, created_at, position)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [
-        task.id,
-        ownerId,
-        goalId,
-        task.title,
-        task.description ?? null,
-        task.daily ?? false,
-        task.dueDate ?? null,
-        task.done,
-        task.completedOn ?? null,
-        task.createdAt,
-        index,
-      ]
-    );
-  }
+  const rows: Prisma.TaskCreateManyInput[] = tasks.map((task, index) => ({
+    id: task.id,
+    owner_id: ownerId,
+    goal_id: task.goalId && goalIds.has(task.goalId) ? task.goalId : null,
+    title: task.title,
+    description: task.description ?? null,
+    daily: task.daily ?? false,
+    due_date: task.dueDate != null ? BigInt(task.dueDate) : null,
+    done: task.done,
+    completed_on: task.completedOn != null ? BigInt(task.completedOn) : null,
+    created_at: BigInt(task.createdAt),
+    position: index,
+  }));
+
+  if (rows.length) await client.db.task.createMany({ data: rows });
 }
 
 /** One owner's tasks, in their arranged order. */
 async function readTasks(client: Client | Pool, ownerId: string): Promise<Task[]> {
-  const { rows } = await client.query<{
-    id: string;
-    goal_id: string | null;
-    title: string;
-    description: string | null;
-    daily: boolean;
-    due_date: number | null;
-    done: boolean;
-    completed_on: number | null;
-    created_at: number;
-  }>(`SELECT ${TASK_COLS} FROM tasks WHERE owner_id = $1 ORDER BY position, id`, [ownerId]);
+  const rows = await client.db.task.findMany({
+    where: { owner_id: ownerId },
+    orderBy: [{ position: "asc" }, { id: "asc" }],
+  });
   return rows.map(toTask);
 }
 
@@ -278,71 +320,31 @@ async function readTasks(client: Client | Pool, ownerId: string): Promise<Task[]
 export async function getState(pool: Pool, ownerId: string): Promise<StoreState> {
   const updatedAt = await readUpdatedAt(pool, ownerId);
 
-  const goalRows = await pool.query<{
-    id: string;
-    title: string;
-    why: string | null;
-    created_at: number;
-    updated_at: number;
-    status: GoalStatus;
-    paused_at: number | null;
-    due_date: number | null;
-  }>(
-    `SELECT id, title, why, created_at, updated_at, status, paused_at, due_date
-       FROM goals WHERE owner_id = $1 ORDER BY position, id`,
-    [ownerId]
-  );
+  const goalRows = await pool.db.goal.findMany({
+    where: { owner_id: ownerId },
+    orderBy: [{ position: "asc" }, { id: "asc" }],
+  });
 
-  const groupRows = await pool.query<{
-    id: string;
-    goal_id: string;
-    title: string;
-    due_date: number | null;
-  }>(
-    `SELECT gr.id, gr.goal_id, gr.title, gr.due_date
-       FROM groups gr JOIN goals g ON gr.goal_id = g.id
-      WHERE g.owner_id = $1
-      ORDER BY gr.position, gr.id`,
-    [ownerId]
-  );
+  const groupRows = await pool.db.group.findMany({
+    where: { goal: { owner_id: ownerId } },
+    orderBy: [{ position: "asc" }, { id: "asc" }],
+  });
 
-  // A step hangs off a group or directly off a goal (ungrouped), hence the
-  // LEFT JOIN — `goal_id` is non-null exactly for the ungrouped ones.
-  const stepRows = await pool.query<{
-    id: string;
-    group_id: string | null;
-    goal_id: string | null;
-    text: string;
-    description: string | null;
-    done: boolean;
-    due_date: number | null;
-  }>(
-    `SELECT s.id, s.group_id, s.goal_id, s.text, s.description, s.done, s.due_date
-       FROM steps s
-       LEFT JOIN groups gr ON s.group_id = gr.id
-       JOIN goals g ON g.id = COALESCE(s.goal_id, gr.goal_id)
-      WHERE g.owner_id = $1
-      ORDER BY s.position, s.id`,
-    [ownerId]
-  );
+  // A step hangs off a group or directly off a goal (ungrouped); either way its
+  // owner is reached through that parent.
+  const stepRows = await pool.db.step.findMany({
+    where: { OR: [{ goal: { owner_id: ownerId } }, { group: { goal: { owner_id: ownerId } } }] },
+    orderBy: [{ position: "asc" }, { id: "asc" }],
+  });
 
-  const noteRows = await pool.query<{
-    id: string;
-    goal_id: string;
-    text: string;
-    created_at: number;
-    step_id: string | null;
-  }>(
-    `SELECT n.id, n.goal_id, n.text, n.created_at, n.step_id
-       FROM notes n JOIN goals g ON n.goal_id = g.id
-      WHERE g.owner_id = $1
-      ORDER BY n.created_at DESC, n.id`,
-    [ownerId]
-  );
+  const noteRows = await pool.db.note.findMany({
+    where: { goal: { owner_id: ownerId } },
+    orderBy: [{ created_at: "desc" }, { id: "asc" }],
+  });
 
   const stepsByGroup = new Map<string, Step[]>();
   const stepsByGoal = new Map<string, Step[]>();
-  for (const s of stepRows.rows) {
+  for (const s of stepRows) {
     if (s.group_id) {
       const list = stepsByGroup.get(s.group_id) ?? [];
       list.push(toStep(s));
@@ -355,40 +357,35 @@ export async function getState(pool: Pool, ownerId: string): Promise<StoreState>
   }
 
   const groupsByGoal = new Map<string, Group[]>();
-  for (const g of groupRows.rows) {
+  for (const g of groupRows) {
     const list = groupsByGoal.get(g.goal_id) ?? [];
     list.push({
       id: g.id,
       title: g.title,
       steps: stepsByGroup.get(g.id) ?? [],
-      ...(g.due_date ? { dueDate: g.due_date } : {}),
+      ...(g.due_date ? { dueDate: ms(g.due_date) } : {}),
     });
     groupsByGoal.set(g.goal_id, list);
   }
 
   const notesByGoal = new Map<string, Note[]>();
-  for (const n of noteRows.rows) {
+  for (const n of noteRows) {
     const list = notesByGoal.get(n.goal_id) ?? [];
-    list.push({
-      id: n.id,
-      text: n.text,
-      createdAt: n.created_at,
-      ...(n.step_id ? { stepId: n.step_id } : {}),
-    });
+    list.push(toNote(n));
     notesByGoal.set(n.goal_id, list);
   }
 
   const tasks = await readTasks(pool, ownerId);
 
-  const goals: Goal[] = goalRows.rows.map((g) => ({
+  const goals: Goal[] = goalRows.map((g) => ({
     id: g.id,
     title: g.title,
     ...(g.why ? { why: g.why } : {}),
-    createdAt: g.created_at,
-    updatedAt: g.updated_at,
-    status: g.status,
-    ...(g.paused_at ? { pausedAt: g.paused_at } : {}),
-    ...(g.due_date ? { dueDate: g.due_date } : {}),
+    createdAt: ms(g.created_at),
+    updatedAt: ms(g.updated_at),
+    status: g.status as GoalStatus,
+    ...(g.paused_at ? { pausedAt: ms(g.paused_at) } : {}),
+    ...(g.due_date ? { dueDate: ms(g.due_date) } : {}),
     steps: stepsByGoal.get(g.id) ?? [],
     groups: groupsByGoal.get(g.id) ?? [],
     notes: notesByGoal.get(g.id) ?? [],
@@ -427,8 +424,8 @@ export async function replaceAll(
 ): Promise<StoreState> {
   return withTransaction(pool, async (client) => {
     // Lock this owner's row for the duration so a concurrent writer for the same
-    // user can't slip between the version check and the rewrite. Other users are
-    // unaffected — their rows aren't touched.
+    // user can't slip between the version check and the rewrite. `FOR UPDATE` has
+    // no model-API equivalent, so this one stays raw. Other users are unaffected.
     const { rows } = await client.query<{ goals_updated_at: number | null }>(
       "SELECT goals_updated_at FROM users WHERE id = $1 FOR UPDATE",
       [ownerId]
@@ -444,10 +441,10 @@ export async function replaceAll(
     // rewrite severs their goal links.
     const keptTasks = tasks === undefined ? await readTasks(client, ownerId) : undefined;
 
-    await client.query("DELETE FROM goals WHERE owner_id = $1", [ownerId]);
+    await client.db.goal.deleteMany({ where: { owner_id: ownerId } });
     await insertGoals(client, ownerId, goals);
 
-    await client.query("DELETE FROM tasks WHERE owner_id = $1", [ownerId]);
+    await client.db.task.deleteMany({ where: { owner_id: ownerId } });
     const nextTasks = tasks ?? keptTasks ?? [];
     await insertTasks(client, ownerId, nextTasks);
 
@@ -463,11 +460,8 @@ export async function replaceAll(
 // are the same query.
 
 async function requireGoal(client: Client, ownerId: string, goalId: string): Promise<void> {
-  const { rowCount } = await client.query(
-    "SELECT 1 FROM goals WHERE id = $1 AND owner_id = $2",
-    [goalId, ownerId]
-  );
-  if (!rowCount) throw new NotFoundError("Goal", goalId);
+  const count = await client.db.goal.count({ where: { id: goalId, owner_id: ownerId } });
+  if (!count) throw new NotFoundError("Goal", goalId);
 }
 
 export async function createGoal(
@@ -492,12 +486,23 @@ export async function createGoal(
       notes: [],
     };
     // New goals go to the top of this owner's list, matching the app's addGoal.
-    await client.query("UPDATE goals SET position = position + 1 WHERE owner_id = $1", [ownerId]);
-    await client.query(
-      `INSERT INTO goals (id, owner_id, title, why, created_at, updated_at, status, due_date, position)
-       VALUES ($1, $2, $3, $4, $5, $5, 'active', $6, 0)`,
-      [goal.id, ownerId, goal.title, goal.why ?? null, goal.createdAt, goal.dueDate ?? null]
-    );
+    await client.db.goal.updateMany({
+      where: { owner_id: ownerId },
+      data: { position: { increment: 1 } },
+    });
+    await client.db.goal.create({
+      data: {
+        id: goal.id,
+        owner_id: ownerId,
+        title: goal.title,
+        why: goal.why ?? null,
+        created_at: BigInt(now),
+        updated_at: BigInt(now),
+        status: "active",
+        due_date: goal.dueDate != null ? BigInt(goal.dueDate) : null,
+        position: 0,
+      },
+    });
     await touch(client, ownerId);
     return goal;
   });
@@ -517,30 +522,18 @@ export async function updateGoal(
   await withTransaction(pool, async (client) => {
     await requireGoal(client, ownerId, goalId);
 
+    const data: Prisma.GoalUpdateManyMutationInput = {};
     if (changes.title !== undefined) {
       const title = changes.title.trim();
       if (!title) throw new ValidationError("A goal needs a title");
-      await client.query("UPDATE goals SET title = $2 WHERE id = $1 AND owner_id = $3", [
-        goalId,
-        title,
-        ownerId,
-      ]);
+      data.title = title;
     }
-
-    if (changes.why !== undefined) {
-      await client.query("UPDATE goals SET why = $2 WHERE id = $1 AND owner_id = $3", [
-        goalId,
-        changes.why.trim() || null,
-        ownerId,
-      ]);
-    }
-
+    if (changes.why !== undefined) data.why = changes.why.trim() || null;
     if (changes.dueDate !== undefined) {
-      await client.query("UPDATE goals SET due_date = $2 WHERE id = $1 AND owner_id = $3", [
-        goalId,
-        changes.dueDate,
-        ownerId,
-      ]);
+      data.due_date = changes.dueDate === null ? null : BigInt(changes.dueDate);
+    }
+    if (Object.keys(data).length > 0) {
+      await client.db.goal.updateMany({ where: { id: goalId, owner_id: ownerId }, data });
     }
 
     await touchGoal(client, goalId);
@@ -562,11 +555,15 @@ export async function setGoalStatus(
 ): Promise<Goal> {
   await withTransaction(pool, async (client) => {
     const now = Date.now();
-    const { rowCount } = await client.query(
-      "UPDATE goals SET status = $3, paused_at = $4, updated_at = $5 WHERE id = $1 AND owner_id = $2",
-      [goalId, ownerId, status, status === "paused" ? now : null, now]
-    );
-    if (!rowCount) throw new NotFoundError("Goal", goalId);
+    const { count } = await client.db.goal.updateMany({
+      where: { id: goalId, owner_id: ownerId },
+      data: {
+        status,
+        paused_at: status === "paused" ? BigInt(now) : null,
+        updated_at: BigInt(now),
+      },
+    });
+    if (!count) throw new NotFoundError("Goal", goalId);
     await touch(client, ownerId);
   });
 
@@ -575,11 +572,8 @@ export async function setGoalStatus(
 
 export async function deleteGoal(pool: Pool, ownerId: string, goalId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query(
-      "DELETE FROM goals WHERE id = $1 AND owner_id = $2",
-      [goalId, ownerId]
-    );
-    if (!rowCount) throw new NotFoundError("Goal", goalId);
+    const { count } = await client.db.goal.deleteMany({ where: { id: goalId, owner_id: ownerId } });
+    if (!count) throw new NotFoundError("Goal", goalId);
     await touch(client, ownerId);
   });
 }
@@ -594,11 +588,19 @@ export async function addGroup(
   return withTransaction(pool, async (client) => {
     await requireGoal(client, ownerId, goalId);
     const group: Group = { id: uid(), title: title.trim(), steps: [], ...(dueDate ? { dueDate } : {}) };
-    await client.query(
-      `INSERT INTO groups (id, goal_id, title, due_date, position)
-       VALUES ($1, $2, $3, $4, (SELECT COALESCE(MAX(position) + 1, 0) FROM groups WHERE goal_id = $2))`,
-      [group.id, goalId, group.title, group.dueDate ?? null]
-    );
+    const { _max } = await client.db.group.aggregate({
+      where: { goal_id: goalId },
+      _max: { position: true },
+    });
+    await client.db.group.create({
+      data: {
+        id: group.id,
+        goal_id: goalId,
+        title: group.title,
+        due_date: group.dueDate != null ? BigInt(group.dueDate) : null,
+        position: (_max.position ?? -1) + 1,
+      },
+    });
     await touchGoal(client, goalId);
     await touch(client, ownerId);
     return group;
@@ -619,10 +621,9 @@ export async function renameGroup(
   await withTransaction(pool, async (client) => {
     const goalId = await goalIdOfGroup(client, ownerId, groupId);
     if (!goalId) throw new NotFoundError("Group", groupId);
-    await client.query("UPDATE groups SET title = $2 WHERE id = $1", [groupId, title.trim()]);
-    if (dueDate !== undefined) {
-      await client.query("UPDATE groups SET due_date = $2 WHERE id = $1", [groupId, dueDate]);
-    }
+    const data: Prisma.GroupUpdateManyMutationInput = { title: title.trim() };
+    if (dueDate !== undefined) data.due_date = dueDate === null ? null : BigInt(dueDate);
+    await client.db.group.updateMany({ where: { id: groupId, goal: { owner_id: ownerId } }, data });
     await touchGoal(client, goalId);
     await touch(client, ownerId);
   });
@@ -630,14 +631,13 @@ export async function renameGroup(
 
 export async function deleteGroup(pool: Pool, ownerId: string, groupId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rows } = await client.query<{ goal_id: string }>(
-      `DELETE FROM groups
-        WHERE id = $1 AND goal_id IN (SELECT id FROM goals WHERE owner_id = $2)
-        RETURNING goal_id`,
-      [groupId, ownerId]
-    );
-    if (!rows[0]) throw new NotFoundError("Group", groupId);
-    await touchGoal(client, rows[0].goal_id);
+    const group = await client.db.group.findFirst({
+      where: { id: groupId, goal: { owner_id: ownerId } },
+      select: { goal_id: true },
+    });
+    if (!group) throw new NotFoundError("Group", groupId);
+    await client.db.group.deleteMany({ where: { id: groupId, goal: { owner_id: ownerId } } });
+    await touchGoal(client, group.goal_id);
     await touch(client, ownerId);
   });
 }
@@ -676,32 +676,28 @@ export async function addStep(
       done: false,
       ...(dueDate ? { dueDate } : {}),
     };
-    if (target.groupId) {
-      await client.query(
-        `INSERT INTO steps (id, group_id, text, description, done, due_date, position)
-         VALUES ($1, $2, $3, $4, FALSE, $5, (SELECT COALESCE(MAX(position) + 1, 0) FROM steps WHERE group_id = $2))`,
-        [step.id, target.groupId, step.text, desc, step.dueDate ?? null]
-      );
-    } else {
-      await client.query(
-        `INSERT INTO steps (id, goal_id, text, description, done, due_date, position)
-         VALUES ($1, $2, $3, $4, FALSE, $5, (SELECT COALESCE(MAX(position) + 1, 0) FROM steps WHERE goal_id = $2))`,
-        [step.id, goalId, step.text, desc, step.dueDate ?? null]
-      );
-    }
+    // Position is next-in-parent: max within the group, or within the goal for
+    // an ungrouped step.
+    const scope: Prisma.StepWhereInput = target.groupId
+      ? { group_id: target.groupId }
+      : { goal_id: goalId };
+    const { _max } = await client.db.step.aggregate({ where: scope, _max: { position: true } });
+    await client.db.step.create({
+      data: {
+        id: step.id,
+        ...(target.groupId ? { group_id: target.groupId } : { goal_id: goalId }),
+        text: step.text,
+        description: desc,
+        done: false,
+        due_date: step.dueDate != null ? BigInt(step.dueDate) : null,
+        position: (_max.position ?? -1) + 1,
+      },
+    });
     await touchGoal(client, goalId);
     await touch(client, ownerId);
     return step;
   });
 }
-
-// Steps reach their owner through their parent — the group's goal, or the goal
-// itself for an ungrouped step. This fragment scopes a step id to an owner.
-const OWNED_STEP = `id = $1 AND COALESCE(
-  goal_id, (SELECT gr.goal_id FROM groups gr WHERE gr.id = steps.group_id)
-) IN (SELECT id FROM goals WHERE owner_id = $2)`;
-
-const STEP_COLS = "id, text, description, done, due_date";
 
 /**
  * Edit a step's title, description and/or due date, leaving its done flag
@@ -718,38 +714,27 @@ export async function editStep(
     const goalId = await goalIdOfStep(client, ownerId, stepId);
     if (!goalId) throw new NotFoundError("Step", stepId);
 
+    const data: Prisma.StepUpdateManyMutationInput = {};
     if (changes.text !== undefined) {
       const next = changes.text.trim();
       if (!next) throw new ValidationError("A step needs some text");
-      await client.query(`UPDATE steps SET text = $3 WHERE ${OWNED_STEP}`, [stepId, ownerId, next]);
+      data.text = next;
     }
-
-    if (changes.description !== undefined) {
-      await client.query(`UPDATE steps SET description = $3 WHERE ${OWNED_STEP}`, [
-        stepId,
-        ownerId,
-        changes.description.trim() || null,
-      ]);
-    }
-
+    if (changes.description !== undefined) data.description = changes.description.trim() || null;
     if (changes.dueDate !== undefined) {
-      await client.query(`UPDATE steps SET due_date = $3 WHERE ${OWNED_STEP}`, [
-        stepId,
-        ownerId,
-        changes.dueDate,
-      ]);
+      data.due_date = changes.dueDate === null ? null : BigInt(changes.dueDate);
+    }
+    if (Object.keys(data).length > 0) {
+      await client.db.step.updateMany({ where: ownedStep(ownerId, stepId), data });
     }
 
-    const { rows } = await client.query<{
-      id: string;
-      text: string;
-      description: string | null;
-      done: boolean;
-      due_date: number | null;
-    }>(`SELECT ${STEP_COLS} FROM steps WHERE ${OWNED_STEP}`, [stepId, ownerId]);
+    const step = await client.db.step.findFirst({
+      where: ownedStep(ownerId, stepId),
+      select: { id: true, text: true, description: true, done: true, due_date: true },
+    });
     await touchGoal(client, goalId);
     await touch(client, ownerId);
-    return toStep(rows[0]!);
+    return toStep(step!);
   });
 }
 
@@ -761,22 +746,27 @@ export async function setStepDone(
   done?: boolean
 ): Promise<Step> {
   return withTransaction(pool, async (client) => {
-    const { rows } = await client.query<{
-      id: string;
-      text: string;
-      description: string | null;
-      done: boolean;
-      due_date: number | null;
-    }>(
-      `UPDATE steps SET done = COALESCE($3, NOT done) WHERE ${OWNED_STEP} RETURNING ${STEP_COLS}`,
-      [stepId, ownerId, done ?? null]
-    );
-    const step = rows[0];
-    if (!step) throw new NotFoundError("Step", stepId);
-    const goalId = await goalIdOfStep(client, ownerId, stepId);
+    const s = await client.db.step.findFirst({
+      where: ownedStep(ownerId, stepId),
+      select: {
+        id: true,
+        text: true,
+        description: true,
+        done: true,
+        due_date: true,
+        goal_id: true,
+        group: { select: { goal_id: true } },
+      },
+    });
+    if (!s) throw new NotFoundError("Step", stepId);
+
+    const next = done ?? !s.done;
+    await client.db.step.updateMany({ where: ownedStep(ownerId, stepId), data: { done: next } });
+
+    const goalId = s.goal_id ?? s.group?.goal_id ?? null;
     if (goalId) await touchGoal(client, goalId);
     await touch(client, ownerId);
-    return toStep(step);
+    return toStep({ ...s, done: next });
   });
 }
 
@@ -784,17 +774,13 @@ export async function deleteStep(pool: Pool, ownerId: string, stepId: string): P
   await withTransaction(pool, async (client) => {
     const goalId = await goalIdOfStep(client, ownerId, stepId);
     if (!goalId) throw new NotFoundError("Step", stepId);
-    await client.query(`DELETE FROM steps WHERE ${OWNED_STEP}`, [stepId, ownerId]);
+    await client.db.step.deleteMany({ where: ownedStep(ownerId, stepId) });
     await touchGoal(client, goalId);
     await touch(client, ownerId);
   });
 }
 
-export async function listNotes(
-  pool: Pool,
-  ownerId: string,
-  goalId: string
-): Promise<Note[]> {
+export async function listNotes(pool: Pool, ownerId: string, goalId: string): Promise<Note[]> {
   const goal = await getGoal(pool, ownerId, goalId);
   return goal.notes ?? [];
 }
@@ -806,24 +792,16 @@ async function stepInGoal(
   goalId: string,
   stepId: string
 ): Promise<boolean> {
-  const { rowCount } = await client.query(
-    `SELECT 1 FROM steps s
-       LEFT JOIN groups gr ON s.group_id = gr.id
-       JOIN goals g ON g.id = COALESCE(s.goal_id, gr.goal_id)
-      WHERE s.id = $1 AND g.id = $2 AND g.owner_id = $3`,
-    [stepId, goalId, ownerId]
-  );
-  return Boolean(rowCount);
-}
-
-/** Shape a note row into a domain Note, omitting an absent step link. */
-function toNote(row: { id: string; text: string; created_at: number; step_id: string | null }): Note {
-  return {
-    id: row.id,
-    text: row.text,
-    createdAt: row.created_at,
-    ...(row.step_id ? { stepId: row.step_id } : {}),
-  };
+  const count = await client.db.step.count({
+    where: {
+      id: stepId,
+      OR: [
+        { goal: { id: goalId, owner_id: ownerId } },
+        { group: { goal: { id: goalId, owner_id: ownerId } } },
+      ],
+    },
+  });
+  return count > 0;
 }
 
 export async function addNote(
@@ -839,19 +817,16 @@ export async function addNote(
       throw new ValidationError("That step isn't part of this goal");
     }
     const linkedStep = stepId || null;
-    const note = toNote({ id: uid(), text: text.trim(), created_at: Date.now(), step_id: linkedStep });
-    await client.query(
-      "INSERT INTO notes (id, goal_id, text, created_at, step_id) VALUES ($1, $2, $3, $4, $5)",
-      [note.id, goalId, note.text, note.createdAt, linkedStep]
-    );
+    const now = Date.now();
+    const note = toNote({ id: uid(), text: text.trim(), created_at: now, step_id: linkedStep });
+    await client.db.note.create({
+      data: { id: note.id, goal_id: goalId, text: note.text, created_at: BigInt(now), step_id: linkedStep },
+    });
     await touchGoal(client, goalId);
     await touch(client, ownerId);
     return note;
   });
 }
-
-// Notes reach their owner through goal; this fragment scopes a note id.
-const OWNED_NOTE = "id = $1 AND goal_id IN (SELECT id FROM goals WHERE owner_id = $2)";
 
 /**
  * Edit a note's text and/or its linked step. Fields left undefined are
@@ -864,23 +839,16 @@ export async function editNote(
   changes: { text?: string; stepId?: string }
 ): Promise<Note> {
   return withTransaction(pool, async (client) => {
-    const { rows } = await client.query<{
-      id: string;
-      goal_id: string;
-      text: string;
-      created_at: number;
-      step_id: string | null;
-    }>(`SELECT id, goal_id, text, created_at, step_id FROM notes WHERE ${OWNED_NOTE}`, [
-      noteId,
-      ownerId,
-    ]);
-    const row = rows[0];
+    const row = await client.db.note.findFirst({
+      where: ownedNote(ownerId, noteId),
+      select: { id: true, goal_id: true, text: true, created_at: true, step_id: true },
+    });
     if (!row) throw new NotFoundError("Note", noteId);
 
     if (changes.text !== undefined) {
       const next = changes.text.trim();
       if (!next) throw new ValidationError("A note needs some text");
-      await client.query(`UPDATE notes SET text = $3 WHERE ${OWNED_NOTE}`, [noteId, ownerId, next]);
+      await client.db.note.updateMany({ where: ownedNote(ownerId, noteId), data: { text: next } });
     }
 
     if (changes.stepId !== undefined) {
@@ -891,33 +859,33 @@ export async function editNote(
         }
         linkedStep = changes.stepId;
       }
-      await client.query(`UPDATE notes SET step_id = $3 WHERE ${OWNED_NOTE}`, [
-        noteId,
-        ownerId,
-        linkedStep,
-      ]);
+      // `step_id` backs the `step` relation, so Prisma excludes it from
+      // updateMany's data — set it with an owner-scoped raw UPDATE.
+      await client.query(
+        "UPDATE notes SET step_id = $3 WHERE id = $1 AND goal_id IN (SELECT id FROM goals WHERE owner_id = $2)",
+        [noteId, ownerId, linkedStep]
+      );
     }
 
-    const { rows: updated } = await client.query<{
-      id: string;
-      text: string;
-      created_at: number;
-      step_id: string | null;
-    }>(`SELECT id, text, created_at, step_id FROM notes WHERE ${OWNED_NOTE}`, [noteId, ownerId]);
+    const updated = await client.db.note.findFirst({
+      where: ownedNote(ownerId, noteId),
+      select: { id: true, text: true, created_at: true, step_id: true },
+    });
     await touchGoal(client, row.goal_id);
     await touch(client, ownerId);
-    return toNote(updated[0]!);
+    return toNote(updated!);
   });
 }
 
 export async function deleteNote(pool: Pool, ownerId: string, noteId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rows } = await client.query<{ goal_id: string }>(
-      `DELETE FROM notes WHERE ${OWNED_NOTE} RETURNING goal_id`,
-      [noteId, ownerId]
-    );
-    if (!rows[0]) throw new NotFoundError("Note", noteId);
-    await touchGoal(client, rows[0].goal_id);
+    const row = await client.db.note.findFirst({
+      where: ownedNote(ownerId, noteId),
+      select: { goal_id: true },
+    });
+    if (!row) throw new NotFoundError("Note", noteId);
+    await client.db.note.deleteMany({ where: ownedNote(ownerId, noteId) });
+    await touchGoal(client, row.goal_id);
     await touch(client, ownerId);
   });
 }
@@ -941,6 +909,7 @@ export async function createTask(
   return withTransaction(pool, async (client) => {
     if (options.goalId) await requireGoal(client, ownerId, options.goalId);
     const desc = options.description?.trim() || undefined;
+    const now = Date.now();
     const task: Task = {
       id: uid(),
       title: title.trim(),
@@ -949,24 +918,27 @@ export async function createTask(
       ...(options.daily ? { daily: true } : {}),
       ...(options.dueDate ? { dueDate: options.dueDate } : {}),
       done: false,
-      createdAt: Date.now(),
+      createdAt: now,
     };
     // New tasks go to the top of the list, matching the app's addTask.
-    await client.query("UPDATE tasks SET position = position + 1 WHERE owner_id = $1", [ownerId]);
-    await client.query(
-      `INSERT INTO tasks (id, owner_id, goal_id, title, description, daily, due_date, done, created_at, position)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, 0)`,
-      [
-        task.id,
-        ownerId,
-        task.goalId ?? null,
-        task.title,
-        desc ?? null,
-        task.daily ?? false,
-        task.dueDate ?? null,
-        task.createdAt,
-      ]
-    );
+    await client.db.task.updateMany({
+      where: { owner_id: ownerId },
+      data: { position: { increment: 1 } },
+    });
+    await client.db.task.create({
+      data: {
+        id: task.id,
+        owner_id: ownerId,
+        goal_id: task.goalId ?? null,
+        title: task.title,
+        description: desc ?? null,
+        daily: task.daily ?? false,
+        due_date: task.dueDate != null ? BigInt(task.dueDate) : null,
+        done: false,
+        created_at: BigInt(now),
+        position: 0,
+      },
+    });
     await touch(client, ownerId);
     return task;
   });
@@ -991,28 +963,28 @@ export async function updateTask(
   }
 ): Promise<Task> {
   return withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query(
-      "SELECT 1 FROM tasks WHERE id = $1 AND owner_id = $2",
-      [taskId, ownerId]
-    );
-    if (!rowCount) throw new NotFoundError("Task", taskId);
+    const count = await client.db.task.count({ where: { id: taskId, owner_id: ownerId } });
+    if (!count) throw new NotFoundError("Task", taskId);
 
+    const data: Prisma.TaskUpdateManyMutationInput = {};
     if (changes.title !== undefined) {
       const next = changes.title.trim();
       if (!next) throw new ValidationError("A task needs a title");
-      await client.query("UPDATE tasks SET title = $3 WHERE id = $1 AND owner_id = $2", [
-        taskId,
-        ownerId,
-        next,
-      ]);
+      data.title = next;
     }
-
-    if (changes.description !== undefined) {
-      await client.query("UPDATE tasks SET description = $3 WHERE id = $1 AND owner_id = $2", [
-        taskId,
-        ownerId,
-        changes.description.trim() || null,
-      ]);
+    if (changes.description !== undefined) data.description = changes.description.trim() || null;
+    if (changes.daily !== undefined) {
+      // Switching kind resets the completion state — a fresh daily starts
+      // undone today, and a fresh one-off starts unchecked.
+      data.daily = changes.daily;
+      data.done = false;
+      data.completed_on = null;
+    }
+    if (changes.dueDate !== undefined) {
+      data.due_date = changes.dueDate === null ? null : BigInt(changes.dueDate);
+    }
+    if (Object.keys(data).length > 0) {
+      await client.db.task.updateMany({ where: { id: taskId, owner_id: ownerId }, data });
     }
 
     if (changes.goalId !== undefined) {
@@ -1021,6 +993,8 @@ export async function updateTask(
         await requireGoal(client, ownerId, changes.goalId);
         linkedGoal = changes.goalId;
       }
+      // `goal_id` backs the `goal` relation, so Prisma excludes it from
+      // updateMany's data — set it with an owner-scoped raw UPDATE.
       await client.query("UPDATE tasks SET goal_id = $3 WHERE id = $1 AND owner_id = $2", [
         taskId,
         ownerId,
@@ -1028,36 +1002,9 @@ export async function updateTask(
       ]);
     }
 
-    if (changes.daily !== undefined) {
-      // Switching kind resets the completion state — a fresh daily starts
-      // undone today, and a fresh one-off starts unchecked.
-      await client.query(
-        "UPDATE tasks SET daily = $3, done = FALSE, completed_on = NULL WHERE id = $1 AND owner_id = $2",
-        [taskId, ownerId, changes.daily]
-      );
-    }
-
-    if (changes.dueDate !== undefined) {
-      await client.query("UPDATE tasks SET due_date = $3 WHERE id = $1 AND owner_id = $2", [
-        taskId,
-        ownerId,
-        changes.dueDate,
-      ]);
-    }
-
-    const { rows } = await client.query<{
-      id: string;
-      goal_id: string | null;
-      title: string;
-      description: string | null;
-      daily: boolean;
-      due_date: number | null;
-      done: boolean;
-      completed_on: number | null;
-      created_at: number;
-    }>(`SELECT ${TASK_COLS} FROM tasks WHERE id = $1 AND owner_id = $2`, [taskId, ownerId]);
+    const row = await client.db.task.findFirst({ where: { id: taskId, owner_id: ownerId } });
     await touch(client, ownerId);
-    return toTask(rows[0]!);
+    return toTask(row!);
   });
 }
 
@@ -1073,51 +1020,33 @@ export async function setTaskDone(
   done?: boolean
 ): Promise<Task> {
   return withTransaction(pool, async (client) => {
-    const { rows } = await client.query<{
-      id: string;
-      goal_id: string | null;
-      title: string;
-      description: string | null;
-      daily: boolean;
-      due_date: number | null;
-      done: boolean;
-      completed_on: number | null;
-      created_at: number;
-    }>(`SELECT ${TASK_COLS} FROM tasks WHERE id = $1 AND owner_id = $2`, [taskId, ownerId]);
-    const row = rows[0];
+    const row = await client.db.task.findFirst({ where: { id: taskId, owner_id: ownerId } });
     if (!row) throw new NotFoundError("Task", taskId);
 
     const task = toTask(row);
     const next = done ?? !isTaskDone(task);
     if (task.daily) {
-      await client.query(
-        "UPDATE tasks SET completed_on = $3 WHERE id = $1 AND owner_id = $2",
-        [taskId, ownerId, next ? utcMidnight() : null]
-      );
+      await client.db.task.updateMany({
+        where: { id: taskId, owner_id: ownerId },
+        data: { completed_on: next ? BigInt(utcMidnight()) : null },
+      });
     } else {
-      await client.query("UPDATE tasks SET done = $3 WHERE id = $1 AND owner_id = $2", [
-        taskId,
-        ownerId,
-        next,
-      ]);
+      await client.db.task.updateMany({
+        where: { id: taskId, owner_id: ownerId },
+        data: { done: next },
+      });
     }
 
-    const { rows: updated } = await client.query<typeof row>(
-      `SELECT ${TASK_COLS} FROM tasks WHERE id = $1 AND owner_id = $2`,
-      [taskId, ownerId]
-    );
+    const updated = await client.db.task.findFirst({ where: { id: taskId, owner_id: ownerId } });
     await touch(client, ownerId);
-    return toTask(updated[0]!);
+    return toTask(updated!);
   });
 }
 
 export async function deleteTask(pool: Pool, ownerId: string, taskId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const { rowCount } = await client.query(
-      "DELETE FROM tasks WHERE id = $1 AND owner_id = $2",
-      [taskId, ownerId]
-    );
-    if (!rowCount) throw new NotFoundError("Task", taskId);
+    const { count } = await client.db.task.deleteMany({ where: { id: taskId, owner_id: ownerId } });
+    if (!count) throw new NotFoundError("Task", taskId);
     await touch(client, ownerId);
   });
 }
