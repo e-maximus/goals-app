@@ -21,8 +21,8 @@ import { PageShell, Crumbs } from "@/components/page-shell";
 import { LoadError } from "@/components/load-error";
 import { LoadingState, SectionLabel } from "@/components/ui-bits";
 import { Button } from "@/components/ui/button";
-import { NewGoalDialog } from "@/components/new-goal-dialog";
-import { TaskDialog } from "@/components/task-dialog";
+import { NewGoalDialog } from "./new-goal-dialog";
+import { TaskDialog } from "@/features/tasks";
 import { cn, goalHref } from "@/lib/utils";
 
 /** General advice for the "Tip of the day" card — deliberately more than a

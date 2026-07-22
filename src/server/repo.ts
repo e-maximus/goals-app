@@ -1,3 +1,4 @@
+import "server-only";
 import { withTransaction, type Client, type Pool } from "./db";
 import {
   isTaskDone,

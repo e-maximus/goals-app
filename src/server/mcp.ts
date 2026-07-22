@@ -1,3 +1,4 @@
+import "server-only";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Pool } from "./db";

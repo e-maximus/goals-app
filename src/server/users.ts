@@ -1,3 +1,4 @@
+import "server-only";
 import { randomBytes } from "node:crypto";
 import { withTransaction, type Pool } from "./db";
 import { uid } from "./domain";

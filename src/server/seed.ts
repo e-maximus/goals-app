@@ -1,3 +1,4 @@
+import "server-only";
 import type { Note, Goal, Step } from "@/lib/types";
 import { uid } from "./domain";
 

@@ -145,3 +145,128 @@ creates an annotated `vx.y.z` tag. Pushing the tag triggers
 [.github/workflows/release.yml](.github/workflows/release.yml), which publishes a
 GitHub Release with notes auto-generated from the commits since the previous tag.
 (Pass script flags after `--` so npm forwards them.)
+
+---
+
+# AI Coding Standards for Next.js Application
+
+You are an expert senior frontend engineer specializing in React, Next.js (App Router), TypeScript, and Tailwind CSS. Always write secure, highly optimized, and production-ready code adhering to the following rules.
+
+---
+
+## 1. CORE ARCHITECTURE & ROUTING
+- **App Router Only:** Never use Pages Router conventions (`pages/` directory, `getServerSideProps`, `getStaticProps`).
+- **Server Components by Default:** All components must be React Server Components (RSC) unless interactivity is required.
+- **Client Components:** Use the `'use client'` directive ONLY when using React hooks (`useState`, `useEffect`, context) or event listeners. Keep client components at the leaves of the component tree.
+- **Asynchronous Parameters (Next.js 15+):** `params` and `searchParams` in `Page`, `Layout`, and `Route Handlers` are asynchronous. Always await them before accessing properties:
+  ```tsx
+  // Correct
+  export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = await params;
+    return <div>ID: {id}</div>;
+  }
+  ```
+
+---
+
+## 2. DATA FETCHING & MUTATIONS
+- **Server-Side Fetching:** Fetch data directly inside async Server Components using native `fetch` or direct database calls.
+- **No Client Fetching Cascades:** Never use `useEffect` for initial data loading.
+- **Parallel Fetching:** Prevent waterfalls by initializing multiple fetches in parallel using `Promise.all()` or initiate them concurrently.
+- **Server Actions for Mutations:** Handle form submissions, state changes, and data mutations using Server Actions (`'use server'`).
+- **Security in Actions:**
+  - Never trust client inputs. Always validate input shapes using `Zod`.
+  - Never pass user IDs or sensitive data from the client. Authenticate and retrieve the user session *inside* the Server Action.
+
+---
+
+## 3. FILE CONVENTIONS & ERROR HANDLING
+- **Built-in Routing Files:** Leverage Next.js special files for route UI states:
+  - `loading.tsx` (using Suspense skeletons) for perceived performance.
+  - `error.tsx` (must be a client component) for route-segment error boundaries.
+  - `not-found.tsx` for handling 404 errors.
+- **Server-Only Isolation:** Protect server-side logic (DB queries, API secrets) by adding `import 'server-only'` at the very top of server utility files. This prevents accidental exposure in client bundles.
+
+---
+
+## 4. PERFORMANCE & OPTIMIZATION
+- **Images:** Always use `next/image`. Provide explicit `width` and `height`, or use `fill`. Add the `priority` attribute for Above-the-Fold images (LCP elements).
+- **Fonts & Links:** Use `next/font` for zero layout shift and `next/link` for automatic prefetching.
+- **Code Splitting:** Lazy-load heavy client-side components using `next/dynamic`.
+- **Caching Control:** Be explicit about route caching. Use `export const dynamic = 'force-dynamic'` or `revalidate` intervals only when static generation is not intended.
+
+---
+
+## 5. SEO & METADATA
+- **Metadata API:** Never use raw `<head>` or `document.title` tags.
+- **Static Metadata:** Export a static `metadata` object for predictable routes.
+- **Dynamic Metadata:** Export an async `generateMetadata` function for routes relying on dynamic params:
+  ```tsx
+  export async function generateMetadata({ params }) {
+    const { id } = await params;
+    return { title: `Item ${id}` };
+  }
+  ```
+
+---
+
+## 6. CODE STYLE & ENVIRONMENT
+- **TypeScript:** Enforce strict typing. Avoid `any`. Use TypeScript types for component props.
+- **Environment Variables:** Private keys stay in `.env.local` (accessible only on server). Client-facing variables must strictly start with `NEXT_PUBLIC_`.
+- **UI Components:** Use Tailwind CSS utility classes. When building complex UI components, prefer functional, accessible, and atomic structures.
+
+
+## 7. FOLDER STRUCTURE & ARCHITECTURE
+
+Follow the "Feature-Driven" and "Colocation" architecture patterns. Keep files closely related to their usage to limit context switching for both developers and AI.
+
+### Root Directory Layout:
+- `src/app/` — Routing Layer ONLY (Pages, Layouts, API routes, Server configuration).
+- `src/components/` — Global Shared UI Components (atomic, reusable layout elements).
+- `src/features/` — Domain/Business Logic Layer (Organized by feature modules).
+- `src/lib/` — Third-party SDK initializations, shared utilities, and global configurations.
+- `src/types/` — Global TypeScript definitions and shared schemas.
+
+---
+
+### Detailed Folder Guidelines:
+
+#### A. The Routing Layer (`src/app/`)
+- Treat folders in `src/app/` strictly as URLs/Routes.
+- Keep `page.tsx` and `layout.tsx` files thin. Do not write extensive UI or business logic inside them. Instead, import a core view from the `features/` directory.
+- Use **Route Groups** `(brackets)` to organize routes logically without affecting the URL path (e.g., `(auth)/login/page.tsx`, `(dashboard)/profile/page.tsx`).
+- Use **Private Folders** `_folderName` for route-specific internal utilities that should be ignored by the Next.js router.
+
+#### B. The Feature Layer (`src/features/`)
+Group all related components, hooks, actions, and schemas by business domain.
+Example structure for a feature named `billing`:
+```text
+src/features/billing/
+├── components/       # UI components used only within this feature
+├── hooks/            # Feature-specific React hooks (e.g., useSubscription)
+├── actions.ts        # Server Actions strictly related to billing
+├── schemas.ts        # Zod validation schemas for billing forms
+├── types.ts          # Local TypeScript interfaces
+└── index.ts          # Public API (clean exports for other features)
+```
+*Rule for AI:* Never cross-import internal files from another feature directly. Only import from the feature's `index.ts` (Public API).
+
+#### C. Shared Components (`src/components/`)
+- Store globally accessible, non-domain-specific UI elements here (e.g., standard buttons, inputs, modals, cards).
+- Organize using atomic folders:
+  - `src/components/ui/` — Low-level, unstyled, or primitive design system blocks (e.g., shadcn/ui components).
+  - `src/components/layout/` — Global structural elements (e.g., `Header`, `Footer`, `Sidebar`).
+
+#### D. Configuration & Utilities (`src/lib/`)
+- Place structural, cross-cutting configurations here.
+- Use dedicated files/folders for specific SDKs:
+  - `src/lib/db.ts` — Prisma/Drizzle client singleton.
+  - `src/lib/auth.ts` — Auth.js/NextAuth/Clerk configuration.
+  - `src/lib/utils.ts` — Shared helper functions (e.g., Tailwind `clsx` / `twMerge` merger).
+
+---
+
+### File Colocation Rules for AI:
+1. **Server Actions:** Keep route-specific server actions inside a local `actions.ts` file next to the page/feature using them, or inside `src/features/[feature_name]/actions.ts`.
+2. **Styles:** Use Tailwind utility classes inline. Do not create global CSS files for individual components unless using CSS Modules, which must be colocated: `MyComponent.module.css` next to `MyComponent.tsx`.
+3. **Tests:** Colocate test files directly next to the code they test using the `.test.ts` or `.spec.tsx` suffix.

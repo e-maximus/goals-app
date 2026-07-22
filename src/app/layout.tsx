@@ -4,7 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 import { StoreHydration } from "@/components/store-hydration";
-import { SectionMemory } from "@/components/section-memory";
+import { SectionMemory } from "@/features/goals";
 import { Toaster } from "@/components/ui/sonner";
 import packageJson from "../../package.json";
 

@@ -1,3 +1,4 @@
+import "server-only";
 import pg from "pg";
 import { migrations } from "./migrations";
 

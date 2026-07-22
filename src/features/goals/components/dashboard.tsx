@@ -32,9 +32,9 @@ import {
 import { todayTasks } from "@/lib/types";
 import { PageShell, Crumbs } from "@/components/page-shell";
 import { LoadError } from "@/components/load-error";
-import { TaskRow } from "@/components/task-row";
-import { GoalDialog, NewGoalDialog } from "@/components/new-goal-dialog";
-import { ShareDialog } from "@/components/share-dialog";
+import { TaskRow } from "@/features/tasks";
+import { GoalDialog, NewGoalDialog } from "./new-goal-dialog";
+import { ShareDialog } from "@/features/account";
 import { Button } from "@/components/ui/button";
 import {
   DueBadge,

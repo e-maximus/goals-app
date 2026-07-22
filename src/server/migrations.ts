@@ -1,3 +1,4 @@
+import "server-only";
 /**
  * Schema migrations, in order, as plain strings.
  *

@@ -5,8 +5,8 @@ import { useStore } from "@/lib/store";
 import { isTaskDone, isTaskOverdue, type Task } from "@/lib/types";
 import { PageShell, Crumbs } from "@/components/page-shell";
 import { LoadError } from "@/components/load-error";
-import { TaskDialog } from "@/components/task-dialog";
-import { TaskRow } from "@/components/task-row";
+import { TaskDialog } from "./task-dialog";
+import { TaskRow } from "./task-row";
 import { LoadingState, SectionLabel } from "@/components/ui-bits";
 
 /** One bordered card holding a list of task rows. */
