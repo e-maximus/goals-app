@@ -4,12 +4,17 @@ import { prisma as defaultPrisma, createPrisma } from "@/lib/db";
 import { migrations } from "./migrations";
 
 /**
- * The repo layer is raw SQL and transactions (its scoping and locking lean on
- * SQL features an ORM query builder can't express). So rather than rewrite it,
- * this module runs that SQL *through Prisma*: Prisma owns the connection and the
- * client singleton, and this thin adapter preserves the `{ rows, rowCount }`
- * shape the repo speaks. Prisma's Postgres raw interface uses the same `$1`
- * placeholders as before, so the queries are unchanged.
+ * Prisma owns the connection and the client singleton; this thin adapter exposes
+ * it to the repo layer two ways:
+ *
+ * - `db` — the Prisma model-API executor (`.goal`, `.task`, …), which the repo
+ *   uses for its owner-scoped queries. Inside a transaction it is the same
+ *   `Prisma.TransactionClient` the model-API and any raw call share, so both run
+ *   on the one connection.
+ * - `query` — a `{ rows, rowCount }` raw runner over Prisma's Postgres raw
+ *   interface, kept for the handful of statements the model-API can't express
+ *   (a `FOR UPDATE` lock, linking/unlinking a relation FK) and for the callers
+ *   in `users.ts` / `seed.ts` that still speak SQL. Same `$1` placeholders.
  */
 
 type Executor = PrismaClient | Prisma.TransactionClient;
@@ -19,6 +24,8 @@ export type QueryResult<T> = { rows: T[]; rowCount: number };
 /** A statement runner — either the pool itself or a client inside a transaction. */
 export interface Client {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<QueryResult<T>>;
+  /** The underlying Prisma model-API executor, for queries on this same connection. */
+  readonly db: Prisma.TransactionClient;
 }
 
 export interface Pool extends Client {
@@ -65,11 +72,15 @@ async function runQuery<T>(
 }
 
 function makeClient(exec: Executor): Client {
-  return { query: (sql, params = []) => runQuery(exec, sql, params) };
+  return { query: (sql, params = []) => runQuery(exec, sql, params), db: exec };
 }
 
 class PrismaPool implements Pool {
   constructor(private readonly client: PrismaClient) {}
+
+  get db(): Prisma.TransactionClient {
+    return this.client;
+  }
 
   query<T = Record<string, unknown>>(sql: string, params: unknown[] = []) {
     return runQuery<T>(this.client, sql, params);
