@@ -21,6 +21,7 @@ import { ArrowDown, ArrowUp, Check, ChevronDown, MoreVertical, Pencil, Plus, Tra
 export function StepRow({
   step,
   isNext,
+  card = false,
   onToggle,
   onEdit,
   onDelete,
@@ -29,6 +30,11 @@ export function StepRow({
 }: {
   step: Step;
   isNext: boolean;
+  /**
+   * Render as a standalone card (the goal's top-level steps) rather than a
+   * light row (the steps nested inside a group). Same content either way.
+   */
+  card?: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -40,8 +46,16 @@ export function StepRow({
     <div
       onClick={onToggle}
       className={cn(
-        "group/step flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-2 hover:bg-muted/60",
-        isNext && "bg-secondary/70 hover:bg-secondary"
+        "group/step flex cursor-pointer items-start gap-2.5",
+        card
+          ? cn(
+              "rounded-xl border bg-card px-3.5 py-3 shadow-sm transition-colors",
+              isNext ? "border-primary/40 bg-secondary/50" : "border-border hover:border-border-strong"
+            )
+          : cn(
+              "rounded-lg px-2 py-2 hover:bg-muted/60",
+              isNext && "bg-secondary/70 hover:bg-secondary"
+            )
       )}
     >
       <button
@@ -420,11 +434,13 @@ export function GroupCardConnected({
 }
 
 /**
- * The goal's own steps, outside any group — a plain card of StepRows above
- * the groups (in both the list and timeline views). Store-connected with
- * `groupId = null`; keeps the `group/card` hook the e2e suite locates by.
+ * The goal's own steps, outside any group — each rendered as its own sortable
+ * card above the groups. Store-connected with `groupId = null`. Adding a step
+ * lives in the goal page's bottom action row, so there's no inline add button
+ * here; this list owns only the per-step edit dialog. Returns a fragment so the
+ * cards slot straight into the page's step stack and share its spacing.
  */
-export function UngroupedStepsCard({
+export function UngroupedStepsList({
   goalId,
   steps,
   nextStepId,
@@ -433,52 +449,32 @@ export function UngroupedStepsCard({
   steps: Step[];
   nextStepId?: string | null;
 }) {
-  const { toggleStep, addStep, editStep, deleteStep, moveStep } = useStore(
+  const { toggleStep, editStep, deleteStep, moveStep } = useStore(
     useShallow((s) => ({
       toggleStep: s.toggleStep,
-      addStep: s.addStep,
       editStep: s.editStep,
       deleteStep: s.deleteStep,
       moveStep: s.moveStep,
     }))
   );
-  const [addOpen, setAddOpen] = useState(false);
   const [editingStep, setEditingStep] = useState<Step | null>(null);
 
   return (
-    <div className="group/card flex flex-col rounded-2xl border border-border bg-card shadow-sm">
-      <div className="flex flex-col gap-0.5 px-2.5 py-2">
-        {steps.map((step, i) => (
-          <StepRow
-            key={step.id}
-            step={step}
-            isNext={step.id === nextStepId}
-            onToggle={() => toggleStep(goalId, null, step.id)}
-            onEdit={() => setEditingStep(step)}
-            onDelete={() => deleteStep(goalId, null, step.id)}
-            onMoveUp={i > 0 ? () => moveStep(goalId, null, step.id, -1) : undefined}
-            onMoveDown={i < steps.length - 1 ? () => moveStep(goalId, null, step.id, 1) : undefined}
-          />
-        ))}
-      </div>
-      <div className="flex-shrink-0 px-2.5 pb-3 pt-0.5">
-        <button
-          onClick={() => setAddOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border-strong px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add step
-        </button>
-      </div>
+    <>
+      {steps.map((step, i) => (
+        <StepRow
+          key={step.id}
+          card
+          step={step}
+          isNext={step.id === nextStepId}
+          onToggle={() => toggleStep(goalId, null, step.id)}
+          onEdit={() => setEditingStep(step)}
+          onDelete={() => deleteStep(goalId, null, step.id)}
+          onMoveUp={i > 0 ? () => moveStep(goalId, null, step.id, -1) : undefined}
+          onMoveDown={i < steps.length - 1 ? () => moveStep(goalId, null, step.id, 1) : undefined}
+        />
+      ))}
 
-      <StepDialog
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        title="Add step"
-        description="Add a step to this goal"
-        submitLabel="Add step"
-        onSubmit={(text, description, dueDate) => addStep(goalId, null, text, description, dueDate)}
-      />
       <StepDialog
         key={editingStep?.id}
         open={editingStep !== null}
@@ -494,7 +490,7 @@ export function UngroupedStepsCard({
           if (editingStep) editStep(goalId, null, editingStep.id, text, description, dueDate);
         }}
       />
-    </div>
+    </>
   );
 }
 

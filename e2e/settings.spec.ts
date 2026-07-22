@@ -1,48 +1,47 @@
 import { test, expect } from "./fixtures";
 
 // The e2e user is anonymous (cookie session, no Clerk sign-in). MCP is authorized
-// only via Clerk OAuth, so an anonymous visitor sees the account id and the
-// "stable authentication" upsell, but the MCP endpoint/setup stays hidden until
-// they sign in. The signed-in MCP flow is covered separately in
+// only via Clerk OAuth, so an anonymous visitor sees the sign-in hero, their
+// temporary generated identity, and a gated MCP section — the endpoint stays
+// hidden until they sign in. The signed-in flow is covered separately in
 // settings-auth.spec.ts, which needs Clerk test credentials.
 test.describe("settings (anonymous)", () => {
-  test("shows the account id and the sign-in upsell, MCP gated", async ({ page }) => {
+  test("shows the sign-in hero and gates MCP", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Settings" }).click();
 
     await expect(page).toHaveURL(/\/settings$/);
     // The content waits for clerk-js from Clerk's CDN before loading the
     // identity, which can take longer than the default expect timeout.
-    await expect(page.getByText("User ID", { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/Sign in to give this account a durable identity/)).toBeVisible();
+    await expect(page.getByText("Save your goals — sign in")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/lives only in this browser's cookie/)).toBeVisible();
 
     // The MCP section is present but locked behind sign-in.
     await expect(page.getByText("MCP access", { exact: true })).toBeVisible();
     await expect(page.getByText("Sign in above to enable MCP access.")).toBeVisible();
   });
 
-  test("shows the generated name in read-only first/last fields", async ({ page }) => {
+  test("shows the generated identity with a Guest badge and a copyable id", async ({ page }) => {
     await page.goto("/settings");
 
-    // The e2e user's generated identity is "Shiny Fox", split across the fields.
-    const first = page.getByLabel("First name");
-    const last = page.getByLabel("Last name");
-    await expect(first).toHaveValue("Shiny", { timeout: 15_000 });
-    await expect(last).toHaveValue("Fox");
+    // The e2e user's generated identity is "Shiny Fox", shown in the guest strip.
+    await expect(page.getByText("Shiny Fox").first()).toBeVisible({ timeout: 15_000 });
+    // Marked as a temporary, cookie-scoped identity, with a copy control.
+    await expect(page.getByText("Temporary identity", { exact: false })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy ID" })).toBeVisible();
 
-    // Anonymous: nothing to edit here, and the reason is spelled out.
-    await expect(first).toBeDisabled();
-    await expect(last).toBeDisabled();
-    await expect(page.getByText("Sign in to set your own name.")).toBeVisible();
+    // Anonymous: there are no editable name fields — signing in creates them.
+    await expect(page.getByLabel("First name")).toHaveCount(0);
   });
 
-  test("warns that the anonymous session is temporary", async ({ page }) => {
+  test("explains the account is temporary and offers sign in", async ({ page }) => {
     await page.goto("/settings");
 
-    await expect(page.getByText("Temporary session")).toBeVisible();
-    await expect(page.getByText(/this account and all its goals are gone/)).toBeVisible();
-    // The account card names the generated identity (fixed for the e2e user).
-    await expect(page.getByText(/anonymously as Shiny Fox/)).toBeVisible();
+    await expect(page.getByText(/lives only in this browser's cookie/)).toBeVisible({
+      timeout: 15_000,
+    });
+    // The hero offers both paths to a durable account.
+    await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
   });
 
   test("shows the generated identity chip in the topbar", async ({ page }) => {
@@ -52,6 +51,7 @@ test.describe("settings (anonymous)", () => {
     const chip = page.getByRole("link", { name: "Account" });
     await expect(chip).toBeVisible();
     await expect(chip).toContainText("Shiny Fox");
+    await expect(chip).toContainText("Guest");
 
     // The chip is a shortcut to Settings.
     await chip.click();
@@ -68,14 +68,14 @@ test.describe("settings (anonymous)", () => {
   test("still renders the account when Clerk fails to initialize", async ({ page }) => {
     // Simulate a deploy where clerk-js never initializes (missing/misconfigured
     // publishable key, blocked script): loading the identity does not depend on
-    // Clerk, so the page must still show the account rather than hang blank or
-    // fall back to an error. Block only the external Clerk host — a broader
-    // pattern would also catch the app's own @clerk/nextjs chunk and break
-    // hydration entirely.
+    // Clerk, so after a short deadline the page must fall back to the guest view
+    // rather than hang blank or fall into an error. Block only the external Clerk
+    // host — a broader pattern would also catch the app's own @clerk/nextjs chunk
+    // and break hydration entirely.
     await page.route(/clerk\.accounts\.dev/, (route) => route.abort());
     await page.goto("/settings");
 
-    await expect(page.getByText("User ID", { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("Temporary session")).toBeVisible();
+    await expect(page.getByText("Save your goals — sign in")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Shiny Fox").first()).toBeVisible();
   });
 });

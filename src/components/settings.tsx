@@ -1,9 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Show, SignInButton, SignOutButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
+import Image from "next/image";
+import {
+  Show,
+  SignInButton,
+  SignOutButton,
+  SignUpButton,
+  useClerk,
+  useUser,
+} from "@clerk/nextjs";
 import { toast } from "sonner";
-import { Check, Copy, Lock, ShieldCheck, TriangleAlert } from "lucide-react";
+import {
+  Check,
+  Cloud,
+  Cookie,
+  Copy,
+  Lock,
+  ShieldCheck,
+  Smartphone,
+  Terminal,
+  User,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { PageShell, Crumbs } from "@/components/page-shell";
 import { fetchMe, type Me } from "@/lib/sync";
 import { LoadingState } from "@/components/ui-bits";
@@ -25,7 +44,17 @@ export function Settings() {
 
   // Clerk sign-in state. Signing in can switch which account /api/me resolves to
   // (the linked one), so we re-fetch identity whenever it changes.
-  const { isSignedIn } = useUser();
+  const { isLoaded, isSignedIn, user } = useUser();
+
+  // Clerk failing to initialize (missing key, blocked script) leaves `isLoaded`
+  // false forever. Give it a deadline so the page falls back to the guest view
+  // rather than showing the loader for the rest of the session.
+  const [authTimedOut, setAuthTimedOut] = useState(false);
+  useEffect(() => {
+    if (isLoaded) return;
+    const timer = setTimeout(() => setAuthTimedOut(true), 8_000);
+    return () => clearTimeout(timer);
+  }, [isLoaded]);
 
   // Fetch identity, settling state from the promise's callbacks — the state is
   // updated in response to an external system resolving, not synchronously.
@@ -45,20 +74,18 @@ export function Settings() {
   };
 
   // Load on mount, and reload when the sign-in state flips, so the account and
-  // MCP token reflect the identity the server now sees. Deliberately NOT gated
-  // on Clerk finishing loading: if clerk-js never initializes (missing/
-  // misconfigured publishable key, blocked script) its `isLoaded` stays false
-  // forever, and the page must still show the account rather than hang blank.
+  // MCP token reflect the identity the server now sees.
   useEffect(() => {
     loadMe();
   }, [isSignedIn, loadMe]);
 
+  const signedIn = Boolean(isLoaded && isSignedIn && user);
+  const authResolved = isLoaded || authTimedOut;
+
   return (
     <PageShell crumbs={<Crumbs page="Settings" root={null} />} width="sm">
       <div className="space-y-6">
-        {status === "loading" ? (
-          <LoadingState />
-        ) : status === "error" ? (
+        {status === "error" ? (
           <div className="flex flex-col items-center gap-3 py-24 text-center">
             <h2 className="text-xl font-bold">Couldn&apos;t load your settings</h2>
             <p className="text-sm text-muted-foreground">
@@ -68,11 +95,18 @@ export function Settings() {
               Retry
             </Button>
           </div>
+        ) : status === "loading" || !authResolved ? (
+          <LoadingState />
         ) : me ? (
           <>
-            {me.clerkUserId === null && <TemporarySessionWarning />}
-            <AccountCard me={me} />
-            <StableAuthCard />
+            {signedIn && user ? (
+              <SignedInAccountCard user={user} me={me} />
+            ) : (
+              <>
+                <GuestHero />
+                <GuestIdentityStrip me={me} />
+              </>
+            )}
             <McpCard endpoint={`${origin}/api/mcp`} />
           </>
         ) : null}
@@ -82,50 +116,45 @@ export function Settings() {
 }
 
 /**
- * The honest warning an anonymous visitor needs: their whole account hangs off
- * a browser cookie. Shown above everything else so it can't be missed; the
- * fix (signing in) is one card below.
+ * The guest pitch: a signed-out visitor's whole account hangs off a browser
+ * cookie. Leads the page so the fix (signing in) is the first thing seen, and
+ * spells out honestly what a temporary account can and can't do.
  */
-function TemporarySessionWarning() {
+function GuestHero() {
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-warning/60 bg-warning/10 px-5 py-4">
-      <TriangleAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-warning-foreground" aria-hidden />
-      <div className="space-y-1">
-        <p className="text-sm font-semibold">Temporary session</p>
-        <p className="text-[13px] text-muted-foreground">
-          Your user ID and session live in this browser&apos;s cookie. If the cookie is cleared —
-          private mode ends, browser data is wiped, or you switch devices — this account and all
-          its goals are gone for good. Create an account below to keep them.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function AccountCard({ me }: { me: Me }) {
-  const linked = me.clerkUserId !== null;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          {me.avatar && (
-            <span aria-hidden className="text-base">
-              {me.avatar}
-            </span>
-          )}
-          Account
-        </CardTitle>
-        <CardDescription>
-          {linked
-            ? "You're signed in — sign in with the same email on any browser or device to get back to these goals."
-            : `You're using this app anonymously as ${me.displayName ?? "a guest"} — your account lives only in this browser's cookie, and your goals are tied to it.`}
-        </CardDescription>
-      </CardHeader>
+    <Card className="bg-secondary/40 ring-primary/15">
       <CardContent className="space-y-4">
-        <AccountNameFields me={me} />
-        <div className="space-y-2">
-          <FieldLabel>User ID</FieldLabel>
-          <CopyRow value={me.userId} />
+        <div className="flex items-start gap-4">
+          <span
+            aria-hidden
+            className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-primary text-primary-foreground"
+          >
+            <ShieldCheck className="h-6 w-6" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="font-heading text-lg font-medium tracking-tight">
+              Save your goals — sign in
+            </h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+              Right now this account lives only in this browser&apos;s cookie. Sign in to make it
+              durable, reach it from any device, and unlock MCP access and AI chat.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <SignInButton mode="modal">
+            <Button size="sm">Sign in</Button>
+          </SignInButton>
+          <SignUpButton mode="modal">
+            <Button size="sm" variant="outline">
+              Create account
+            </Button>
+          </SignUpButton>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Pill icon={Smartphone}>Any device</Pill>
+          <Pill icon={Cookie}>Survives cleared cookies</Pill>
+          <Pill icon={Terminal}>MCP + AI chat</Pill>
         </div>
       </CardContent>
     </Card>
@@ -133,56 +162,50 @@ function AccountCard({ me }: { me: Me }) {
 }
 
 /**
- * First and last name for the account. Where they come from — and whether they
- * can be changed — depends on how the account was authenticated:
- *
- * - **Anonymous** (no Clerk identity, or Clerk not yet resolved): there's no
- *   profile to edit, so the fields mirror the generated animal identity
- *   (e.g. "Curious Lynx" → Curious / Lynx), read-only.
- * - **Signed in via email**: the name is ours to set, so the fields are editable
- *   and write back to Clerk.
- * - **Signed in via Google/GitHub**: the name is owned by that provider, shown
- *   read-only.
+ * The guest's identity, shown for what it is: a generated animal name pinned to
+ * a temporary, cookie-scoped id. The id is copyable so it can be quoted in a
+ * bug report, but there's nothing to edit until they sign in.
  */
-function AccountNameFields({ me }: { me: Me }) {
-  const { isLoaded, isSignedIn, user } = useUser();
-
-  // Mirror the topbar's gate: only trust Clerk's profile once it has resolved a
-  // signed-in user. Until then (or when anonymous) fall back to the animal name.
-  if (!(isLoaded && isSignedIn && user)) {
-    const [first, last] = splitName(me.displayName);
-    return (
-      <NameFieldGrid
-        first={first}
-        last={last}
-        hint="Sign in to set your own name."
-      />
-    );
-  }
-
-  return <ClerkNameFields user={user} />;
+function GuestIdentityStrip({ me }: { me: Me }) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-4">
+        <span
+          aria-hidden
+          className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-secondary text-xl"
+        >
+          {me.avatar ?? "🙂"}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">{me.displayName ?? "Guest"}</span>
+            <GuestBadge />
+          </div>
+          <p className="truncate text-[13px] text-muted-foreground">
+            Temporary identity · <code className="font-mono text-xs">{me.userId}</code>
+          </p>
+        </div>
+        <CopyIdButton value={me.userId} />
+      </CardContent>
+    </Card>
+  );
 }
 
-/** The signed-in variant: editable for email accounts, locked for OAuth ones. */
-function ClerkNameFields({ user }: { user: ClerkUser }) {
-  // An OAuth account (Google/GitHub) carries an external account; a plain email
-  // sign-up has none. The provider owns the name in that case, so we lock it.
+/**
+ * The signed-in account, all in one card: who you are, that it's saved, your
+ * name (editable for email accounts, provider-owned for OAuth), your user id,
+ * and the account actions.
+ */
+function SignedInAccountCard({ user, me }: { user: ClerkUser; me: Me }) {
+  const { openUserProfile } = useClerk();
+  // An OAuth account (Google/GitHub) carries an external account and owns the
+  // name; a plain email sign-up has none, so the name is ours to edit.
   const oauthProvider = oauthProviderLabel(user);
+  const editable = !oauthProvider;
 
   const [first, setFirst] = useState(user.firstName ?? "");
   const [last, setLast] = useState(user.lastName ?? "");
   const [saving, setSaving] = useState(false);
-
-  if (oauthProvider) {
-    return (
-      <NameFieldGrid
-        first={user.firstName ?? ""}
-        last={user.lastName ?? ""}
-        hint={`Managed by your ${oauthProvider} sign-in.`}
-      />
-    );
-  }
-
   const dirty = first !== (user.firstName ?? "") || last !== (user.lastName ?? "");
 
   const save = async () => {
@@ -198,53 +221,129 @@ function ClerkNameFields({ user }: { user: ClerkUser }) {
   };
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-2">
-          <FieldLabel>First name</FieldLabel>
-          <Input
-            value={first}
-            onChange={(e) => setFirst(e.target.value)}
-            aria-label="First name"
-            autoComplete="given-name"
-          />
+    <Card>
+      <CardContent className="space-y-5">
+        <div className="flex items-start gap-4">
+          <AccountAvatar user={user} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-heading text-lg font-medium tracking-tight">You&apos;re signed in</h2>
+              {oauthProvider ? (
+                <span className="inline-flex items-center rounded-full bg-foreground px-2.5 py-0.5 text-[11px] font-semibold text-background">
+                  via {oauthProvider}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.05em] text-secondary-foreground">
+                  <Check className="h-2.5 w-2.5" aria-hidden />
+                  Saved
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+              {oauthProvider
+                ? `Your goals are tied to your ${oauthProvider} account. Sign in with ${oauthProvider} on any device to pick them up right where you left off.`
+                : "This account is yours to keep — sign in with the same email on any browser or device to pick these goals up right where you left off."}
+            </p>
+          </div>
         </div>
-        <div className="space-y-2">
-          <FieldLabel>Last name</FieldLabel>
-          <Input
-            value={last}
-            onChange={(e) => setLast(e.target.value)}
-            aria-label="Last name"
-            autoComplete="family-name"
-          />
+
+        <div className="flex flex-wrap gap-2">
+          <Pill icon={Smartphone}>Synced to any device</Pill>
+          <Pill icon={Cloud}>Backed up</Pill>
+          <Pill icon={Terminal}>MCP enabled</Pill>
         </div>
-      </div>
-      <Button size="sm" onClick={save} disabled={!dirty || saving}>
-        {saving ? "Saving…" : "Save"}
-      </Button>
-    </div>
+
+        <Divider />
+
+        {editable ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <FieldLabel>First name</FieldLabel>
+              <Input
+                value={first}
+                onChange={(e) => setFirst(e.target.value)}
+                aria-label="First name"
+                autoComplete="given-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <FieldLabel>Last name</FieldLabel>
+              <Input
+                value={last}
+                onChange={(e) => setLast(e.target.value)}
+                aria-label="Last name"
+                autoComplete="family-name"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <FieldLabel>First name</FieldLabel>
+                <Input value={user.firstName ?? ""} disabled readOnly aria-label="First name" />
+              </div>
+              <div className="space-y-2">
+                <FieldLabel>Last name</FieldLabel>
+                <Input value={user.lastName ?? ""} disabled readOnly aria-label="Last name" />
+              </div>
+            </div>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Lock className="h-3 w-3" aria-hidden />
+              Managed by your {oauthProvider} sign-in.
+            </p>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <FieldLabel>User ID</FieldLabel>
+          <CopyRow value={me.userId} mono />
+        </div>
+
+        <Divider />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => openUserProfile()}>
+            Manage account
+          </Button>
+          <span className="flex-1" />
+          <SignOutButton>
+            <Button variant="outline" size="sm">
+              Sign out
+            </Button>
+          </SignOutButton>
+          {editable && (
+            <Button size="sm" onClick={save} disabled={!dirty || saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
-/** Read-only first/last name pair, with a lock hint explaining why. */
-function NameFieldGrid({ first, last, hint }: { first: string; last: string; hint: string }) {
+/** The signed-in avatar: the Clerk profile picture, or a fallback glyph. */
+function AccountAvatar({ user }: { user: ClerkUser }) {
+  if (user.imageUrl) {
+    return (
+      <Image
+        src={user.imageUrl}
+        alt=""
+        width={48}
+        height={48}
+        className="h-12 w-12 flex-none rounded-full"
+        unoptimized
+      />
+    );
+  }
   return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-2">
-          <FieldLabel>First name</FieldLabel>
-          <Input value={first} disabled readOnly aria-label="First name" />
-        </div>
-        <div className="space-y-2">
-          <FieldLabel>Last name</FieldLabel>
-          <Input value={last} disabled readOnly aria-label="Last name" />
-        </div>
-      </div>
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Lock className="h-3 w-3" aria-hidden />
-        {hint}
-      </p>
-    </div>
+    <span
+      aria-hidden
+      className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-[oklch(0.5_0.19_280)] text-white"
+    >
+      <User className="h-6 w-6" />
+    </span>
   );
 }
 
@@ -259,68 +358,6 @@ function oauthProviderLabel(user: ClerkUser): string | null {
   const slug = provider.replace(/^oauth_/, "");
   const labels: Record<string, string> = { google: "Google", github: "GitHub" };
   return labels[slug] ?? slug.charAt(0).toUpperCase() + slug.slice(1);
-}
-
-/**
- * Split a generated animal identity ("Curious Lynx") into first / last name.
- * The first word is the first name, everything after it the last name; a
- * missing name yields empty fields.
- */
-function splitName(displayName: string | null): [string, string] {
-  const parts = (displayName ?? "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return ["", ""];
-  const [first, ...rest] = parts;
-  return [first, rest.join(" ")];
-}
-
-/**
- * The optional upgrade: link a Clerk identity to this account. Signed out, it
- * pitches the benefit and offers sign in / sign up. Signed in, it confirms the
- * link and hands over the Clerk user button (manage account, sign out).
- */
-function StableAuthCard() {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-          Sign in
-        </CardTitle>
-        <CardDescription>
-          Sign in to give this account a durable identity. It keeps your goals if this browser&apos;s
-          cookie is cleared, lets you pick them up on another device, and unlocks features that need
-          a real account — MCP access, and AI chat soon.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Show when="signed-out">
-          <div className="flex flex-wrap items-center gap-2">
-            <SignInButton mode="modal">
-              <Button size="sm">Sign in</Button>
-            </SignInButton>
-            <SignUpButton mode="modal">
-              <Button size="sm" variant="outline">
-                Create account
-              </Button>
-            </SignUpButton>
-          </div>
-        </Show>
-        <Show when="signed-in">
-          <div className="flex flex-wrap items-center gap-3">
-            <UserButton />
-            <p className="min-w-0 flex-1 text-sm text-muted-foreground">
-              You&apos;re signed in. This account is now yours to keep.
-            </p>
-            <SignOutButton>
-              <Button size="sm" variant="outline">
-                Sign out
-              </Button>
-            </SignOutButton>
-          </div>
-        </Show>
-      </CardContent>
-    </Card>
-  );
 }
 
 function McpCard({ endpoint }: { endpoint: string }) {
@@ -379,9 +416,52 @@ function McpCard({ endpoint }: { endpoint: string }) {
   );
 }
 
+/** A small green-tinted benefit pill with a leading icon. */
+function Pill({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/60 px-2.5 py-1 text-xs font-medium text-secondary-foreground ring-1 ring-primary/15">
+      <Icon className="h-3 w-3" aria-hidden />
+      {children}
+    </span>
+  );
+}
+
+/** The amber "Guest" chip that marks a temporary, cookie-scoped identity. */
+function GuestBadge() {
+  return (
+    <span className="rounded-md bg-warning/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-warning-foreground">
+      Guest
+    </span>
+  );
+}
+
+function Divider() {
+  return <div className="h-px bg-border" />;
+}
+
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <p className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">{children}</p>
+  );
+}
+
+/** A standalone copy button for the guest id: copies, then flips to a check. */
+function CopyIdButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy to clipboard");
+    }
+  }, [value]);
+  return (
+    <Button variant="outline" size="sm" onClick={copy} className="flex-none">
+      {copied ? <Check /> : <Copy />}
+      Copy ID
+    </Button>
   );
 }
 

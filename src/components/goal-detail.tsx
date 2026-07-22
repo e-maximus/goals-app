@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Menu } from "@base-ui/react/menu";
 import { useStore } from "@/lib/store";
 import {
   goalProgress,
@@ -20,50 +21,28 @@ import { StepDialog } from "@/components/step-dialog";
 import {
   GroupCardConnected,
   AddGroupCard,
-  UngroupedStepsCard,
+  UngroupedStepsList,
 } from "@/components/group-card";
-import { GoalBanner } from "@/components/goal-banner";
-import { GoalStepper } from "@/components/goal-stepper";
 import { NotesSection } from "@/components/notes-section";
 import { TaskDialog } from "@/components/task-dialog";
 import { TaskRow } from "@/components/task-row";
-import { LoadingState, SectionLabel } from "@/components/ui-bits";
+import {
+  DueBadge,
+  LoadingState,
+  SectionLabel,
+  menuItemClass,
+  menuItemDestructiveClass,
+  menuPopupClass,
+} from "@/components/ui-bits";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { useGoalView, type GoalView } from "@/hooks/use-goal-view";
 import { celebrate } from "@/lib/confetti";
-import { cn, goalIdMatchesPath } from "@/lib/utils";
-import { Check, List, Milestone, Pause, Play, Plus } from "lucide-react";
+import { goalIdMatchesPath } from "@/lib/utils";
+import { Check, MoreVertical, Pause, Pencil, Play, Plus, Share2, Trash2 } from "lucide-react";
 import { ShareDialog } from "@/components/share-dialog";
-
-/** The list / timeline segmented toggle shown next to the Groups label. */
-function ViewToggle({ view, onChange }: { view: GoalView; onChange: (v: GoalView) => void }) {
-  const option = (value: GoalView, label: string, Icon: typeof List) => (
-    <button
-      onClick={() => onChange(value)}
-      aria-pressed={view === value}
-      className={cn(
-        "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold normal-case tracking-normal transition-colors",
-        view === value
-          ? "bg-card text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" aria-hidden />
-      {label}
-    </button>
-  );
-  return (
-    <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-      {option("list", "List", List)}
-      {option("timeline", "Timeline", Milestone)}
-    </div>
-  );
-}
 
 /**
  * The tasks tied to this goal — the day-to-day to-dos living next to the plan.
  * They never feed the goal's progress; that stays derived from steps alone.
- * Renders nothing when the goal has no tasks beyond the add button.
  */
 function GoalTasksSection({ goalId }: { goalId: string }) {
   const tasks = useStore((s) => s.tasks);
@@ -117,6 +96,145 @@ function GoalTasksSection({ goalId }: { goalId: string }) {
   );
 }
 
+/** A donut ring showing goal progress, with the percentage in the centre. */
+function ProgressRing({ pct }: { pct: number }) {
+  const value = Math.max(0, Math.min(100, pct));
+  return (
+    <div
+      className="relative h-16 w-16 flex-none rounded-full"
+      style={{ background: `conic-gradient(var(--primary) ${value}%, var(--muted) 0)` }}
+      role="img"
+      aria-label={`${value}% complete`}
+    >
+      <div className="absolute inset-[7px] flex items-center justify-center rounded-full bg-card text-sm font-bold tabular-nums text-primary">
+        {value}%
+      </div>
+    </div>
+  );
+}
+
+/** Edit / Share / Delete for the goal, floating in the summary card's corner. */
+function GoalOptionsMenu({
+  onEdit,
+  onShare,
+  onDelete,
+}: {
+  onEdit: () => void;
+  onShare: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <Menu.Root>
+      <Menu.Trigger
+        aria-label="Goal options"
+        className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:opacity-100 data-[popup-open]:bg-muted"
+      >
+        <MoreVertical className="h-4 w-4" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
+          <Menu.Popup className={menuPopupClass}>
+            <Menu.Item onClick={onEdit} className={menuItemClass}>
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              Edit
+            </Menu.Item>
+            <Menu.Item onClick={onShare} className={menuItemClass}>
+              <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
+              Share
+            </Menu.Item>
+            <Menu.Item onClick={onDelete} className={menuItemDestructiveClass}>
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </Menu.Item>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+}
+
+/**
+ * The goal's summary, pinned in the right rail: title, why it matters, a
+ * progress ring, and the single next step with a one-tap "Mark done". It owns
+ * the goal-level actions (edit / share / delete) via the corner menu.
+ */
+function GoalSummaryRail({
+  title,
+  why,
+  dueDate,
+  pct,
+  done,
+  total,
+  complete,
+  next,
+  onMarkNextDone,
+  onEdit,
+  onShare,
+  onDelete,
+}: {
+  title: string;
+  why?: string;
+  dueDate?: number;
+  pct: number;
+  done: number;
+  total: number;
+  complete: boolean;
+  next: string | null;
+  onMarkNextDone: () => void;
+  onEdit: () => void;
+  onShare: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="relative flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <GoalOptionsMenu onEdit={onEdit} onShare={onShare} onDelete={onDelete} />
+
+      <div className="pr-8">
+        <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          Goal
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-lg font-bold leading-tight">{title}</h1>
+          <DueBadge dueDate={dueDate} done={complete} />
+        </div>
+        {why && (
+          <p className="mt-1.5 whitespace-pre-line text-[12.5px] leading-relaxed text-muted-foreground">
+            {why}
+          </p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3.5">
+        <ProgressRing pct={pct} />
+        <div className="text-[12.5px] leading-relaxed text-muted-foreground">
+          <b className="font-semibold text-foreground">
+            {done} of {total}
+          </b>{" "}
+          {total === 1 ? "step" : "steps"} done
+          <br />
+          {complete
+            ? "All done — nice work."
+            : total === 0
+              ? "Add a step to begin."
+              : `Keep going — ${total - done} to go.`}
+        </div>
+      </div>
+
+      {next && (
+        <div className="rounded-xl bg-secondary/60 p-3 ring-1 ring-inset ring-primary/15">
+          <div className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-secondary-foreground">
+            Next step
+          </div>
+          <div className="text-[13px] font-semibold">{next}</div>
+          <Button size="sm" className="mt-2.5 w-full" onClick={onMarkNextDone}>
+            Mark done
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function GoalDetail({ goalId }: { goalId: string }) {
   // The route param is `<id>-<slug>` (or a bare id from an old link). Resolve it
   // to the goal whose id it carries, preferring the longest matching id so a
@@ -131,6 +249,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
   const updateGoal = useStore((s) => s.updateGoal);
   const addGroup = useStore((s) => s.addGroup);
   const addStep = useStore((s) => s.addStep);
+  const toggleStep = useStore((s) => s.toggleStep);
   const deleteGoal = useStore((s) => s.deleteGoal);
   const setGoalStatus = useStore((s) => s.setGoalStatus);
   const router = useRouter();
@@ -138,9 +257,6 @@ export function GoalDetail({ goalId }: { goalId: string }) {
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [addStepOpen, setAddStepOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  // Key the view preference by the resolved goal id, not the slugged route
-  // param, so a title change (and thus a new slug) doesn't reset it.
-  const [view, setView] = useGoalView(goal?.id ?? goalId);
   // Which groups the user explicitly opened/closed. Until they touch one, the
   // default applies: only the active group (the one holding the next step) is
   // expanded. Keyed by goal id so navigating to another goal starts fresh.
@@ -223,28 +339,15 @@ export function GoalDetail({ goalId }: { goalId: string }) {
     setExpandedState({ goalId, ids: nextSet });
   };
 
+  const markNextDone = () => {
+    if (next) toggleStep(goal.id, next.group?.id ?? null, next.step.id);
+  };
+
   return (
     <PageShell crumbs={<Crumbs page={goal.title} />} width="lg">
-      {/* Goal banner */}
-      <div className="mb-7">
-        <GoalBanner
-          title={goal.title}
-          why={goal.why}
-          pct={pct}
-          dueDate={goal.dueDate}
-          complete={complete}
-          onEdit={() => setEditGoalOpen(true)}
-          onShare={() => setShareOpen(true)}
-          onDelete={() => {
-            deleteGoal(goal.id);
-            router.push("/goals");
-          }}
-        />
-      </div>
-
       {/* Paused banner — also legible when an agent paused the goal over MCP */}
       {paused && !complete && (
-        <div className="mb-7 flex items-center justify-between gap-4 rounded-2xl border border-border bg-muted/50 px-7 py-4">
+        <div className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-border bg-muted/50 px-7 py-4">
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <Pause className="h-4 w-4 flex-shrink-0" aria-hidden />
             <span>
@@ -266,7 +369,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
       {/* Completion celebration */}
       {complete && (
-        <div className="mb-7 flex items-center gap-4 rounded-2xl border border-primary/60 bg-secondary px-7 py-5">
+        <div className="mb-6 flex items-center gap-4 rounded-2xl border border-primary/60 bg-secondary px-7 py-5">
           <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <Check className="h-5 w-5" strokeWidth={3} />
           </span>
@@ -279,33 +382,50 @@ export function GoalDetail({ goalId }: { goalId: string }) {
         </div>
       )}
 
-      {hasAnything ? (
-        <>
-          <SectionLabel action={hasGroups ? <ViewToggle view={view} onChange={setView} /> : undefined}>
-            Steps
-            {total > 0 && (
-              <span className="font-medium normal-case tracking-normal text-muted-foreground/70">
-                {" "}
-                — {done}/{total} done
-              </span>
-            )}
-          </SectionLabel>
-          <div className="flex flex-col gap-4">
-            {/* In the timeline view the ungrouped steps become stages on the
-                rail itself, so the standalone card only renders in the list
-                view (or when there are no groups and thus no timeline). */}
-            {ungrouped.length > 0 && (view === "list" || !hasGroups) && (
-              <UngroupedStepsCard
-                goalId={goal.id}
-                steps={ungrouped}
-                nextStepId={next && next.group === null ? nextStepId : null}
-              />
-            )}
-            {hasGroups &&
-              (view === "timeline" ? (
-                <GoalStepper goal={goal} activeGroupId={activeGroupId} nextStepId={nextStepId} />
-              ) : (
-                goal.groups.map((group) => (
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+        {/* Summary rail. First in the DOM so it leads on mobile, pinned to the
+            right column and made sticky on wide screens. */}
+        <aside className="lg:sticky lg:top-20 lg:col-start-2 lg:row-start-1">
+          <GoalSummaryRail
+            title={goal.title}
+            why={goal.why}
+            dueDate={goal.dueDate}
+            pct={pct}
+            done={done}
+            total={total}
+            complete={complete}
+            next={next?.step.text ?? null}
+            onMarkNextDone={markNextDone}
+            onEdit={() => setEditGoalOpen(true)}
+            onShare={() => setShareOpen(true)}
+            onDelete={() => {
+              deleteGoal(goal.id);
+              router.push("/goals");
+            }}
+          />
+        </aside>
+
+        <div className="lg:col-start-1 lg:row-start-1">
+          {hasAnything ? (
+            <>
+              <SectionLabel>
+                Steps
+                {total > 0 && (
+                  <span className="font-medium normal-case tracking-normal text-muted-foreground/70">
+                    {" "}
+                    — {done}/{total} done
+                  </span>
+                )}
+              </SectionLabel>
+              <div className="flex flex-col gap-3">
+                {ungrouped.length > 0 && (
+                  <UngroupedStepsList
+                    goalId={goal.id}
+                    steps={ungrouped}
+                    nextStepId={next && next.group === null ? nextStepId : null}
+                  />
+                )}
+                {goal.groups.map((group) => (
                   <GroupCardConnected
                     key={group.id}
                     goalId={goal.id}
@@ -315,42 +435,42 @@ export function GoalDetail({ goalId }: { goalId: string }) {
                     onToggleCollapse={() => toggleExpanded(group.id)}
                     nextStepId={group.id === activeGroupId ? nextStepId : null}
                   />
-                ))
-              ))}
-            <div className="flex flex-col gap-2 sm:flex-row">
-              {ungrouped.length === 0 && (
-                <button
-                  onClick={() => setAddStepOpen(true)}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong px-4 py-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add step
-                </button>
-              )}
-              <div className="flex-1">
-                <AddGroupCard onClick={() => setAddGroupOpen(true)} />
+                ))}
+                {/* One clear action row at the very bottom. */}
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    onClick={() => setAddStepOpen(true)}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong px-4 py-3.5 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add step
+                  </button>
+                  <div className="flex-1">
+                    <AddGroupCard onClick={() => setAddGroupOpen(true)} />
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border-strong px-5 py-14 text-center">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-border-strong text-2xl text-muted-foreground">
+                +
+              </span>
+              <div className="text-[15px] font-bold">No steps yet</div>
+              <p className="max-w-sm text-[13px] text-muted-foreground">
+                Break this goal down to get moving — start with a first step, or lay out groups of
+                steps for a bigger plan
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <Button onClick={() => setAddStepOpen(true)}>+ Add step</Button>
+                <Button variant="outline" onClick={() => setAddGroupOpen(true)}>
+                  + Add group
+                </Button>
               </div>
             </div>
-          </div>
-        </>
-      ) : (
-        <div className="mt-2 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border-strong px-5 py-14 text-center">
-          <span className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-border-strong text-2xl text-muted-foreground">
-            +
-          </span>
-          <div className="text-[15px] font-bold">No steps yet</div>
-          <p className="max-w-sm text-[13px] text-muted-foreground">
-            Break this goal down to get moving — start with a first step, or lay out groups of
-            steps for a bigger plan
-          </p>
-          <div className="mt-2 flex items-center gap-2">
-            <Button onClick={() => setAddStepOpen(true)}>+ Add step</Button>
-            <Button variant="outline" onClick={() => setAddGroupOpen(true)}>
-              + Add group
-            </Button>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
       <GoalTasksSection goalId={goal.id} />
 
