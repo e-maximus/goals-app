@@ -138,9 +138,10 @@ Postgres provided as `DATABASE_URL`.
 
 Versions follow [Semantic Versioning](https://semver.org): **MAJOR** for a
 redesign or broken UX, **MINOR** for a new user-facing feature, **PATCH** for
-fixes. Merging a PR into `main` cuts a release automatically — set the bump with
-a `release:minor` / `release:major` / `skip-release` label on the PR (no label =
-patch). Don't hand-edit the version in `package.json`.
+fixes. Merging a PR into `main` cuts a release automatically — every merge ships
+at least a patch. Set a higher bump with a `release:minor` / `release:major`
+label on the PR (no label = patch). Don't hand-edit the version in
+`package.json`.
 
 The same logic is runnable locally for out-of-band releases:
 

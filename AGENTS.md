@@ -131,16 +131,17 @@ bumps the version, tags `vx.y.z`, and publishes a GitHub Release. **You do not
 run any release command.** Your job is just to set the right bump level via a PR
 label:
 
-| PR label        | Effect                                  |
-| --------------- | --------------------------------------- |
-| _(none)_        | **patch** bump — the default            |
-| `release:minor` | new user-facing feature                 |
-| `release:major` | redesign / broken UX                    |
-| `skip-release`  | merge without any release (docs, chore) |
+| PR label        | Effect                       |
+| --------------- | ---------------------------- |
+| _(none)_        | **patch** bump — the default |
+| `release:minor` | new user-facing feature      |
+| `release:major` | redesign / broken UX         |
 
-Add the label that matches your change when you open the PR. The GitHub Release
-notes are auto-generated from the merged PRs since the last tag, so: **write a
-clear PR title.**
+Every merged PR ships a release — **patch is the floor**, so even docs/chore PRs
+bump the patch version; there is no way to merge without a release. Only add a
+label when the change warrants more than a patch. The GitHub Release notes are
+auto-generated from the merged PRs since the last tag, so: **write a clear PR
+title.**
 
 ### Manual release (rarely needed)
 
