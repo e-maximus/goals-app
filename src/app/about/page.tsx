@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function AboutPage() {
   return (
-    <StaticPage title="About">
+    <StaticPage>
       <section className="space-y-3 pt-4 text-center">
         <p className="text-4xl" aria-hidden>
           🏔️

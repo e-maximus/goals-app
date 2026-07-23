@@ -19,7 +19,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function PrivacyPage() {
   return (
-    <StaticPage title="Privacy Policy">
+    <StaticPage>
       <div className="space-y-2 pt-2">
         <h1 className="text-2xl font-bold tracking-tight">Privacy Policy</h1>
         <p className="text-sm text-muted-foreground">Last updated: {UPDATED}</p>

@@ -19,12 +19,11 @@ test.describe("Static pages", () => {
     await expect(footer.getByRole("link", { name: "Terms" })).toBeVisible();
   });
 
-  test("the About page tells the story, standing on its own crumb", async ({ page }) => {
+  test("the About page tells the story and links back via the nav", async ({ page }) => {
     await page.goto("/about");
     await expect(page.getByRole("heading", { name: "Keep going.", level: 1 })).toBeVisible();
     await expect(page.getByText("Why this exists")).toBeVisible();
-    // About belongs to no section, so its crumb is just "About" — no "My Goals /"
-    // parent in the content.
+    // The page content itself carries no "My Goals" link — only the persistent nav does.
     await expect(page.getByRole("main").getByRole("link", { name: "My Goals" })).toHaveCount(0);
     // The persistent nav is how you get back to the goals.
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "My Goals" }).click();

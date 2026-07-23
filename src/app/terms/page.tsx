@@ -19,7 +19,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function TermsPage() {
   return (
-    <StaticPage title="Terms of Use">
+    <StaticPage>
       <div className="space-y-2 pt-2">
         <h1 className="text-2xl font-bold tracking-tight">Terms of Use</h1>
         <p className="text-sm text-muted-foreground">Last updated: {UPDATED}</p>

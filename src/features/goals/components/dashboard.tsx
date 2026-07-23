@@ -30,7 +30,7 @@ import {
   type Goal,
 } from "@/lib/types";
 import { todayTasks } from "@/lib/types";
-import { PageShell, Crumbs } from "@/components/page-shell";
+import { PageShell } from "@/components/page-shell";
 import { LoadError } from "@/components/load-error";
 import { TaskRow } from "@/features/tasks";
 import { GoalDialog, NewGoalDialog } from "./new-goal-dialog";
@@ -383,7 +383,7 @@ export function Dashboard() {
   };
 
   return (
-    <PageShell crumbs={<Crumbs />} width="lg">
+    <PageShell width="lg">
       {loadStatus === "loading" ? (
         <LoadingState label="Loading your goals…" />
       ) : loadStatus === "error" ? (

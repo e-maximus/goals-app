@@ -6,7 +6,9 @@ test.describe("Tasks", () => {
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Tasks" }).click();
 
     await expect(page).toHaveURL(/\/tasks$/);
-    await expect(page.getByText("My Tasks")).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Tasks" }),
+    ).toHaveAttribute("aria-current", "page");
 
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "My Goals" }).click();
     await expect(page).toHaveURL(/\/goals$/);

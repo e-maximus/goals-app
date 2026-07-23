@@ -18,7 +18,7 @@ import {
   type Goal,
   type Task,
 } from "@/lib/types";
-import { PageShell, Crumbs } from "@/components/page-shell";
+import { PageShell } from "@/components/page-shell";
 import { LoadError } from "@/components/load-error";
 import { LoadingState, SectionLabel } from "@/components/ui-bits";
 import { Button } from "@/components/ui/button";
@@ -74,7 +74,7 @@ export function Home() {
   const greetingName = useGreetingName();
 
   return (
-    <PageShell crumbs={<Crumbs root="Home" />} width="lg">
+    <PageShell width="lg">
       {loadStatus === "loading" ? (
         <LoadingState label="Loading your overview…" />
       ) : loadStatus === "error" ? (

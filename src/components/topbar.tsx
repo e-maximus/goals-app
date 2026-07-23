@@ -236,32 +236,3 @@ export function Topbar() {
     </header>
   );
 }
-
-export function Crumbs({
-  page,
-  root = "My Goals",
-}: {
-  /** The second segment — a goal title, "Settings", "About"… */
-  page?: string;
-  /**
-   * The top-level label the page hangs under — "My Goals" on goal pages,
-   * "My Tasks" on /tasks. Pass `null` for a standalone page (About, Settings…)
-   * that belongs to no section, so the crumb is just its own name.
-   */
-  root?: string | null;
-}) {
-  if (!page) {
-    return <span className="font-semibold text-foreground">{root}</span>;
-  }
-  if (root === null) {
-    return <span className="font-semibold text-foreground">{page}</span>;
-  }
-  return (
-    <span>
-      <Link href="/goals" className="transition-colors hover:text-foreground">
-        {root}
-      </Link>{" "}
-      / <span className="font-semibold text-foreground">{page}</span>
-    </span>
-  );
-}

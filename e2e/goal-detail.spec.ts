@@ -358,7 +358,7 @@ test.describe("Goal detail — deadlines", () => {
     await expect(banner.getByText(/due /)).toBeVisible();
 
     // The dashboard card carries the same badge.
-    await page.getByRole("main").getByRole("link", { name: "My Goals" }).click();
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "My Goals" }).click();
     const card = page.locator("div.group\\/goal").filter({ hasText: "Launch my podcast" });
     await expect(card.getByText(/due /)).toBeVisible();
   });

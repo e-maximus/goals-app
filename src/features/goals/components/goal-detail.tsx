@@ -13,7 +13,7 @@ import {
   nextStep,
   ungroupedSteps,
 } from "@/lib/types";
-import { PageShell, Crumbs } from "@/components/page-shell";
+import { PageShell } from "@/components/page-shell";
 import { LoadError } from "@/components/load-error";
 import { GoalDialog } from "./new-goal-dialog";
 import { GroupDialog } from "./group-dialog";
@@ -278,7 +278,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
   if (loadStatus === "loading") {
     return (
-      <PageShell crumbs={<Crumbs page="…" />} width="lg">
+      <PageShell width="lg">
         <LoadingState label="Loading goal…" />
       </PageShell>
     );
@@ -286,7 +286,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
   if (loadStatus === "error") {
     return (
-      <PageShell crumbs={<Crumbs />} width="lg">
+      <PageShell width="lg">
         <LoadError />
       </PageShell>
     );
@@ -294,7 +294,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
 
   if (!goal) {
     return (
-      <PageShell crumbs={<Crumbs />} width="lg">
+      <PageShell width="lg">
         <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
           <h2 className="text-xl font-bold">Goal not found</h2>
           <p className="text-sm text-muted-foreground">
@@ -344,7 +344,7 @@ export function GoalDetail({ goalId }: { goalId: string }) {
   };
 
   return (
-    <PageShell crumbs={<Crumbs page={goal.title} />} width="lg">
+    <PageShell width="lg">
       {/* Paused banner — also legible when an agent paused the goal over MCP */}
       {paused && !complete && (
         <div className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-border bg-muted/50 px-7 py-4">
