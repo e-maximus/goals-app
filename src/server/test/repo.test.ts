@@ -250,6 +250,101 @@ describe("ungrouped steps", () => {
     await assert.rejects(() => repo.editStep(pool, other, "u-1", { text: "x" }));
     await assert.rejects(() => repo.deleteStep(pool, other, "u-1"));
   });
+
+  // A goal whose one group holds a single step, so batch positions read cleanly.
+  function batchGoal(): Goal {
+    return sampleGoal({
+      notes: [],
+      steps: [],
+      groups: [{ id: "g-1", title: "Preparation", steps: [{ id: "s-1", text: "Pick a name", done: true }] }],
+    });
+  }
+
+  it("addSteps adds a batch in order, numbering positions per parent", async () => {
+    await repo.replaceAll(pool, owner, [batchGoal()], null);
+
+    const created = await repo.addSteps(pool, owner, [
+      { target: { groupId: "g-1" }, text: "Second in group" },
+      { target: { goalId: "goal-podcast" }, text: "Ungrouped one" },
+      { target: { groupId: "g-1" }, text: "Third in group" },
+    ]);
+    assert.deepEqual(created.map((s) => s.text), [
+      "Second in group",
+      "Ungrouped one",
+      "Third in group",
+    ]);
+
+    const goal = await repo.getGoal(pool, owner, "goal-podcast");
+    // The seeded group step keeps its slot; the two new group steps append after it.
+    assert.deepEqual(goal.groups[0]!.steps.map((s) => s.text), [
+      "Pick a name",
+      "Second in group",
+      "Third in group",
+    ]);
+    assert.deepEqual(goal.steps!.map((s) => s.text), ["Ungrouped one"]);
+  });
+
+  it("addSteps rolls the whole batch back if any step is invalid", async () => {
+    await repo.replaceAll(pool, owner, [batchGoal()], null);
+
+    await assert.rejects(
+      () =>
+        repo.addSteps(pool, owner, [
+          { target: { groupId: "g-1" }, text: "Would be fine" },
+          { target: {}, text: "No parent" },
+        ]),
+      (err: unknown) => err instanceof repo.ValidationError
+    );
+
+    // Nothing was written — the group still holds only its seeded step.
+    const goal = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.deepEqual(goal.groups[0]!.steps.map((s) => s.text), ["Pick a name"]);
+  });
+
+  it("deleteSteps removes a batch, and rolls back if any id is unknown", async () => {
+    await repo.replaceAll(pool, owner, [batchGoal()], null);
+    const [a, b] = await repo.addSteps(pool, owner, [
+      { target: { groupId: "g-1" }, text: "One" },
+      { target: { groupId: "g-1" }, text: "Two" },
+    ]);
+
+    // An unknown id in the batch aborts the whole delete.
+    await assert.rejects(
+      () => repo.deleteSteps(pool, owner, [a!.id, "no-such-step"]),
+      (err: unknown) => err instanceof repo.NotFoundError
+    );
+    let goal = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.deepEqual(goal.groups[0]!.steps.map((s) => s.text), ["Pick a name", "One", "Two"]);
+
+    await repo.deleteSteps(pool, owner, [a!.id, b!.id]);
+    goal = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.deepEqual(goal.groups[0]!.steps.map((s) => s.text), ["Pick a name"]);
+  });
+
+  it("addNotes and deleteNotes handle a batch atomically", async () => {
+    await repo.replaceAll(pool, owner, [batchGoal()], null);
+
+    const created = await repo.addNotes(pool, owner, [
+      { goalId: "goal-podcast", text: "Alpha" },
+      { goalId: "goal-podcast", text: "Beta", stepId: "s-1" },
+    ]);
+    assert.deepEqual(created.map((n) => n.text), ["Alpha", "Beta"]);
+    assert.equal(created[1]!.stepId, "s-1");
+
+    // A bad step link in the batch adds nothing.
+    await assert.rejects(
+      () =>
+        repo.addNotes(pool, owner, [
+          { goalId: "goal-podcast", text: "Gamma" },
+          { goalId: "goal-podcast", text: "Bad", stepId: "no-such-step" },
+        ]),
+      (err: unknown) => err instanceof repo.ValidationError
+    );
+    assert.equal((await repo.listNotes(pool, owner, "goal-podcast")).length, 2);
+
+    await repo.deleteNotes(pool, owner, created.map((n) => n.id));
+    assert.deepEqual(await repo.listNotes(pool, owner, "goal-podcast"), []);
+  });
 });
 
 describe("due dates", () => {

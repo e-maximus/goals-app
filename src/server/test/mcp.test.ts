@@ -177,20 +177,20 @@ describe("MCP surface", () => {
 
   it("adds a step with a description and can clear it", async () => {
     const client = await connect();
-    const added = payload<{ id: string; text: string; description?: string }>(
+    const [added] = payload<{ id: string; text: string; description?: string }[]>(
       await client.callTool({
         name: "add_step",
-        arguments: { groupId: "g-1", text: "Record ep. 2", description: "Guest: Alex" },
+        arguments: { steps: [{ groupId: "g-1", text: "Record ep. 2", description: "Guest: Alex" }] },
       })
     );
-    assert.equal(added.text, "Record ep. 2");
-    assert.equal(added.description, "Guest: Alex");
+    assert.equal(added!.text, "Record ep. 2");
+    assert.equal(added!.description, "Guest: Alex");
 
     // An empty description clears it, leaving the title alone.
     const cleared = payload<{ text: string; description?: string }>(
       await client.callTool({
         name: "edit_step",
-        arguments: { stepId: added.id, description: "" },
+        arguments: { stepId: added!.id, description: "" },
       })
     );
     assert.equal(cleared.text, "Record ep. 2");
@@ -246,28 +246,93 @@ describe("MCP surface", () => {
 
   it("adds an ungrouped step with add_step({ goalId })", async () => {
     const client = await connect();
-    const added = payload<{ id: string; text: string }>(
+    const [added] = payload<{ id: string; text: string }[]>(
       await client.callTool({
         name: "add_step",
-        arguments: { goalId: "goal-podcast", text: "A loose end" },
+        arguments: { steps: [{ goalId: "goal-podcast", text: "A loose end" }] },
       })
     );
 
     const stored = await repo.getGoal(pool, owner, "goal-podcast");
-    assert.deepEqual(stored.steps!.map((s) => s.id), [added.id]);
+    assert.deepEqual(stored.steps!.map((s) => s.id), [added!.id]);
     await client.close();
   });
 
-  it("rejects add_step with both parents, or neither", async () => {
+  it("adds several steps at once in one call", async () => {
+    const client = await connect();
+    const added = payload<{ id: string; text: string }[]>(
+      await client.callTool({
+        name: "add_step",
+        arguments: {
+          steps: [
+            { groupId: "g-1", text: "Record ep. 2" },
+            { groupId: "g-1", text: "Record ep. 3" },
+            { goalId: "goal-podcast", text: "A loose end" },
+          ],
+        },
+      })
+    );
+    assert.deepEqual(added.map((s) => s.text), ["Record ep. 2", "Record ep. 3", "A loose end"]);
+
+    const stored = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.deepEqual(stored.groups[0]!.steps.map((s) => s.text), [
+      "Pick a name",
+      "Record ep. 2",
+      "Record ep. 3",
+    ]);
+    assert.deepEqual(stored.steps!.map((s) => s.text), ["A loose end"]);
+    await client.close();
+  });
+
+  it("rejects the whole add_step batch if any step is invalid", async () => {
     const client = await connect();
     const both = await client.callTool({
       name: "add_step",
-      arguments: { goalId: "goal-podcast", groupId: "g-1", text: "x" },
+      arguments: {
+        steps: [
+          { groupId: "g-1", text: "fine" },
+          { goalId: "goal-podcast", groupId: "g-1", text: "x" },
+        ],
+      },
     });
     assert.equal((both as { isError?: boolean }).isError, true);
 
-    const neither = await client.callTool({ name: "add_step", arguments: { text: "x" } });
+    const neither = await client.callTool({
+      name: "add_step",
+      arguments: { steps: [{ text: "x" }] },
+    });
     assert.equal((neither as { isError?: boolean }).isError, true);
+
+    // The valid first step was rolled back with the batch — the group is untouched.
+    const stored = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.deepEqual(stored.groups[0]!.steps.map((s) => s.text), ["Pick a name"]);
+    await client.close();
+  });
+
+  it("deletes several steps at once, leaving the rest", async () => {
+    const client = await connect();
+    const added = payload<{ id: string }[]>(
+      await client.callTool({
+        name: "add_step",
+        arguments: {
+          steps: [
+            { groupId: "g-1", text: "Record ep. 2" },
+            { groupId: "g-1", text: "Record ep. 3" },
+          ],
+        },
+      })
+    );
+
+    const result = payload<{ deleted: string[] }>(
+      await client.callTool({
+        name: "delete_step",
+        arguments: { stepIds: added.map((s) => s.id) },
+      })
+    );
+    assert.deepEqual(result.deleted, added.map((s) => s.id));
+
+    const stored = await repo.getGoal(pool, owner, "goal-podcast");
+    assert.deepEqual(stored.groups[0]!.steps.map((s) => s.text), ["Pick a name"]);
     await client.close();
   });
 
@@ -327,10 +392,10 @@ describe("MCP surface", () => {
     const client = await connect();
     const result = await client.callTool({
       name: "add_note",
-      arguments: { goalId: "goal-podcast", text: "Try a shorter script next time." },
+      arguments: { notes: [{ goalId: "goal-podcast", text: "Try a shorter script next time." }] },
     });
-    const added = payload<Note>(result);
-    assert.equal(added.text, "Try a shorter script next time.");
+    const [added] = payload<Note[]>(result);
+    assert.equal(added!.text, "Try a shorter script next time.");
 
     // The real assertion: it's in Postgres, where the web app will read it.
     const stored = await repo.listNotes(pool, owner, "goal-podcast");
@@ -341,20 +406,50 @@ describe("MCP surface", () => {
     await client.close();
   });
 
-  it("links a note to a step, then unlinks it", async () => {
+  it("adds and deletes several notes at once", async () => {
     const client = await connect();
-    const added = payload<{ id: string; stepId?: string }>(
+    const added = payload<Note[]>(
       await client.callTool({
         name: "add_note",
-        arguments: { goalId: "goal-podcast", text: "About the name", stepId: "s-1" },
+        arguments: {
+          notes: [
+            { goalId: "goal-podcast", text: "First batch note" },
+            { goalId: "goal-podcast", text: "Second batch note", stepId: "s-1" },
+          ],
+        },
       })
     );
-    assert.equal(added.stepId, "s-1");
+    assert.deepEqual(added.map((n) => n.text), ["First batch note", "Second batch note"]);
+    assert.equal(added[1]!.stepId, "s-1");
+
+    const result = payload<{ deleted: string[] }>(
+      await client.callTool({
+        name: "delete_note",
+        arguments: { noteIds: added.map((n) => n.id) },
+      })
+    );
+    assert.deepEqual(result.deleted, added.map((n) => n.id));
+
+    // Only the seeded note is left.
+    const stored = await repo.listNotes(pool, owner, "goal-podcast");
+    assert.deepEqual(stored.map((n) => n.text), ["Editing takes longer than recording."]);
+    await client.close();
+  });
+
+  it("links a note to a step, then unlinks it", async () => {
+    const client = await connect();
+    const [added] = payload<{ id: string; stepId?: string }[]>(
+      await client.callTool({
+        name: "add_note",
+        arguments: { notes: [{ goalId: "goal-podcast", text: "About the name", stepId: "s-1" }] },
+      })
+    );
+    assert.equal(added!.stepId, "s-1");
 
     const unlinked = payload<{ id: string; stepId?: string }>(
       await client.callTool({
         name: "edit_note",
-        arguments: { noteId: added.id, stepId: "" },
+        arguments: { noteId: added!.id, stepId: "" },
       })
     );
     assert.equal(unlinked.stepId, undefined);
@@ -376,16 +471,16 @@ describe("MCP surface", () => {
         arguments: { goalId: created.id, title: "Basics" },
       })
     );
-    const step = payload<{ id: string; done: boolean }>(
+    const [step] = payload<{ id: string; done: boolean }[]>(
       await client.callTool({
         name: "add_step",
-        arguments: { groupId: group.id, text: "Book a taster lesson" },
+        arguments: { steps: [{ groupId: group.id, text: "Book a taster lesson" }] },
       })
     );
-    assert.equal(step.done, false);
+    assert.equal(step!.done, false);
 
     const toggled = payload<{ done: boolean }>(
-      await client.callTool({ name: "toggle_step", arguments: { stepId: step.id } })
+      await client.callTool({ name: "toggle_step", arguments: { stepId: step!.id } })
     );
     assert.equal(toggled.done, true);
 

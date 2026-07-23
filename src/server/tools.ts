@@ -183,29 +183,40 @@ export const tools: ToolDef[] = [
   // ---- steps ----
   defineTool({
     name: "add_step",
-    title: "Add a step",
+    title: "Add steps",
     description:
-      "Add a step to a group (`groupId`) or directly to a goal (`goalId`) for a step " +
-      "outside any group — pass exactly one. Keep the title small — one sitting's " +
-      "worth of work. `description` is an optional longer note beneath it.",
+      "Add one or more steps in a single call — pass a one-element array to add just one. " +
+      "Each step goes to a group (`groupId`) or directly to a goal (`goalId`) for a step " +
+      "outside any group — pass exactly one per step. Keep each title small — one " +
+      "sitting's worth of work. `description` is an optional longer note beneath it. The " +
+      "whole batch is applied together: if any step is invalid, none are added.",
     inputSchema: {
-      goalId: z.string().optional().describe("The goal to add an ungrouped step to"),
-      groupId: z.string().optional().describe("The group to add the step to"),
-      text: z.string().min(1).describe("The step's title"),
-      description: z
-        .string()
-        .optional()
-        .describe("An optional longer note — details, links, context"),
-      dueDate: dueDateInput,
+      steps: z
+        .array(
+          z.object({
+            goalId: z.string().optional().describe("The goal to add an ungrouped step to"),
+            groupId: z.string().optional().describe("The group to add the step to"),
+            text: z.string().min(1).describe("The step's title"),
+            description: z
+              .string()
+              .optional()
+              .describe("An optional longer note — details, links, context"),
+            dueDate: dueDateInput,
+          })
+        )
+        .min(1)
+        .describe("The steps to add, in order"),
     },
     handler: (args, { pool, ownerId }) =>
-      repo.addStep(
+      repo.addSteps(
         pool,
         ownerId,
-        { goalId: args.goalId, groupId: args.groupId },
-        args.text,
-        args.description,
-        args.dueDate
+        args.steps.map((s) => ({
+          target: { goalId: s.goalId, groupId: s.groupId },
+          text: s.text,
+          description: s.description,
+          dueDate: s.dueDate,
+        }))
       ),
   }),
   defineTool({
@@ -240,13 +251,15 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "delete_step",
-    title: "Delete a step",
-    description: "Remove a step from its group.",
-    inputSchema: { stepId: z.string() },
+    title: "Delete steps",
+    description:
+      "Remove one or more steps — pass a one-element array to delete just one. The whole " +
+      "batch is applied together: if any id is unknown, none are deleted.",
+    inputSchema: { stepIds: z.array(z.string()).min(1).describe("The ids of the steps to remove") },
     destructive: true,
     handler: async (args, { pool, ownerId }) => {
-      await repo.deleteStep(pool, ownerId, args.stepId);
-      return { deleted: args.stepId };
+      await repo.deleteSteps(pool, ownerId, args.stepIds);
+      return { deleted: args.stepIds };
     },
   }),
 
@@ -262,18 +275,28 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "add_note",
-    title: "Add a note",
+    title: "Add notes",
     description:
-      "Leave a note on a goal — an observation, a thought, a next step. Optionally tie it " +
-      "to one step of the goal with `stepId` (from get_goal); leave it out for a note about " +
-      "the goal as a whole.",
+      "Leave one or more notes on goals — an observation, a thought, a next step. Pass a " +
+      "one-element array to add just one. Each note optionally ties to one step of its goal " +
+      "with `stepId` (from get_goal); leave it out for a note about the goal as a whole. The " +
+      "whole batch is applied together: if any note is invalid, none are added.",
     inputSchema: {
-      goalId: z.string(),
-      text: z.string().min(1),
-      stepId: z.string().optional().describe("A step id under this goal to link the note to"),
+      notes: z
+        .array(
+          z.object({
+            goalId: z.string(),
+            text: z.string().min(1),
+            stepId: z
+              .string()
+              .optional()
+              .describe("A step id under this goal to link the note to"),
+          })
+        )
+        .min(1)
+        .describe("The notes to add, in order"),
     },
-    handler: (args, { pool, ownerId }) =>
-      repo.addNote(pool, ownerId, args.goalId, args.text, args.stepId),
+    handler: (args, { pool, ownerId }) => repo.addNotes(pool, ownerId, args.notes),
   }),
   defineTool({
     name: "edit_note",
@@ -299,13 +322,15 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "delete_note",
-    title: "Delete a note",
-    description: "Remove a note from a goal's feed.",
-    inputSchema: { noteId: z.string() },
+    title: "Delete notes",
+    description:
+      "Remove one or more notes from goals' feeds — pass a one-element array to delete just " +
+      "one. The whole batch is applied together: if any id is unknown, none are deleted.",
+    inputSchema: { noteIds: z.array(z.string()).min(1).describe("The ids of the notes to remove") },
     destructive: true,
     handler: async (args, { pool, ownerId }) => {
-      await repo.deleteNote(pool, ownerId, args.noteId);
-      return { deleted: args.noteId };
+      await repo.deleteNotes(pool, ownerId, args.noteIds);
+      return { deleted: args.noteIds };
     },
   }),
 
