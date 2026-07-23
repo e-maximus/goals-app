@@ -8,7 +8,11 @@
       <stop offset="1" stop-color="#2c8a53" />
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="14" fill="url(#g)" />
+  <!-- Full-bleed: the green fills the whole square with no rounded (transparent)
+       corners of its own, so a light host tile can't peek through the corners as
+       white on a dark background. Hosts that want rounded corners mask the icon
+       themselves. -->
+  <rect width="64" height="64" fill="url(#g)" />
   <g fill="#ffffff">
     <g transform="translate(23 44) rotate(-16)">
       <ellipse cx="0" cy="2" rx="6.4" ry="9" />
