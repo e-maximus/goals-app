@@ -2,9 +2,11 @@ name: Auto Release
 
 # When a PR is merged into main, cut a release automatically.
 #
-# Bump level comes from PR labels:
+# Every merged PR ships a release — patch is the floor. Bump level comes from
+# PR labels:
 #   release:major -> major   release:minor -> minor   (default) -> patch
-# Add the `skip-release` label to merge without releasing (docs, chore, etc.).
+# So even docs/chore PRs bump the patch version; there is no way to merge
+# without a release.
 #
 # This workflow bumps the version, tags it, pushes to main, and publishes the
 # GitHub Release itself — it does not rely on release.yml, because a tag pushed
@@ -25,9 +27,7 @@ concurrency:
 
 jobs:
   release:
-    if: >-
-      github.event.pull_request.merged == true &&
-      !contains(github.event.pull_request.labels.*.name, 'skip-release')
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

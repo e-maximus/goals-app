@@ -61,14 +61,14 @@ Add any of these **only when they carry weight** — skip the rest:
 
 - Write a clear, imperative title with no trailing period — it feeds the
   auto-generated release notes.
-- Set the release bump with a label when you open the PR:
+- Every merge ships at least a patch. Set a higher bump with a label when you
+  open the PR:
 
-  | Label           | Effect                                  |
-  | --------------- | --------------------------------------- |
-  | _(none)_        | patch — the default                     |
-  | `release:minor` | new user-facing feature                 |
-  | `release:major` | redesign / broken UX                    |
-  | `skip-release`  | merge without a release (docs, chore)   |
+  | Label           | Effect                  |
+  | --------------- | ----------------------- |
+  | _(none)_        | patch — the default     |
+  | `release:minor` | new user-facing feature |
+  | `release:major` | redesign / broken UX    |
 
 CI (lint + build + e2e) must be green before merge. Merging into `main` cuts
 the release automatically — you don't run any release command.
