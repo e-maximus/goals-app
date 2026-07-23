@@ -5,8 +5,11 @@ import { create } from "zustand";
 import { isTaskDone, utcMidnight, type Goal, type GoalStatus, type Step, type Task } from "./types";
 import { SyncConflictError, fetchState, pushState, type ServerState } from "./sync";
 
+// A short id for optimistically-created goals/steps/tasks, kept in sync with the
+// server's generator (src/server/domain.ts). Six base-36 chars keep goal URLs
+// short; collisions are vanishingly unlikely at this app's scale.
 function uid(): string {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  return Math.random().toString(36).slice(2, 8).padEnd(6, "0");
 }
 
 /**
@@ -66,6 +69,14 @@ type StoreState = {
 
   /** Load the goals from the server. Called once on mount; safe to call again to retry. */
   load: () => Promise<void>;
+  /**
+   * Hard-replace goals/tasks with the server's copy, dropping any local edits.
+   * Unlike `load` (which keeps local-only items ahead of the server's), this is a
+   * clean overwrite — used after the AI chat's agent mutated the store
+   * server-side, so the client adopts the server's version wholesale, exactly as
+   * the 409 conflict path does.
+   */
+  reloadFromServer: () => Promise<void>;
   /**
    * Seed the store from state the server already loaded (RSC initial render),
    * skipping the client fetch entirely. Used when the page was server-rendered
@@ -165,6 +176,26 @@ export const useStore = create<StoreState>((set) => ({
       if (localOnly.length > 0 || localOnlyTasks.length > 0) void pushToServer();
     } catch {
       set({ loadStatus: "error" });
+    }
+  },
+
+  reloadFromServer: async () => {
+    try {
+      const state = await fetchState();
+      applyingRemote = true;
+      try {
+        set({
+          goals: state.goals,
+          tasks: state.tasks,
+          serverUpdatedAt: state.updatedAt,
+          loadStatus: "ready",
+        });
+      } finally {
+        applyingRemote = false;
+      }
+    } catch {
+      // Transient fetch error — keep the current view; the next successful load
+      // reconciles. Don't blow the store away over a blip.
     }
   },
 

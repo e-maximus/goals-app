@@ -1,4 +1,5 @@
 import { StoreHydration } from "@/components/store-hydration";
+import { ChatDrawer } from "@/features/chat";
 import { loadInitialState } from "@/features/goals/load";
 
 /**
@@ -18,6 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <>
       <StoreHydration initialData={initialData} />
       {children}
+      <ChatDrawer />
     </>
   );
 }

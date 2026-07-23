@@ -30,8 +30,10 @@ model User {
   display_name     String?
   avatar           String?
 
-  goals Goal[]
-  tasks Task[]
+  goals        Goal[]
+  tasks        Task[]
+  chatThreads  ChatThread[]
+  chatMessages ChatMessage[]
 
   @@map("users")
 }
@@ -125,6 +127,38 @@ model Task {
   @@index([owner_id])
   @@index([goal_id])
   @@map("tasks")
+}
+
+model ChatThread {
+  id                         String  @id
+  owner_id                   String
+  title                      String?
+  summary                    String?
+  summary_through_created_at BigInt?
+  created_at                 BigInt
+  updated_at                 BigInt
+
+  owner    User          @relation(fields: [owner_id], references: [id])
+  messages ChatMessage[]
+
+  @@index([owner_id])
+  @@map("chat_threads")
+}
+
+model ChatMessage {
+  id         String @id
+  thread_id  String
+  owner_id   String
+  role       String
+  parts      Json
+  created_at BigInt
+
+  thread ChatThread @relation(fields: [thread_id], references: [id])
+  owner  User       @relation(fields: [owner_id], references: [id])
+
+  @@index([thread_id])
+  @@index([owner_id])
+  @@map("chat_messages")
 }
 
 model SchemaMigration {

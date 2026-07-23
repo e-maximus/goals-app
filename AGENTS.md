@@ -101,6 +101,14 @@ All committed and user-facing text is in **English**.
   what produces the merge conflicts you'll fight later.
 - Branch off `main`; don't commit directly to `main`. Open a PR — CI (lint +
   build + server + e2e) must be green before merge.
+- **Before opening a PR — and before asking for a merge — sync the branch with
+  the latest `main` and make sure it's conflict-free.** `main` may have moved
+  since you branched (other merges, an auto-release version bump), so:
+  `git fetch origin`, then `git rebase origin/main` and resolve any conflicts
+  locally. Confirm the PR reports **mergeable** (`gh pr view <n> --json
+  mergeable,mergeStateStatus`) — a `CONFLICTING`/`DIRTY` PR can't merge and
+  won't deploy. Regenerate `package-lock.json` from the merged `package.json`
+  rather than hand-editing it when the lockfile conflicts.
 - Pushing to `main` auto-deploys to **Railway** (via its GitHub integration,
   building [Dockerfile](Dockerfile)). Treat `main` as always-releasable, and
   remember a merge changes the live app — including running any new migration
