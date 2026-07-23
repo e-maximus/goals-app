@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { ArrowRight, Bot, Check, Plus } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -42,9 +43,11 @@ const TIPS = [
   },
 ];
 
-/** The current account's identity, for a personal greeting. Failure is fine —
- *  the greeting just falls back to a generic line. */
-function useMe(): Me | null {
+/** The name for a personal greeting: the Clerk profile when signed in, otherwise
+ *  the account's generated animal identity. Failure is fine — the greeting just
+ *  falls back to a generic line. Mirrors the topbar's UserChip resolution. */
+function useGreetingName(): string | null {
+  const { isSignedIn, user } = useUser();
   const [me, setMe] = useState<Me | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -58,14 +61,17 @@ function useMe(): Me | null {
       cancelled = true;
     };
   }, []);
-  return me;
+  if (isSignedIn && user) {
+    return user.firstName ?? user.fullName ?? user.username ?? me?.displayName ?? null;
+  }
+  return me?.displayName ?? null;
 }
 
 export function Home() {
   const goals = useStore((s) => s.goals);
   const tasks = useStore((s) => s.tasks);
   const loadStatus = useStore((s) => s.loadStatus);
-  const me = useMe();
+  const greetingName = useGreetingName();
 
   return (
     <PageShell crumbs={<Crumbs root="Home" />} width="lg">
@@ -75,7 +81,7 @@ export function Home() {
         <LoadError />
       ) : (
         <div className="space-y-8">
-          <FocusHero name={me?.displayName ?? null} goals={goals} tasks={tasks} />
+          <FocusHero name={greetingName} goals={goals} tasks={tasks} />
           <Attention goals={goals} />
           <LearnGrid />
         </div>
