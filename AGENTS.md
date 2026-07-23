@@ -22,9 +22,10 @@ alongside.
   computed by pure helpers in [src/lib/types.ts](src/lib/types.ts) — don't store
   what you can derive.
 - **The API** — route handlers under [src/app/api/](src/app/api/): `/api/goals`
-  (the REST surface the store reads and writes), `/api/me` (the current user's id
-  and MCP token, plus `rotate-token`), `/api/health`, and `/api/mcp` (an **MCP**
-  endpoint over Streamable HTTP, so an agent can read and edit goals).
+  (the REST surface the store reads and writes), `/api/me` (the current user's id;
+  no token is returned — MCP is OAuth-authorized now), `/api/health`, and
+  `/api/mcp` (an **MCP** endpoint over Streamable HTTP, so an agent can read and
+  edit goals).
 - **The server internals** — [src/server/](src/server/): the SQL repo, accounts
   ([src/server/users.ts](src/server/users.ts)), the MCP server, migrations
   (inlined as strings), and the shared, migrated pool
@@ -42,9 +43,15 @@ cookie ([src/server/users.ts](src/server/users.ts)). Every repo read and write i
 scoped by `owner_id`, so ids are globally unique but never cross accounts — mind
 this when writing SQL or seeding (the example seed's fixed ids are remapped to
 fresh ones per user; only the e2e test user keeps them). The **MCP** endpoint is
-the same store for an agent: it requires `Authorization: Bearer <pat>`, resolves
-the user from that personal access token, and 401s without a valid one. A user
-manages their token (view / copy / rotate) on the **Settings** page.
+the same store for an agent: it's protected by **OAuth 2.1** via Clerk. A request
+must carry a Clerk-issued `Authorization: Bearer <oauth_token>`; the endpoint
+verifies it, resolves the Clerk identity to this app's account, and operates only
+on that user's goals. No token, or an invalid one, gets a `401` whose
+`WWW-Authenticate` points at our protected-resource metadata
+([src/app/.well-known/](src/app/.well-known/)) — that's how a client discovers
+Clerk as the authorization server and runs the flow (dynamic client registration
+→ authorize → token). So a client only needs the endpoint URL; there's no static
+token to paste, and the **Settings** page just shows that URL to connect.
 
 The domain types are the single source of truth for both sides: the UI and the
 server both import [src/lib/types.ts](src/lib/types.ts) directly (the server via
