@@ -646,6 +646,77 @@ export async function deleteGroup(pool: Pool, ownerId: string, groupId: string):
  * Add a step under exactly one parent: a group (`target.groupId`) or directly
  * on a goal (`target.goalId`) for an ungrouped step.
  */
+/** One step to add: its parent (exactly one of goalId/groupId) plus its fields. */
+export type StepSpec = {
+  target: { goalId?: string; groupId?: string };
+  text: string;
+  description?: string;
+  dueDate?: number;
+};
+
+/**
+ * Add one or more steps in a single transaction. Each spec goes to a group or
+ * a goal (exactly one). All specs are validated up front, so a bad target
+ * rolls back the whole batch — the store never lands half-written. Each
+ * affected goal (and the owner) is stamped once, not once per step. Returns the
+ * created steps in the order given.
+ */
+export async function addSteps(pool: Pool, ownerId: string, specs: StepSpec[]): Promise<Step[]> {
+  for (const { target } of specs) {
+    if (Boolean(target.goalId) === Boolean(target.groupId)) {
+      throw new ValidationError("A step needs exactly one parent — pass a goalId or a groupId");
+    }
+  }
+  return withTransaction(pool, async (client) => {
+    const created: Step[] = [];
+    const goalIds = new Set<string>();
+    for (const { target, text, description, dueDate } of specs) {
+      let goalId: string;
+      if (target.groupId) {
+        const resolved = await goalIdOfGroup(client, ownerId, target.groupId);
+        if (!resolved) throw new NotFoundError("Group", target.groupId);
+        goalId = resolved;
+      } else {
+        await requireGoal(client, ownerId, target.goalId!);
+        goalId = target.goalId!;
+      }
+
+      const desc = description?.trim() || null;
+      const step: Step = {
+        id: uid(),
+        text: text.trim(),
+        ...(desc ? { description: desc } : {}),
+        done: false,
+        ...(dueDate ? { dueDate } : {}),
+      };
+      // Position is next-in-parent: max within the group, or within the goal
+      // for an ungrouped step. Re-read per step so earlier inserts in this same
+      // batch are counted.
+      const scope: Prisma.StepWhereInput = target.groupId
+        ? { group_id: target.groupId }
+        : { goal_id: goalId };
+      const { _max } = await client.db.step.aggregate({ where: scope, _max: { position: true } });
+      await client.db.step.create({
+        data: {
+          id: step.id,
+          ...(target.groupId ? { group_id: target.groupId } : { goal_id: goalId }),
+          text: step.text,
+          description: desc,
+          done: false,
+          due_date: step.dueDate != null ? BigInt(step.dueDate) : null,
+          position: (_max.position ?? -1) + 1,
+        },
+      });
+      goalIds.add(goalId);
+      created.push(step);
+    }
+    for (const goalId of goalIds) await touchGoal(client, goalId);
+    await touch(client, ownerId);
+    return created;
+  });
+}
+
+/** Add a single step — a thin wrapper over {@link addSteps}. */
 export async function addStep(
   pool: Pool,
   ownerId: string,
@@ -654,49 +725,8 @@ export async function addStep(
   description?: string,
   dueDate?: number
 ): Promise<Step> {
-  if (Boolean(target.goalId) === Boolean(target.groupId)) {
-    throw new ValidationError("A step needs exactly one parent — pass a goalId or a groupId");
-  }
-  return withTransaction(pool, async (client) => {
-    let goalId: string;
-    if (target.groupId) {
-      const resolved = await goalIdOfGroup(client, ownerId, target.groupId);
-      if (!resolved) throw new NotFoundError("Group", target.groupId);
-      goalId = resolved;
-    } else {
-      await requireGoal(client, ownerId, target.goalId!);
-      goalId = target.goalId!;
-    }
-
-    const desc = description?.trim() || null;
-    const step: Step = {
-      id: uid(),
-      text: text.trim(),
-      ...(desc ? { description: desc } : {}),
-      done: false,
-      ...(dueDate ? { dueDate } : {}),
-    };
-    // Position is next-in-parent: max within the group, or within the goal for
-    // an ungrouped step.
-    const scope: Prisma.StepWhereInput = target.groupId
-      ? { group_id: target.groupId }
-      : { goal_id: goalId };
-    const { _max } = await client.db.step.aggregate({ where: scope, _max: { position: true } });
-    await client.db.step.create({
-      data: {
-        id: step.id,
-        ...(target.groupId ? { group_id: target.groupId } : { goal_id: goalId }),
-        text: step.text,
-        description: desc,
-        done: false,
-        due_date: step.dueDate != null ? BigInt(step.dueDate) : null,
-        position: (_max.position ?? -1) + 1,
-      },
-    });
-    await touchGoal(client, goalId);
-    await touch(client, ownerId);
-    return step;
-  });
+  const [step] = await addSteps(pool, ownerId, [{ target, text, description, dueDate }]);
+  return step!;
 }
 
 /**
@@ -770,14 +800,29 @@ export async function setStepDone(
   });
 }
 
-export async function deleteStep(pool: Pool, ownerId: string, stepId: string): Promise<void> {
+/**
+ * Delete one or more steps in a single transaction. Every id is resolved to an
+ * owned step first, so an unknown id rolls the whole batch back rather than
+ * deleting some and failing partway. Each affected goal (and the owner) is
+ * stamped once.
+ */
+export async function deleteSteps(pool: Pool, ownerId: string, stepIds: string[]): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const goalId = await goalIdOfStep(client, ownerId, stepId);
-    if (!goalId) throw new NotFoundError("Step", stepId);
-    await client.db.step.deleteMany({ where: ownedStep(ownerId, stepId) });
-    await touchGoal(client, goalId);
+    const goalIds = new Set<string>();
+    for (const stepId of stepIds) {
+      const goalId = await goalIdOfStep(client, ownerId, stepId);
+      if (!goalId) throw new NotFoundError("Step", stepId);
+      await client.db.step.deleteMany({ where: ownedStep(ownerId, stepId) });
+      goalIds.add(goalId);
+    }
+    for (const goalId of goalIds) await touchGoal(client, goalId);
     await touch(client, ownerId);
   });
+}
+
+/** Delete a single step — a thin wrapper over {@link deleteSteps}. */
+export async function deleteStep(pool: Pool, ownerId: string, stepId: string): Promise<void> {
+  await deleteSteps(pool, ownerId, [stepId]);
 }
 
 export async function listNotes(pool: Pool, ownerId: string, goalId: string): Promise<Note[]> {
@@ -804,6 +849,40 @@ async function stepInGoal(
   return count > 0;
 }
 
+/** One note to add: the goal it belongs to, its text, and an optional linked step. */
+export type NoteSpec = { goalId: string; text: string; stepId?: string };
+
+/**
+ * Add one or more notes in a single transaction. Each note's goal and optional
+ * linked step are validated as we go, so a bad goal or step rolls the whole
+ * batch back. Each affected goal (and the owner) is stamped once. Returns the
+ * created notes in the order given.
+ */
+export async function addNotes(pool: Pool, ownerId: string, specs: NoteSpec[]): Promise<Note[]> {
+  return withTransaction(pool, async (client) => {
+    const created: Note[] = [];
+    const goalIds = new Set<string>();
+    for (const { goalId, text, stepId } of specs) {
+      await requireGoal(client, ownerId, goalId);
+      if (stepId && !(await stepInGoal(client, ownerId, goalId, stepId))) {
+        throw new ValidationError("That step isn't part of this goal");
+      }
+      const linkedStep = stepId || null;
+      const now = Date.now();
+      const note = toNote({ id: uid(), text: text.trim(), created_at: now, step_id: linkedStep });
+      await client.db.note.create({
+        data: { id: note.id, goal_id: goalId, text: note.text, created_at: BigInt(now), step_id: linkedStep },
+      });
+      goalIds.add(goalId);
+      created.push(note);
+    }
+    for (const goalId of goalIds) await touchGoal(client, goalId);
+    await touch(client, ownerId);
+    return created;
+  });
+}
+
+/** Add a single note — a thin wrapper over {@link addNotes}. */
 export async function addNote(
   pool: Pool,
   ownerId: string,
@@ -811,21 +890,8 @@ export async function addNote(
   text: string,
   stepId?: string
 ): Promise<Note> {
-  return withTransaction(pool, async (client) => {
-    await requireGoal(client, ownerId, goalId);
-    if (stepId && !(await stepInGoal(client, ownerId, goalId, stepId))) {
-      throw new ValidationError("That step isn't part of this goal");
-    }
-    const linkedStep = stepId || null;
-    const now = Date.now();
-    const note = toNote({ id: uid(), text: text.trim(), created_at: now, step_id: linkedStep });
-    await client.db.note.create({
-      data: { id: note.id, goal_id: goalId, text: note.text, created_at: BigInt(now), step_id: linkedStep },
-    });
-    await touchGoal(client, goalId);
-    await touch(client, ownerId);
-    return note;
-  });
+  const [note] = await addNotes(pool, ownerId, [{ goalId, text, stepId }]);
+  return note!;
 }
 
 /**
@@ -877,17 +943,31 @@ export async function editNote(
   });
 }
 
-export async function deleteNote(pool: Pool, ownerId: string, noteId: string): Promise<void> {
+/**
+ * Delete one or more notes in a single transaction. Every id is resolved to an
+ * owned note first, so an unknown id rolls the whole batch back. Each affected
+ * goal (and the owner) is stamped once.
+ */
+export async function deleteNotes(pool: Pool, ownerId: string, noteIds: string[]): Promise<void> {
   await withTransaction(pool, async (client) => {
-    const row = await client.db.note.findFirst({
-      where: ownedNote(ownerId, noteId),
-      select: { goal_id: true },
-    });
-    if (!row) throw new NotFoundError("Note", noteId);
-    await client.db.note.deleteMany({ where: ownedNote(ownerId, noteId) });
-    await touchGoal(client, row.goal_id);
+    const goalIds = new Set<string>();
+    for (const noteId of noteIds) {
+      const row = await client.db.note.findFirst({
+        where: ownedNote(ownerId, noteId),
+        select: { goal_id: true },
+      });
+      if (!row) throw new NotFoundError("Note", noteId);
+      await client.db.note.deleteMany({ where: ownedNote(ownerId, noteId) });
+      goalIds.add(row.goal_id);
+    }
+    for (const goalId of goalIds) await touchGoal(client, goalId);
     await touch(client, ownerId);
   });
+}
+
+/** Delete a single note — a thin wrapper over {@link deleteNotes}. */
+export async function deleteNote(pool: Pool, ownerId: string, noteId: string): Promise<void> {
+  await deleteNotes(pool, ownerId, [noteId]);
 }
 
 // ---- tasks ----
