@@ -3,7 +3,7 @@
   "version": "2.1.0",
   "private": true,
   "scripts": {
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate || echo 'skip prisma generate: schema not present in this install layer; prebuild will generate it'",
     "predev": "rm -rf .next",
     "dev": "next dev",
     "prebuild": "prisma generate",
