@@ -3,7 +3,8 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import type { Pool } from "../db";
 import * as repo from "../repo";
 import {
-  IDENTITIES,
+  ADJECTIVES,
+  ANIMALS,
   createUser,
   getOrCreateUserByClerkId,
   getUserByClerkId,
@@ -42,11 +43,14 @@ describe("createUser", () => {
     assert.equal(state.goals[0]!.groups.length, 0);
   });
 
-  it("mints an animal identity from the fixed list", async () => {
+  it("mints an adjective-animal identity with a matching emoji", async () => {
     const user = await createUser(pool);
-    const identity = IDENTITIES.find((i) => i.name === user.displayName);
-    assert.ok(identity, "display name comes from the identity list");
-    assert.equal(user.avatar, identity!.avatar);
+    const [adjective, ...rest] = (user.displayName ?? "").split(" ");
+    const animalName = rest.join(" ");
+    assert.ok(ADJECTIVES.includes(adjective!), "adjective comes from the list");
+    const animal = ANIMALS.find((a) => a.name === animalName);
+    assert.ok(animal, "animal comes from the list");
+    assert.equal(user.avatar, animal!.avatar, "emoji follows the chosen animal");
 
     // The identity survives a lookup round-trip.
     const fetched = await getUserBySession(pool, user.sessionToken);

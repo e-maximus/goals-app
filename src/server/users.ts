@@ -6,27 +6,59 @@ import { insertGoals } from "./repo";
 import { seedGoals, starterGoals, withFreshIds } from "./seed";
 
 /**
- * The friendly faces an anonymous account can wear in the topbar. Name and
- * emoji are minted together at creation and stored on the row; a signed-in
+ * The friendly face an anonymous account wears in the topbar. Rather than a
+ * fixed set of pairings, a name is composed at creation from a random adjective
+ * and a random animal (e.g. "Swift Lynx"), with the emoji taken from the chosen
+ * animal. Name and avatar are minted together and stored on the row; a signed-in
  * user is shown their Clerk profile instead, but every account has one.
- * Mirrored by the backfill in migration 010 — keep the two lists in sync.
  */
-export const IDENTITIES: readonly { name: string; avatar: string }[] = [
-  { name: "Shiny Fox", avatar: "🦊" },
-  { name: "Bright Capybara", avatar: "🦫" },
-  { name: "Quiet Owl", avatar: "🦉" },
-  { name: "Swift Otter", avatar: "🦦" },
-  { name: "Calm Panda", avatar: "🐼" },
-  { name: "Bold Tiger", avatar: "🐯" },
-  { name: "Sunny Koala", avatar: "🐨" },
-  { name: "Brave Penguin", avatar: "🐧" },
-  { name: "Gentle Whale", avatar: "🐋" },
-  { name: "Curious Lynx", avatar: "🐱" },
-  { name: "Steady Tortoise", avatar: "🐢" },
-  { name: "Merry Dolphin", avatar: "🐬" },
-  { name: "Wise Badger", avatar: "🦡" },
-  { name: "Clever Raven", avatar: "🐦" },
+export const ADJECTIVES: readonly string[] = [
+  "Shiny",
+  "Bright",
+  "Quiet",
+  "Swift",
+  "Calm",
+  "Bold",
+  "Sunny",
+  "Brave",
+  "Gentle",
+  "Curious",
+  "Steady",
+  "Merry",
+  "Wise",
+  "Clever",
+  "Nimble",
+  "Cheery",
+  "Mighty",
+  "Humble",
 ];
+
+export const ANIMALS: readonly { name: string; avatar: string }[] = [
+  { name: "Fox", avatar: "🦊" },
+  { name: "Capybara", avatar: "🦫" },
+  { name: "Owl", avatar: "🦉" },
+  { name: "Otter", avatar: "🦦" },
+  { name: "Panda", avatar: "🐼" },
+  { name: "Tiger", avatar: "🐯" },
+  { name: "Koala", avatar: "🐨" },
+  { name: "Penguin", avatar: "🐧" },
+  { name: "Whale", avatar: "🐋" },
+  { name: "Lynx", avatar: "🐱" },
+  { name: "Tortoise", avatar: "🐢" },
+  { name: "Dolphin", avatar: "🐬" },
+  { name: "Badger", avatar: "🦡" },
+  { name: "Raven", avatar: "🐦" },
+  { name: "Hedgehog", avatar: "🦔" },
+  { name: "Rabbit", avatar: "🐰" },
+];
+
+/** Compose a fresh identity: a random adjective and animal, the emoji following
+ *  the animal. */
+export function randomIdentity(): { name: string; avatar: string } {
+  const adjective = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)]!;
+  const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)]!;
+  return { name: `${adjective} ${animal.name}`, avatar: animal.avatar };
+}
 
 /**
  * Identity for the app. A user is an id plus the keys that resolve to it:
@@ -101,7 +133,7 @@ function toUser(row: UserRow): User {
 export async function createUser(pool: Pool): Promise<User> {
   return withTransaction(pool, async (client) => {
     const now = Date.now();
-    const identity = IDENTITIES[Math.floor(Math.random() * IDENTITIES.length)]!;
+    const identity = randomIdentity();
     const user: User = {
       id: uid(),
       sessionToken: newToken(),
