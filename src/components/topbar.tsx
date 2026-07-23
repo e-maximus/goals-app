@@ -5,8 +5,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Show, SignInButton, useUser } from "@clerk/nextjs";
-import { Settings } from "lucide-react";
+import { Settings, Sparkles } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { useChatUi } from "@/lib/chat-ui";
 import { Button } from "@/components/ui/button";
 import { SaveStatus } from "@/components/save-status";
 import { fetchMe, type Me } from "@/lib/sync";
@@ -185,6 +186,7 @@ function useScrolled(): boolean {
 
 export function Topbar() {
   const saveStatus = useStore((s) => s.saveStatus);
+  const setChatOpen = useChatUi((s) => s.setOpen);
   const scrolled = useScrolled();
 
   return (
@@ -213,6 +215,14 @@ export function Topbar() {
             <Button size="sm">Sign in</Button>
           </SignInButton>
         </Show>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => setChatOpen(true)}
+          aria-label="Assistant"
+        >
+          <Sparkles />
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"

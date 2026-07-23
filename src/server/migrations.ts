@@ -237,4 +237,45 @@ export const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS tasks_goal_id_idx  ON tasks (goal_id);
     `,
   },
+  {
+    name: "012_chat",
+    sql: `
+      -- The AI chat's persisted history, per user. A thread is one conversation;
+      -- the UI shows a single active thread for now, but the schema is
+      -- multi-thread from the start. To keep model context (and cost) bounded, a
+      -- thread carries a rolling \`summary\` of the turns already folded away plus
+      -- \`summary_through_created_at\` — the created_at up to which the summary
+      -- covers; the request builds context from that summary plus the messages
+      -- after that point. Timestamps are epoch milliseconds, matching the schema.
+      CREATE TABLE IF NOT EXISTS chat_threads (
+        id                         TEXT   PRIMARY KEY,
+        owner_id                   TEXT   NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        title                      TEXT,
+        summary                    TEXT,
+        summary_through_created_at BIGINT,
+        created_at                 BIGINT NOT NULL,
+        updated_at                 BIGINT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS chat_threads_owner_id_idx ON chat_threads (owner_id);
+
+      -- One message in a thread. \`parts\` holds the AI SDK UIMessage parts
+      -- (text, tool calls and their results) as JSON, so a reload reconstructs
+      -- the exact conversation the model saw. \`owner_id\` is duplicated on the
+      -- row (not only reachable through the thread) so every query filters on it
+      -- directly — ids are globally unique, and a bare-id filter would leak
+      -- across accounts.
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id         TEXT   PRIMARY KEY,
+        thread_id  TEXT   NOT NULL REFERENCES chat_threads (id) ON DELETE CASCADE,
+        owner_id   TEXT   NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        role       TEXT   NOT NULL,
+        parts      JSONB  NOT NULL,
+        created_at BIGINT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS chat_messages_thread_id_idx ON chat_messages (thread_id);
+      CREATE INDEX IF NOT EXISTS chat_messages_owner_id_idx  ON chat_messages (owner_id);
+    `,
+  },
 ];

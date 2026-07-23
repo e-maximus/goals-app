@@ -18,7 +18,11 @@ export {
   utcMidnight,
 } from "@/lib/types";
 
-/** Mirrors the id shape the web app generates, so ids look alike everywhere. */
+/**
+ * A short id, mirroring the web app's generator (store.ts) so ids look alike
+ * everywhere. Six base-36 chars (~2 billion values) keep goal URLs short while
+ * leaving primary-key collisions vanishingly unlikely at this app's scale.
+ */
 export function uid(): string {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  return Math.random().toString(36).slice(2, 8).padEnd(6, "0");
 }
