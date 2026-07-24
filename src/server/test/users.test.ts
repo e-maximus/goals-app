@@ -11,6 +11,7 @@ import {
   getUserByEmail,
   getUserBySession,
   resolveWebUser,
+  sessionClearCookie,
 } from "../users";
 import { reset, setupPool } from "./helpers";
 
@@ -110,6 +111,35 @@ describe("resolveWebUser + Clerk linking", () => {
     const fromElsewhere = await resolveWebUser(pool, withCookie(), "clerk_xyz");
     assert.equal(fromElsewhere.user.id, original.id, "resolves back to the stable account");
     assert.ok(fromElsewhere.setCookie, "re-points this browser's cookie at the account");
+  });
+
+  it("detaches on sign-out: the cleared cookie mints a fresh guest, the account returns on re-sign-in", async () => {
+    // Sign in, claiming this browser's anonymous account for a Clerk identity.
+    const original = await createUser(pool);
+    await resolveWebUser(pool, withCookie(original.sessionToken), "clerk_out");
+
+    // Sign out clears the session cookie (see sessionClearCookie); the next
+    // request is anonymous with no cookie, so it mints a brand-new guest rather
+    // than resolving back to the signed-out account.
+    const guest = await resolveWebUser(pool, withCookie(), null);
+    assert.notEqual(guest.user.id, original.id, "a fresh guest, not the signed-out account");
+    assert.equal(guest.user.clerkUserId, null);
+    assert.ok(guest.setCookie, "the guest gets its own new session cookie");
+
+    // Signing back in with the same Clerk identity recovers the original account.
+    const back = await resolveWebUser(pool, withCookie(guest.user.sessionToken), "clerk_out");
+    assert.equal(back.user.id, original.id, "the linked account comes back on re-sign-in");
+  });
+});
+
+describe("sessionClearCookie", () => {
+  it("expires the session cookie with matching attributes", () => {
+    const cookie = sessionClearCookie();
+    assert.match(cookie, /^session=;/, "clears the session cookie's value");
+    assert.match(cookie, /Max-Age=0/, "expires it immediately");
+    assert.match(cookie, /HttpOnly/);
+    assert.match(cookie, /Path=\//);
+    assert.match(cookie, /SameSite=Lax/);
   });
 });
 

@@ -354,6 +354,27 @@ export function sessionSetCookie(token: string): string {
 }
 
 /**
+ * Serialize a Set-Cookie that *clears* the session, used on sign-out. Signing
+ * out of Clerk only ends the Clerk session; the app's own session cookie is a
+ * separate, durable key that still resolves this browser's account. Dropping it
+ * here detaches the browser so the next request mints a fresh anonymous guest —
+ * the signed-in account's goals stay behind it (recovered on the next sign-in),
+ * and a shared machine doesn't leak them to whoever visits next. Same attributes
+ * as sessionSetCookie so the browser matches and overwrites the right cookie.
+ */
+export function sessionClearCookie(): string {
+  const attrs = [
+    `${SESSION_COOKIE}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+  ];
+  if (process.env.NODE_ENV === "production") attrs.push("Secure");
+  return attrs.join("; ");
+}
+
+/**
  * Resolve the web user for a request, creating one on first visit. Returns the
  * user plus, when the browser should adopt a (new or switched) session, the
  * Set-Cookie value the route must send back.
