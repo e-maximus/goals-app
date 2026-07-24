@@ -109,6 +109,78 @@ async function deleteMissing(
   return rowCount;
 }
 
+/** A row still waiting for a vector, with the text to embed. */
+export type PendingRow = { kind: string; itemId: string; content: string };
+
+/**
+ * Rows whose vector is missing or was produced by a different model.
+ *
+ * Folding the model check in here is what makes switching models free: the
+ * column records what embedded each row, so a new `EMBEDDING_MODEL` makes every
+ * row pending without a migration, a flag, or anything to remember to run.
+ * Mixing vectors from two models in one index would be worse than having none —
+ * their coordinates mean different things, so the distances would be noise.
+ */
+export async function listPending(
+  pool: Pool,
+  ownerId: string,
+  modelName: string,
+  limit: number
+): Promise<PendingRow[]> {
+  const { rows } = await pool.query<{ kind: string; item_id: string; content: string }>(
+    `SELECT kind, item_id, content
+       FROM embeddings
+      WHERE owner_id = $1
+        AND (embedding IS NULL OR model IS DISTINCT FROM $2)
+      ORDER BY kind, item_id
+      LIMIT $3`,
+    [ownerId, modelName, limit]
+  );
+  return rows.map((r) => ({ kind: r.kind, itemId: r.item_id, content: r.content }));
+}
+
+/**
+ * Store the vectors for rows this owner still has.
+ *
+ * Guarded on `content_hash`: between reading a pending row and getting its
+ * vector back from the provider the user may well have edited that step, and the
+ * row's text — the thing the vector describes — would already have moved on.
+ * Writing anyway would leave the index confidently pointing at the wrong text,
+ * which is a worse failure than the gap the next pass closes.
+ */
+export async function saveVectors(
+  pool: Pool,
+  ownerId: string,
+  modelName: string,
+  vectors: { kind: string; itemId: string; content: string; embedding: number[] }[]
+): Promise<number> {
+  let saved = 0;
+  for (const batch of chunked(vectors, ROWS_PER_STATEMENT)) {
+    const params: unknown[] = [ownerId, modelName];
+    const values = batch
+      .map((v) => {
+        params.push(v.kind, v.itemId, chunkHash(v.content), `[${v.embedding.join(",")}]`);
+        const n = params.length;
+        return `($${n - 3}, $${n - 2}, $${n - 1}, $${n}::vector)`;
+      })
+      .join(", ");
+
+    const { rows } = await pool.query<{ id: string }>(
+      `UPDATE embeddings AS e
+          SET embedding = v.embedding, model = $2
+         FROM (VALUES ${values}) AS v(kind, item_id, content_hash, embedding)
+        WHERE e.owner_id = $1
+          AND e.kind = v.kind
+          AND e.item_id = v.item_id
+          AND e.content_hash = v.content_hash
+        RETURNING e.item_id AS id`,
+      params
+    );
+    saved += rows.length;
+  }
+  return saved;
+}
+
 /** Upsert one batch; returns how many rows were actually written. */
 async function upsertBatch(client: Client, ownerId: string, batch: Chunk[]): Promise<number> {
   const now = Date.now();

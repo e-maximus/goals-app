@@ -5,6 +5,7 @@ import { auth } from "@clerk/nextjs/server";
 import { getPool } from "@/server/pool";
 import * as repo from "@/server/repo";
 import { resolveWebUser, SESSION_COOKIE } from "@/server/users";
+import { scheduleReindex } from "@/server/embeddings/schedule";
 import type { Goal, Task } from "@/lib/types";
 import type { ServerState, SaveResult } from "@/lib/sync";
 import { saveInputSchema } from "./schemas";
@@ -61,6 +62,10 @@ export async function saveState(input: unknown): Promise<SaveResult> {
       baseUpdatedAt ?? null,
       tasks as Task[] | undefined
     );
+    // The web app's write path, so this is where most reindexing is triggered
+    // from. It runs after the action has answered — the user is waiting on the
+    // save, not on the index.
+    scheduleReindex(pool, user.id);
     return { ok: true, state: state as ServerState };
   } catch (err) {
     if (err instanceof repo.ConflictError) {
