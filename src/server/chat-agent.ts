@@ -3,7 +3,7 @@ import { generateText, tool, type ToolSet, type UIMessage } from "ai";
 import { z } from "zod";
 import { chatModel } from "./llm";
 import { updateSummary, type StoredChatMessage } from "./chat-repo";
-import { tools as registry, type ToolContext } from "./tools";
+import { runTool, tools as registry, type ToolContext } from "./tools";
 import type { Pool } from "./db";
 
 /** How many recent turns (a turn starts at a user message) stay in live context. */
@@ -58,7 +58,7 @@ export function buildChatTools(ctx: ToolContext): ToolSet {
     out[def.name] = tool({
       description: def.description,
       inputSchema: z.object(def.inputSchema),
-      execute: (args) => def.handler(args, ctx),
+      execute: (args) => runTool(def, args, ctx),
     });
   }
   return out;

@@ -2,7 +2,7 @@ import "server-only";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Pool } from "./db";
 import * as repo from "./repo";
-import { tools } from "./tools";
+import { runTool, tools } from "./tools";
 
 /** Every tool answers with JSON text — agents parse it, humans can read it. */
 function json(value: unknown) {
@@ -16,7 +16,18 @@ function json(value: unknown) {
  * from the shared registry ([tools.ts](./tools.ts)) — the same set the in-app
  * AI chat uses — so there's one vocabulary rather than two.
  */
-export function createMcpServer(pool: Pool, ownerId: string): McpServer {
+export function createMcpServer(
+  pool: Pool,
+  ownerId: string,
+  /**
+   * Called after any tool that changed the store — the route passes the search
+   * reindexer. It is a parameter rather than something this module reaches for
+   * because reindexing is scheduled against the request's lifetime, which only
+   * the route knows it has: constructing a server outside one (a test, a script)
+   * must not drag a background job along with it.
+   */
+  onMutation?: () => void
+): McpServer {
   const server = new McpServer(
     { name: "goals-app", version: "1.0.0" },
     {
@@ -43,7 +54,7 @@ export function createMcpServer(pool: Pool, ownerId: string): McpServer {
       },
       // The MCP SDK validates args against inputSchema before calling us, so the
       // handler receives the shape it declared.
-      async (args) => json(await tool.handler(args as never, { pool, ownerId }))
+      async (args) => json(await runTool(tool, args, { pool, ownerId, onMutation }))
     );
   }
 

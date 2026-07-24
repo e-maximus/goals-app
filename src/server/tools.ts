@@ -16,7 +16,17 @@ import * as repo from "./repo";
  * agent can never reach across accounts. Handlers return a plain JSON-able value;
  * each adapter wraps it in whatever shape its transport needs.
  */
-export type ToolContext = { pool: Pool; ownerId: string };
+export type ToolContext = {
+  pool: Pool;
+  ownerId: string;
+  /**
+   * Called after a tool that changed the store. The transports pass the search
+   * reindexer here rather than the registry reaching for it, so the registry
+   * keeps no opinion about request lifecycles — and a test can call a tool
+   * without a background job starting behind it.
+   */
+  onMutation?: () => void;
+};
 
 export type ToolDef<Shape extends z.ZodRawShape = z.ZodRawShape> = {
   name: string;
@@ -26,12 +36,31 @@ export type ToolDef<Shape extends z.ZodRawShape = z.ZodRawShape> = {
   inputSchema: Shape;
   /** Mirrors MCP's `destructiveHint` — an irreversible delete. */
   destructive?: boolean;
+  /** Changes the store, so the search index needs rebuilding after it. */
+  mutates?: boolean;
   handler: (args: z.infer<z.ZodObject<Shape>>, ctx: ToolContext) => Promise<unknown>;
 };
 
 /** Preserve each tool's arg types through the heterogeneous array. */
 function defineTool<Shape extends z.ZodRawShape>(def: ToolDef<Shape>): ToolDef {
   return def as unknown as ToolDef;
+}
+
+/**
+ * Run a tool and, if it changed anything, tell the context so.
+ *
+ * Every transport goes through here rather than calling `handler` directly, so
+ * "a write happened" is observed in one place instead of being re-derived by
+ * each adapter — which is how one of them would eventually forget.
+ */
+export async function runTool(
+  def: ToolDef,
+  args: unknown,
+  ctx: ToolContext
+): Promise<unknown> {
+  const result = await def.handler(args as never, ctx);
+  if (def.mutates) ctx.onMutation?.();
+  return result;
 }
 
 /** A goal without its groups/notes bodies — enough to pick one to act on. */
@@ -90,6 +119,7 @@ export const tools: ToolDef[] = [
   // ---- goals ----
   defineTool({
     name: "create_goal",
+    mutates: true,
     title: "Create a goal",
     description: "Add a new goal. It starts with no groups and no notes.",
     inputSchema: {
@@ -104,6 +134,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "update_goal",
+    mutates: true,
     title: "Update a goal",
     description:
       "Change a goal's title, its 'why', or both. Anything you leave out stays as it is; " +
@@ -126,6 +157,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "delete_goal",
+    mutates: true,
     title: "Delete a goal",
     description: "Remove a goal and everything under it. This cannot be undone.",
     inputSchema: { goalId: z.string() },
@@ -137,6 +169,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "set_goal_status",
+    mutates: true,
     title: "Pause or resume a goal",
     description:
       "Set a goal's status: 'paused' shelves it without losing progress, 'active' resumes " +
@@ -152,6 +185,7 @@ export const tools: ToolDef[] = [
   // ---- groups ----
   defineTool({
     name: "add_group",
+    mutates: true,
     title: "Add a group",
     description: "Add a group of steps to a goal, e.g. 'Recording' or 'Promotion'.",
     inputSchema: { goalId: z.string(), title: z.string().min(1), dueDate: dueDateInput },
@@ -160,6 +194,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "rename_group",
+    mutates: true,
     title: "Rename a group",
     description: "Change a group's title and/or its due date.",
     inputSchema: { groupId: z.string(), title: z.string().min(1), dueDate: dueDateChange },
@@ -170,6 +205,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "delete_group",
+    mutates: true,
     title: "Delete a group",
     description: "Remove a group and its steps.",
     inputSchema: { groupId: z.string() },
@@ -183,6 +219,7 @@ export const tools: ToolDef[] = [
   // ---- steps ----
   defineTool({
     name: "add_step",
+    mutates: true,
     title: "Add steps",
     description:
       "Add one or more steps in a single call — pass a one-element array to add just one. " +
@@ -221,6 +258,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "edit_step",
+    mutates: true,
     title: "Edit a step",
     description:
       "Change a step's title and/or its description. Anything you leave out stays as it is; " +
@@ -241,6 +279,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "toggle_step",
+    mutates: true,
     title: "Toggle a step",
     description: "Mark a step done or not done. Omit `done` to flip whatever it is now.",
     inputSchema: {
@@ -251,6 +290,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "delete_step",
+    mutates: true,
     title: "Delete steps",
     description:
       "Remove one or more steps — pass a one-element array to delete just one. The whole " +
@@ -275,6 +315,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "add_note",
+    mutates: true,
     title: "Add notes",
     description:
       "Leave one or more notes on goals — an observation, a thought, a next step. Pass a " +
@@ -300,6 +341,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "edit_note",
+    mutates: true,
     title: "Edit a note",
     description:
       "Change a note's text and/or the step it's linked to. Anything you leave out stays as " +
@@ -322,6 +364,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "delete_note",
+    mutates: true,
     title: "Delete notes",
     description:
       "Remove one or more notes from goals' feeds — pass a one-element array to delete just " +
@@ -348,6 +391,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "create_task",
+    mutates: true,
     title: "Create a task",
     description:
       "Add a task: a one-off to-do (optionally with a due date) or a daily habit " +
@@ -372,6 +416,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "update_task",
+    mutates: true,
     title: "Update a task",
     description:
       "Change a task's title, description, goal link, daily flag or due date. Anything you " +
@@ -408,6 +453,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "set_task_done",
+    mutates: true,
     title: "Complete a task",
     description:
       "Mark a task done or not done. Omit `done` to flip whatever it is now. For a daily " +
@@ -420,6 +466,7 @@ export const tools: ToolDef[] = [
   }),
   defineTool({
     name: "delete_task",
+    mutates: true,
     title: "Delete a task",
     description: "Remove a task from the list. This cannot be undone.",
     inputSchema: { taskId: z.string() },
