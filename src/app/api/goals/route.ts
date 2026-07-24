@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { getPool } from "@/server/pool";
 import * as repo from "@/server/repo";
+import { clerkEmailResolver } from "@/server/clerk-email";
 import { resolveWebUser } from "@/server/users";
 import { logRequest } from "@/server/log";
 
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
   try {
     const { userId: clerkUserId } = await auth();
     const pool = await getPool();
-    const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId);
+    const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId, clerkEmailResolver(clerkUserId));
     userId = user.id;
     const res = json(await repo.getState(pool, user.id), setCookie);
     logRequest(request, res.status, startedAt, { userId });

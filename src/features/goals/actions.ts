@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { auth } from "@clerk/nextjs/server";
 import { getPool } from "@/server/pool";
 import * as repo from "@/server/repo";
+import { clerkEmailResolver } from "@/server/clerk-email";
 import { resolveWebUser, SESSION_COOKIE } from "@/server/users";
 import type { Goal, Task } from "@/lib/types";
 import type { ServerState, SaveResult } from "@/lib/sync";
@@ -28,7 +29,7 @@ async function currentUser() {
   });
   const { userId: clerkUserId } = await auth();
   const pool = await getPool();
-  const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId);
+  const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId, clerkEmailResolver(clerkUserId));
   if (setCookie) {
     cookieStore.set(SESSION_COOKIE, user.sessionToken, {
       path: "/",

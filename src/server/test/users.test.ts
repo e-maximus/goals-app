@@ -8,6 +8,7 @@ import {
   createUser,
   getOrCreateUserByClerkId,
   getUserByClerkId,
+  getUserByEmail,
   getUserBySession,
   resolveWebUser,
 } from "../users";
@@ -136,5 +137,97 @@ describe("getOrCreateUserByClerkId (MCP, cookieless)", () => {
     const first = await getOrCreateUserByClerkId(pool, "clerk_twice");
     const second = await getOrCreateUserByClerkId(pool, "clerk_twice");
     assert.equal(second.id, first.id);
+  });
+});
+
+describe("email fallback (a Clerk identity deleted and signed up again)", () => {
+  const withCookie = (token?: string) =>
+    new Request("http://localhost/api/goals", token ? { headers: { cookie: `session=${token}` } } : {});
+  // Stands in for clerkEmailResolver: the real one asks Clerk and returns the
+  // address only when it is verified, so a test that wants "unverified" or
+  // "no email on the identity" resolves null exactly as that helper would.
+  const email = (address: string | null) => async () => address;
+
+  it("records the verified email when a Clerk identity is first linked", async () => {
+    const anon = await createUser(pool);
+    const resolved = await resolveWebUser(
+      pool,
+      withCookie(anon.sessionToken),
+      "clerk_e1",
+      email("Person@Example.com")
+    );
+    assert.equal(resolved.user.email, "person@example.com", "stored lowercased");
+    assert.equal((await getUserByEmail(pool, "PERSON@EXAMPLE.COM"))?.id, anon.id, "matched case-insensitively");
+  });
+
+  it("re-links the original account over MCP instead of minting an empty one", async () => {
+    // The account as it was, with real goals on it and the old Clerk id.
+    const original = await createUser(pool);
+    await resolveWebUser(pool, withCookie(original.sessionToken), "clerk_old", email("me@example.com"));
+    await repo.createGoal(pool, original.id, "Ship the thing", "because");
+    const goalsBefore = (await repo.getState(pool, original.id)).goals.length;
+
+    // Deleted in Clerk, signed up again: same person, brand-new Clerk id, and no
+    // cookie on the MCP path to fall back on.
+    const viaMcp = await getOrCreateUserByClerkId(pool, "clerk_new", email("me@example.com"));
+
+    assert.equal(viaMcp.id, original.id, "the agent lands on the account that has the goals");
+    assert.equal(viaMcp.clerkUserId, "clerk_new", "the new Clerk id now owns the account");
+    assert.equal((await repo.getState(pool, viaMcp.id)).goals.length, goalsBefore);
+    assert.equal(await getUserByClerkId(pool, "clerk_old"), null, "the stale link is gone");
+  });
+
+  it("re-links on the web path too, ahead of the browser's cookie account", async () => {
+    const original = await createUser(pool);
+    await resolveWebUser(pool, withCookie(original.sessionToken), "clerk_w_old", email("web@example.com"));
+    const otherBrowser = await createUser(pool);
+
+    const resolved = await resolveWebUser(
+      pool,
+      withCookie(otherBrowser.sessionToken),
+      "clerk_w_new",
+      email("web@example.com")
+    );
+    assert.equal(resolved.user.id, original.id, "the email-matched account wins over the cookie one");
+    assert.ok(resolved.setCookie, "and this browser is re-pointed at it");
+  });
+
+  it("mints a fresh account when no verified email is available", async () => {
+    const original = await createUser(pool);
+    await resolveWebUser(pool, withCookie(original.sessionToken), "clerk_v_old", email("v@example.com"));
+
+    // An unverified address resolves null — otherwise signing up with someone
+    // else's email would hand over their goals.
+    const stranger = await getOrCreateUserByClerkId(pool, "clerk_stranger", email(null));
+    assert.notEqual(stranger.id, original.id, "no email, no recovery — a separate account");
+    assert.equal(stranger.email, null);
+  });
+
+  it("does not match a different address", async () => {
+    const original = await createUser(pool);
+    await resolveWebUser(pool, withCookie(original.sessionToken), "clerk_d_old", email("one@example.com"));
+
+    const other = await getOrCreateUserByClerkId(pool, "clerk_d_new", email("two@example.com"));
+    assert.notEqual(other.id, original.id);
+  });
+
+  it("prefers the Clerk id over the email when both point somewhere", async () => {
+    const byClerk = await getOrCreateUserByClerkId(pool, "clerk_p1", email("p1@example.com"));
+    // A second account holding a different address; the Clerk id must still win.
+    await getOrCreateUserByClerkId(pool, "clerk_p2", email("p2@example.com"));
+
+    const resolved = await getOrCreateUserByClerkId(pool, "clerk_p1", email("p2@example.com"));
+    assert.equal(resolved.id, byClerk.id);
+  });
+
+  it("backfills the email onto an account linked before the column existed", async () => {
+    // linkClerkUser without an email is exactly the pre-migration state.
+    const anon = await createUser(pool);
+    await resolveWebUser(pool, withCookie(anon.sessionToken), "clerk_b1");
+    assert.equal((await getUserByClerkId(pool, "clerk_b1"))?.email, null);
+
+    const resolved = await getOrCreateUserByClerkId(pool, "clerk_b1", email("back@example.com"));
+    assert.equal(resolved.id, anon.id);
+    assert.equal(resolved.email, "back@example.com", "the next deletion is now recoverable");
   });
 });
