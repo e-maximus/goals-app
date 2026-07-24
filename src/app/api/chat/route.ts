@@ -8,6 +8,7 @@ import {
 import { currentUserForRequest } from "@/server/current-user";
 import { errorResponse, jsonResponse } from "@/server/http";
 import { chatRequestSchema } from "@/features/chat/schemas";
+import { scheduleReindex } from "@/server/embeddings/schedule";
 import {
   appendMessages,
   getOrCreateActiveThread,
@@ -94,7 +95,11 @@ export async function POST(request: Request) {
       model: chatModel(),
       system: buildSystemPrompt(thread.summary),
       messages: await convertToModelMessages(conversation),
-      tools: buildChatTools({ pool, ownerId }),
+      tools: buildChatTools({
+        pool,
+        ownerId,
+        onMutation: () => scheduleReindex(pool, ownerId),
+      }),
       stopWhen: stepCountIs(MAX_STEPS),
       abortSignal: request.signal,
     });

@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { verifyClerkToken } from "@clerk/mcp-tools/next";
 import { getPool } from "@/server/pool";
 import { createMcpServer } from "@/server/mcp";
+import { scheduleReindex } from "@/server/embeddings/schedule";
 import { logRequest } from "@/server/log";
 import { clerkEmailResolver } from "@/server/clerk-email";
 import { getOrCreateUserByClerkId } from "@/server/users";
@@ -88,7 +89,7 @@ export async function POST(request: Request) {
   }
 
   const user = await getOrCreateUserByClerkId(pool, clerkUserId, clerkEmailResolver(clerkUserId));
-  const server = createMcpServer(pool, user.id);
+  const server = createMcpServer(pool, user.id, () => scheduleReindex(pool, user.id));
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
