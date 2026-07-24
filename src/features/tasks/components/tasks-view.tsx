@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { isTaskDone, isTaskOverdue, type Task } from "@/lib/types";
-import { PageShell, Crumbs } from "@/components/page-shell";
+import { PageShell } from "@/components/page-shell";
 import { LoadError } from "@/components/load-error";
 import { TaskDialog } from "./task-dialog";
 import { TaskRow } from "./task-row";
@@ -53,7 +53,7 @@ export function TasksView() {
   const dailyDone = daily.filter((t) => isTaskDone(t)).length;
 
   return (
-    <PageShell crumbs={<Crumbs root="My Tasks" />} width="lg">
+    <PageShell width="lg">
       {loadStatus === "loading" ? (
         <LoadingState label="Loading your tasks…" />
       ) : loadStatus === "error" ? (

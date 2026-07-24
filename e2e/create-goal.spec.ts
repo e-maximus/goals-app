@@ -46,7 +46,7 @@ test.describe("Creating a goal", () => {
 
     await expect(page.getByRole("heading", { name: "Learn to juggle" })).toBeVisible();
 
-    await page.getByRole("main").getByRole("link", { name: "My Goals" }).click();
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "My Goals" }).click();
     await expect(page).toHaveURL(/\/goals$/);
     await expect(page.getByRole("link", { name: /Learn to juggle/ })).toBeVisible();
   });

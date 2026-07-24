@@ -1,4 +1,4 @@
-import { Topbar, Crumbs } from "@/components/topbar";
+import { Topbar } from "@/components/topbar";
 import { cn } from "@/lib/utils";
 
 /** How wide the content column gets — each screen picks the one that fits it. */
@@ -11,16 +11,13 @@ const widths = {
 
 /**
  * The frame every page shares: the fixed Topbar pinned to the top of the
- * viewport, and a centered content column below it. The breadcrumb sits just
- * under the header line, above the page content; the header itself is identical
- * on every page.
+ * viewport, and a centered content column below it. The header itself is
+ * identical on every page.
  */
 export function PageShell({
-  crumbs,
   width = "lg",
   children,
 }: {
-  crumbs?: React.ReactNode;
   width?: keyof typeof widths;
   children: React.ReactNode;
 }) {
@@ -34,13 +31,8 @@ export function PageShell({
           widths[width],
         )}
       >
-        {crumbs && (
-          <div className="mb-6 min-w-0 truncate text-sm text-muted-foreground">{crumbs}</div>
-        )}
         {children}
       </main>
     </div>
   );
 }
-
-export { Crumbs };

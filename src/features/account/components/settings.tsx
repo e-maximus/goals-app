@@ -23,7 +23,7 @@ import {
   User,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { PageShell, Crumbs } from "@/components/page-shell";
+import { PageShell } from "@/components/page-shell";
 import { fetchMe, type Me } from "@/lib/sync";
 import { LoadingState } from "@/components/ui-bits";
 import { Button } from "@/components/ui/button";
@@ -83,7 +83,7 @@ export function Settings() {
   const authResolved = isLoaded || authTimedOut;
 
   return (
-    <PageShell crumbs={<Crumbs page="Settings" root={null} />} width="sm">
+    <PageShell width="sm">
       <div className="space-y-6">
         {status === "error" ? (
           <div className="flex flex-col items-center gap-3 py-24 text-center">
