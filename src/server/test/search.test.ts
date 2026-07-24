@@ -8,7 +8,8 @@ import { reindexOwner } from "../embeddings/reindex";
 import { EMBEDDING_DIMENSIONS, type Embedder } from "../embeddings/model";
 import { keywordArm, trigramArm } from "../search/arms";
 import { fuse } from "../search/rrf";
-import { search } from "../search/search";
+import { promoteGoals, search } from "../search/search";
+import type { SearchHit } from "@/lib/search";
 import { createOwner, reset, setupPool } from "./helpers";
 
 let pool: Pool;
@@ -155,6 +156,60 @@ describe("fuse", () => {
     assert.deepEqual(
       fused.map((h) => h.itemId),
       ["a"]
+    );
+  });
+});
+
+describe("promoteGoals", () => {
+  const hit = (over: Partial<SearchHit> & Pick<SearchHit, "kind" | "id">): SearchHit => ({
+    title: over.id,
+    goal: { id: "g-1", title: "Launch my podcast", url: "/goal/g-1" },
+    score: 0,
+    arms: ["keyword"],
+    ...over,
+  });
+
+  it("lifts a goal above its own steps when its own words matched", () => {
+    // Every one of these navigates to the same page, so stacking the steps above
+    // the goal was three ways of saying the same thing before the answer.
+    const promoted = promoteGoals([
+      hit({ kind: "step", id: "s-1" }),
+      hit({ kind: "step", id: "s-2" }),
+      hit({ kind: "goal", id: "g-1" }),
+    ]);
+
+    assert.deepEqual(
+      promoted.map((h) => h.id),
+      ["g-1", "s-1", "s-2"]
+    );
+  });
+
+  it("leaves the goal alone when only the vector arm found it", () => {
+    // "microphone": the step says it, the goal only drifted into range. The
+    // specific answer is the right one.
+    const promoted = promoteGoals([
+      hit({ kind: "step", id: "s-mic", arms: ["keyword", "vector"] }),
+      hit({ kind: "goal", id: "g-1", arms: ["vector"] }),
+    ]);
+
+    assert.deepEqual(
+      promoted.map((h) => h.id),
+      ["s-mic", "g-1"]
+    );
+  });
+
+  it("never moves a goal past another goal's results", () => {
+    const other = { id: "g-2", title: "Run a half marathon", url: "/goal/g-2" };
+    const promoted = promoteGoals([
+      hit({ kind: "goal", id: "g-2", goal: other }),
+      hit({ kind: "step", id: "s-2", goal: other }),
+      hit({ kind: "step", id: "s-1" }),
+      hit({ kind: "goal", id: "g-1" }),
+    ]);
+
+    assert.deepEqual(
+      promoted.map((h) => h.id),
+      ["g-2", "s-2", "g-1", "s-1"]
     );
   });
 });

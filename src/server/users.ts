@@ -307,7 +307,7 @@ const TEST_USER = {
  * (fixed ids, unlike real users). Returns the session token the fixture drops
  * into the browser so every test runs as this user.
  */
-export async function resetTestUser(pool: Pool): Promise<{ sessionToken: string }> {
+export async function resetTestUser(pool: Pool): Promise<{ id: string; sessionToken: string }> {
   await withTransaction(pool, async (client) => {
     const now = Date.now();
     await client.query(
@@ -328,5 +328,5 @@ export async function resetTestUser(pool: Pool): Promise<{ sessionToken: string 
     await client.query(`DELETE FROM goals WHERE id IN (${placeholders})`, seedIds);
     await insertGoals(client, TEST_USER.id, seedGoals());
   });
-  return { sessionToken: TEST_USER.sessionToken };
+  return { id: TEST_USER.id, sessionToken: TEST_USER.sessionToken };
 }

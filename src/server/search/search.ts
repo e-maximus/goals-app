@@ -6,6 +6,7 @@ import { ungroupedSteps, type Goal, type Task } from "../domain";
 import { embedder, type Embedder } from "../embeddings/model";
 import { keywordArm, trigramArm, vectorArm, type Arm, type ArmHit } from "./arms";
 import { fuse } from "./rrf";
+import type { SearchHit, SearchKind } from "@/lib/search";
 import { log } from "../log";
 
 /**
@@ -19,22 +20,9 @@ import { log } from "../log";
  * dropped.
  */
 
-export type SearchKind = "goal" | "step" | "note" | "task";
-
-export type SearchHit = {
-  kind: SearchKind;
-  id: string;
-  /** The item's own headline — a goal's title, a step's text, a note's first line. */
-  title: string;
-  /** Supporting text, when the item has any: a why, a description, the rest of a note. */
-  detail?: string;
-  /** The goal this sits under, with a link, or null for an unlinked task. */
-  goal: { id: string; title: string; url: string } | null;
-  done?: boolean;
-  score: number;
-  /** Which arms found it. Explains a result and makes a bad ranking debuggable. */
-  arms: Arm[];
-};
+// The result shape is the wire format, declared once in src/lib/search.ts so the
+// palette and this module cannot drift apart.
+export type { SearchHit, SearchKind } from "@/lib/search";
 
 export type SearchOptions = {
   limit?: number;
@@ -76,13 +64,64 @@ export async function search(
 
   const hits: SearchHit[] = [];
   for (const hit of fused) {
-    if (hits.length >= limit) break;
     const item = index.get(`${hit.kind}:${hit.itemId}`);
     if (!item) continue;
     if (options.kinds && !options.kinds.includes(item.kind)) continue;
     hits.push({ ...item, score: hit.score, arms: hit.arms });
   }
-  return hits;
+  return promoteGoals(hits).slice(0, limit);
+}
+
+/**
+ * Lift a goal above its own steps and notes.
+ *
+ * Two things conspire against the parent. Its indexed text is short — a title
+ * and a why — while every step under it carries that title *plus* its own words,
+ * so on the vector arm a child is reliably the denser match for anything
+ * resembling the goal's name. And in this app a step or note has no page of its
+ * own: clicking one navigates to its goal. So the pre-fix behaviour was three
+ * steps of one goal stacked above the goal itself, every one of them going to
+ * the same place.
+ *
+ * The rule is narrow twice over. A goal moves only within its own family, never
+ * past another goal's results. And it moves only if a keyword or trigram arm
+ * found it — those match on the item's own words alone, so this fires when the
+ * user typed something the goal itself says, and not when the goal merely drifted
+ * into range on the vector arm. That distinction is the whole difference between
+ * "podcast", where the goal is the answer, and "microphone", where the step that
+ * actually mentions one is.
+ */
+export function promoteGoals(hits: SearchHit[]): SearchHit[] {
+  const matchedOwnWords = (hit: SearchHit) =>
+    hit.arms.includes("keyword") || hit.arms.includes("trigram");
+
+  const bestRankPerGoal = new Map<string, number>();
+  hits.forEach((hit, rank) => {
+    const goalId = hit.goal?.id;
+    if (!goalId) return;
+    if (!bestRankPerGoal.has(goalId)) bestRankPerGoal.set(goalId, rank);
+  });
+
+  return hits
+    .map((hit, rank) => ({
+      hit,
+      rank:
+        hit.kind === "goal" && matchedOwnWords(hit)
+          ? (bestRankPerGoal.get(hit.id) ?? rank)
+          : rank,
+      original: rank,
+    }))
+    // A promoted goal now shares a rank with the child it was promoted to, so
+    // the goal has to win that tie — otherwise it lands just below the child and
+    // nothing has moved. The original rank keeps everything else stable.
+    .sort(
+      (a, b) =>
+        a.rank - b.rank ||
+        Number(b.hit.kind === "goal" && matchedOwnWords(b.hit)) -
+          Number(a.hit.kind === "goal" && matchedOwnWords(a.hit)) ||
+        a.original - b.original
+    )
+    .map((entry) => entry.hit);
 }
 
 /**

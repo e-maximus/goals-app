@@ -23,6 +23,25 @@ import type { Arm, ArmHit } from "./arms";
  */
 const K = 60;
 
+/**
+ * How much each arm's opinion counts.
+ *
+ * Equal by default, with one exception. `word_similarity` saturates at 1.0 for
+ * anything containing the query verbatim, so on an ordinary spelled-correctly
+ * query the trigram arm ranks every exact match identically and its *order*
+ * among them is close to meaningless. Weighted equally, that noise was enough to
+ * tie a goal against one of its own steps and let the tie decide.
+ *
+ * At half weight the arm still rescues a query only it can answer — a typo,
+ * where it is the sole voice — but stops overruling the arms that actually
+ * discriminate when they have something to say.
+ */
+const ARM_WEIGHT: Record<Arm, number> = {
+  keyword: 1,
+  vector: 1,
+  trigram: 0.5,
+};
+
 export type FusedHit = {
   kind: string;
   itemId: string;
@@ -42,7 +61,7 @@ export function fuse(rankings: { arm: Arm; hits: ArmHit[] }[]): FusedHit[] {
     hits.forEach((hit, index) => {
       const key = `${hit.kind}:${hit.itemId}`;
       const existing = merged.get(key);
-      const contribution = 1 / (K + index + 1);
+      const contribution = ARM_WEIGHT[arm] / (K + index + 1);
       if (existing) {
         existing.score += contribution;
         existing.arms.push(arm);
@@ -57,7 +76,13 @@ export function fuse(rankings: { arm: Arm; hits: ArmHit[] }[]): FusedHit[] {
     });
   }
 
+  // The last comparison is not cosmetic: without a total order, two rows on an
+  // identical score swap places between otherwise identical requests, and the
+  // result the user gets depends on the query plan.
   return [...merged.values()].sort(
-    (a, b) => b.score - a.score || b.arms.length - a.arms.length
+    (a, b) =>
+      b.score - a.score ||
+      b.arms.length - a.arms.length ||
+      `${a.kind}:${a.itemId}`.localeCompare(`${b.kind}:${b.itemId}`)
   );
 }

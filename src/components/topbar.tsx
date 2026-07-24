@@ -10,6 +10,7 @@ import { useStore } from "@/lib/store";
 import { useChatUi } from "@/lib/chat-ui";
 import { Button } from "@/components/ui/button";
 import { SaveStatus } from "@/components/save-status";
+import { SearchButton } from "@/features/search";
 import { fetchMe, type Me } from "@/lib/sync";
 import { cn } from "@/lib/utils";
 
@@ -206,6 +207,7 @@ export function Topbar() {
         <NavLinks />
       </div>
       <div className="flex flex-shrink-0 items-center gap-2.5">
+        <SearchButton />
         <SaveStatus status={saveStatus} />
         <UserChip />
         {/* Only when definitively signed out — Show renders nothing while Clerk

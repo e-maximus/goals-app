@@ -6,6 +6,8 @@
  */
 export type { Note, Goal, GoalStatus, Group, Step, Task } from "@/lib/types";
 export {
+  daysSinceActivity,
+  isGoalStale,
   noteCount,
   goalProgress,
   goalStepCounts,
