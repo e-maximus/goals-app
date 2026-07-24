@@ -42,7 +42,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17-alpine
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: goals
           POSTGRES_PASSWORD: goals
@@ -80,7 +80,7 @@ jobs:
     # starts the dev server itself, pointed at goals_test via TEST_DATABASE_URL.
     services:
       postgres:
-        image: postgres:17-alpine
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: goals
           POSTGRES_PASSWORD: goals

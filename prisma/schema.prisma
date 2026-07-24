@@ -161,6 +161,11 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+// `embeddings` (migration 015) has no model here on purpose. Its columns are
+// things Prisma cannot express — a pgvector `vector(768)` and two GENERATED
+// columns — and the search layer talks to it in raw SQL only, so a model would
+// be a declaration nothing uses and `createMany` could not satisfy.
+
 model SchemaMigration {
   name       String   @id
   applied_at DateTime @default(now())
