@@ -289,4 +289,91 @@ export const migrations: Migration[] = [
       ALTER TABLE users DROP COLUMN IF EXISTS pat;
     `,
   },
+  {
+    // Numbered 015, not 014: an unmerged branch already claims 014_user_email,
+    // and leaving the gap keeps the two from reading as the same migration.
+    // Order comes from this array, not the number, so the gap is cosmetic.
+    name: "015_embeddings",
+    sql: `
+      -- The search index. One row per searchable thing (a goal, a step, a note,
+      -- a task), carrying everything the three retrieval arms need:
+      --
+      --   vector  -> \`embedding\`, cosine distance
+      --   BM25    -> \`tsv\`, term statistics computed per owner at query time
+      --   fuzzy   -> \`search_text\`, trigram similarity for typos and the
+      --              Russian morphology the 'simple' config does not stem
+      --
+      -- It is a derived index, never a source of truth: every row can be rebuilt
+      -- from goals/steps/notes/tasks, so a lost or stale row costs a reindex and
+      -- nothing more.
+
+      CREATE EXTENSION IF NOT EXISTS vector;
+      CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+      CREATE TABLE IF NOT EXISTS embeddings (
+        owner_id     TEXT   NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        kind         TEXT   NOT NULL,
+        item_id      TEXT   NOT NULL,
+
+        -- The goal this chunk belongs to, so a hit can be shown in context.
+        -- Null for a task not linked to one.
+        --
+        -- Deliberately NOT a foreign key. The whole-store PUT rewrites goals by
+        -- deleting and re-inserting them, so an ON DELETE CASCADE here would
+        -- empty the index on every save — and the reindex that followed would
+        -- re-embed the entire corpus instead of the one row that changed, which
+        -- is the exact cost the content-hash diff exists to avoid. Removing rows
+        -- for things that are gone is syncChunks' job, and it runs on every
+        -- write anyway.
+        goal_id      TEXT,
+
+        -- Two texts, deliberately. \`content\` is what gets embedded and carries
+        -- the parent's title as context — "Buy tickets" means nothing to an
+        -- embedding without the goal it sits under. The keyword arms must NOT see
+        -- that context: it would put the same words in every row and drown the
+        -- terms that actually distinguish one chunk from another. So they index
+        -- \`title_text\`/\`body_text\`, which hold the item's own words only.
+        title_text   TEXT   NOT NULL,
+        body_text    TEXT   NOT NULL DEFAULT '',
+        content      TEXT   NOT NULL,
+
+        -- sha256 of \`content\`. Reindexing diffs on this and re-embeds only what
+        -- actually changed, which is what keeps a whole-store PUT cheap.
+        content_hash TEXT   NOT NULL,
+
+        -- Nullable on purpose: with no embedding provider configured the rows are
+        -- still written and BM25 + trigram search still work. \`model\` records what
+        -- produced the vector, so changing the configured model marks every row
+        -- stale without any extra bookkeeping.
+        embedding    vector(768),
+        model        TEXT,
+
+        updated_at   BIGINT NOT NULL,
+
+        -- Weighted so a hit in the item's own title outranks one in its body.
+        tsv          tsvector GENERATED ALWAYS AS (
+                       setweight(to_tsvector('simple', title_text), 'A') ||
+                       setweight(to_tsvector('simple', body_text), 'B')
+                     ) STORED,
+        search_text  TEXT GENERATED ALWAYS AS (title_text || ' ' || body_text) STORED,
+
+        -- Owner-first, so every lookup by owner is an index scan and no query can
+        -- reach a row without naming its owner. Ids are globally unique, but a
+        -- bare-id filter would still cross accounts.
+        PRIMARY KEY (owner_id, kind, item_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS embeddings_tsv_idx
+        ON embeddings USING GIN (tsv);
+      CREATE INDEX IF NOT EXISTS embeddings_trgm_idx
+        ON embeddings USING GIN (search_text gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS embeddings_goal_id_idx
+        ON embeddings (goal_id);
+
+      -- No ANN index (HNSW/IVFFlat) on \`embedding\`. Every search is filtered to
+      -- one owner, which is a few hundred rows — an exact scan is both faster and
+      -- exact, where an ANN index under a hard pre-filter loses recall. Add one
+      -- when a single account's corpus makes that untrue.
+    `,
+  },
 ];
