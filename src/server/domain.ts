@@ -15,6 +15,8 @@ export type {
   Task,
 } from "@/lib/types";
 export {
+  daysSinceActivity,
+  isGoalStale,
   noteCount,
   goalProgress,
   goalStepCounts,

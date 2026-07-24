@@ -20,7 +20,8 @@ import type { Pool } from "../db";
  * otherwise be computed over other people's text.
  */
 
-export type Arm = "keyword" | "vector" | "trigram";
+// One name for an arm, shared with the client so a hit can say what found it.
+export type { SearchArm as Arm } from "@/lib/search";
 
 export type ArmHit = { kind: string; itemId: string; score: number };
 
@@ -98,6 +99,21 @@ const B = 0.75;
 const TITLE_BOOST = 1.6;
 
 /**
+ * Below this a vector hit is the nearest row rather than a relevant one.
+ *
+ * A cosine search always has a nearest neighbour, so without a floor this arm
+ * answers *every* query with a full page of results and "nothing matches" becomes
+ * unreachable — which is exactly what happened: a search for "xylophone repair"
+ * came back with somebody's podcast notes.
+ *
+ * Measured on the seeded store with text-embedding-3-small: queries about
+ * nothing in the corpus peak around 0.13–0.16, real matches sit at 0.40 and up.
+ * The gap is wide, so the exact cut matters little; it is placed nearer the noise
+ * so a weak-but-real match still gets through.
+ */
+const VECTOR_THRESHOLD = 0.3;
+
+/**
  * Cosine similarity against the query's embedding.
  *
  * Rows without a vector simply don't match — that is the whole degradation story
@@ -118,9 +134,10 @@ export async function vectorArm(
         -- Never compare across models: their coordinates mean different things,
         -- so a leftover vector from the previous model is noise, not a weak hit.
         AND model = $3
+        AND 1 - (embedding <=> $2::vector) >= $4
       ORDER BY embedding <=> $2::vector
-      LIMIT $4`,
-    [ownerId, `[${queryEmbedding.join(",")}]`, modelName, limit]
+      LIMIT $5`,
+    [ownerId, `[${queryEmbedding.join(",")}]`, modelName, VECTOR_THRESHOLD, limit]
   );
   return rows.map(toHit);
 }
@@ -146,7 +163,12 @@ export async function trigramArm(
        FROM embeddings
       WHERE owner_id = $1
         AND word_similarity($2, search_text) >= $3
-      ORDER BY score DESC
+      -- word_similarity saturates at 1.0 for anything containing the query
+      -- verbatim, so on an exact match it stops discriminating and every such
+      -- row ties. Shorter text carries the same match with less around it — the
+      -- intuition BM25 spends a whole term on — and item_id makes the order
+      -- reproducible rather than whatever the plan happened to emit.
+      ORDER BY score DESC, length(search_text) ASC, item_id ASC
       LIMIT $4`,
     [ownerId, query, TRIGRAM_THRESHOLD, limit]
   );

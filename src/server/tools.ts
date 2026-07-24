@@ -4,6 +4,8 @@ import type { Pool } from "./db";
 import { goalProgress, goalStatus, goalStepCounts, lastActivityAt, type Goal } from "./domain";
 import { goalHref } from "@/lib/utils";
 import * as repo from "./repo";
+import { search } from "./search/search";
+import { buildAgenda } from "./agenda";
 
 /**
  * The neutral tool registry: one description of every goals/tasks operation an
@@ -113,6 +115,50 @@ export const tools: ToolDef[] = [
     handler: async (args, { pool, ownerId }) => {
       const goal = await repo.getGoal(pool, ownerId, args.goalId);
       return { ...goal, url: goalHref(goal) };
+    },
+  }),
+  defineTool({
+    name: "search_goals",
+    title: "Search",
+    description:
+      "Find things by meaning or wording across the user's goals, steps, notes and tasks. " +
+      "Use this — rather than list_goals — whenever the user refers to something by " +
+      "content instead of naming it: 'what was I planning about the move?', 'did I write " +
+      "anything on pricing?'. It handles paraphrases and typos, and searches finished " +
+      "work as well as live work. It does NOT answer 'what should I do today' — that is " +
+      "get_agenda.",
+    inputSchema: {
+      query: z.string().min(1).describe("What to look for, in the user's own words"),
+      kinds: z
+        .array(z.enum(["goal", "step", "note", "task"]))
+        .optional()
+        .describe("Restrict to some kinds; omit to search everything"),
+      limit: z.number().int().min(1).max(25).optional().describe("Default 8"),
+    },
+    handler: (args, { pool, ownerId }) =>
+      search(pool, ownerId, args.query, { kinds: args.kinds, limit: args.limit }),
+  }),
+  defineTool({
+    name: "get_agenda",
+    title: "Get the agenda",
+    description:
+      "What is overdue, due today, and coming up, plus goals that have gone quiet. Use " +
+      "this for 'what should I do today', 'what's urgent', 'where am I slipping' — these " +
+      "are questions about deadlines and status, not about content, so do not search for " +
+      "them. Paused goals and finished work are excluded. Counts are included so you can " +
+      "say how much is not listed.",
+    inputSchema: {
+      horizonDays: z
+        .number()
+        .int()
+        .min(1)
+        .max(90)
+        .optional()
+        .describe("How far ahead 'upcoming' looks. Default 7"),
+    },
+    handler: async (args, { pool, ownerId }) => {
+      const { goals, tasks } = await repo.getState(pool, ownerId);
+      return buildAgenda(goals, tasks, Date.now(), args.horizonDays);
     },
   }),
 

@@ -222,7 +222,7 @@ describe("runTool", () => {
   it("marks every tool that touches the store", () => {
     // A write tool missing `mutates` would silently stop reindexing, and the
     // only symptom would be search quietly going stale. Names are the contract.
-    const reads = new Set(["list_goals", "get_goal", "list_notes", "list_tasks"]);
+    const reads = new Set(["list_goals", "get_goal", "list_notes", "list_tasks", "search_goals", "get_agenda"]);
     for (const tool of tools) {
       assert.equal(
         tool.mutates ?? false,

@@ -55,6 +55,13 @@ export default defineConfig({
       PORT: String(PORT),
       DATABASE_URL: TEST_DATABASE_URL,
       ENABLE_TEST_RESET: "1",
+      // No embedding provider, so the suite runs the same way here as on CI,
+      // which has no key either. It also removes a real source of flake: the
+      // reindex after a write is scheduled, not awaited, so a late one from the
+      // previous test could land mid-test and change what search returns. With
+      // no provider that reindex is text-only and idempotent. The semantic arm
+      // is covered by the server tests, which inject a deterministic embedder.
+      EMBEDDING_API_KEY: "",
     },
   },
 });
