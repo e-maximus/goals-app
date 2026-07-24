@@ -34,8 +34,8 @@ export async function reset(pool: Pool): Promise<void> {
  */
 export async function createOwner(pool: Pool, id = "owner-1"): Promise<string> {
   await pool.query(
-    "INSERT INTO users (id, session_token, pat, created_at) VALUES ($1, $2, $3, $4)",
-    [id, `${id}-session`, `${id}-pat`, Date.now()]
+    "INSERT INTO users (id, session_token, created_at) VALUES ($1, $2, $3)",
+    [id, `${id}-session`, Date.now()]
   );
   return id;
 }

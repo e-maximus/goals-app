@@ -278,4 +278,15 @@ export const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS chat_messages_owner_id_idx  ON chat_messages (owner_id);
     `,
   },
+  {
+    name: "013_drop_pat",
+    sql: `
+      -- \`pat\` was the personal access token a user pasted into an MCP client,
+      -- back when the MCP endpoint authenticated by comparing a bearer token
+      -- against this column. MCP moved to Clerk OAuth 2.1 (see the /api/mcp
+      -- route): the token is no longer read anywhere, only minted and stored.
+      -- Drop it rather than keep a credential-shaped secret on every row.
+      ALTER TABLE users DROP COLUMN IF EXISTS pat;
+    `,
+  },
 ];

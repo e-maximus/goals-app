@@ -26,12 +26,11 @@ beforeEach(async () => {
 });
 
 describe("createUser", () => {
-  it("mints two distinct tokens and seeds the starter goal", async () => {
+  it("mints a session token and seeds the starter goal", async () => {
     const user = await createUser(pool);
     assert.ok(user.id);
     assert.ok(user.sessionToken);
-    assert.ok(user.pat);
-    assert.notEqual(user.sessionToken, user.pat);
+    assert.notEqual(user.id, user.sessionToken);
 
     const state = await repo.getState(pool, user.id);
     assert.equal(state.initialized, true);

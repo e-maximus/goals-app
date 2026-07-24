@@ -71,6 +71,9 @@ export function randomIdentity(): { name: string; avatar: string } {
  *
  * Neither key is the identity — `id` is, and it's what goals hang off — so the
  * session can be reissued and the Clerk link is a durable second key on top.
+ * (There used to be a third: `pat`, a personal access token pasted into an MCP
+ * client. MCP is Clerk-authorized now, and the column is gone — see migration
+ * 013_drop_pat.)
  *
  * There is no password and no login required for the web app: a first-time
  * visitor is simply created, seeded with the example goals, and handed a session
@@ -82,14 +85,10 @@ export function randomIdentity(): { name: string; avatar: string } {
  * browser and we resolve back to it (see resolveWebUser) — and unlocks MCP,
  * which is Clerk-authorized only.
  *
- * `pat` is a legacy opaque token still minted and stored per user, but no longer
- * an auth credential anywhere; MCP moved to Clerk OAuth. The column is kept so
- * the write path is unchanged; drop it in a later migration.
  */
 export type User = {
   id: string;
   sessionToken: string;
-  pat: string;
   /** The linked Clerk identity, or null while the account is purely anonymous. */
   clerkUserId: string | null;
   /** Generated adjective-animal name, e.g. "Shiny Fox". */
@@ -106,19 +105,17 @@ function newToken(): string {
 type UserRow = {
   id: string;
   session_token: string;
-  pat: string;
   clerk_user_id: string | null;
   display_name: string | null;
   avatar: string | null;
 };
 
-const USER_COLS = "id, session_token, pat, clerk_user_id, display_name, avatar";
+const USER_COLS = "id, session_token, clerk_user_id, display_name, avatar";
 
 function toUser(row: UserRow): User {
   return {
     id: row.id,
     sessionToken: row.session_token,
-    pat: row.pat,
     clerkUserId: row.clerk_user_id,
     displayName: row.display_name,
     avatar: row.avatar,
@@ -137,15 +134,14 @@ export async function createUser(pool: Pool): Promise<User> {
     const user: User = {
       id: uid(),
       sessionToken: newToken(),
-      pat: newToken(),
       clerkUserId: null,
       displayName: identity.name,
       avatar: identity.avatar,
     };
     await client.query(
-      `INSERT INTO users (id, session_token, pat, goals_updated_at, created_at, display_name, avatar)
-       VALUES ($1, $2, $3, $4, $4, $5, $6)`,
-      [user.id, user.sessionToken, user.pat, now, user.displayName, user.avatar]
+      `INSERT INTO users (id, session_token, goals_updated_at, created_at, display_name, avatar)
+       VALUES ($1, $2, $3, $3, $4, $5)`,
+      [user.id, user.sessionToken, now, user.displayName, user.avatar]
     );
     await insertGoals(client, user.id, withFreshIds(starterGoals()));
     return user;
@@ -234,7 +230,7 @@ function readCookie(request: Request, name: string): string | undefined {
 
 /**
  * Serialize the session Set-Cookie. httpOnly so page scripts can't read the
- * session token (the PAT, not this, is what the UI exposes for MCP), Lax so it
+ * session token — nothing in the UI ever exposes it — Lax so it
  * still rides top-level navigations, Secure in production where we're on https.
  */
 export function sessionSetCookie(token: string): string {
@@ -304,7 +300,6 @@ export async function resolveWebUser(
 const TEST_USER = {
   id: "e2e-user",
   sessionToken: "e2e-session-token",
-  pat: "e2e-pat-token",
 };
 
 /**
@@ -316,10 +311,10 @@ export async function resetTestUser(pool: Pool): Promise<{ sessionToken: string 
   await withTransaction(pool, async (client) => {
     const now = Date.now();
     await client.query(
-      `INSERT INTO users (id, session_token, pat, goals_updated_at, created_at, display_name, avatar)
-       VALUES ($1, $2, $3, $4, $4, 'Shiny Fox', '🦊')
-       ON CONFLICT (id) DO UPDATE SET goals_updated_at = $4, display_name = 'Shiny Fox', avatar = '🦊'`,
-      [TEST_USER.id, TEST_USER.sessionToken, TEST_USER.pat, now]
+      `INSERT INTO users (id, session_token, goals_updated_at, created_at, display_name, avatar)
+       VALUES ($1, $2, $3, $3, 'Shiny Fox', '🦊')
+       ON CONFLICT (id) DO UPDATE SET goals_updated_at = $3, display_name = 'Shiny Fox', avatar = '🦊'`,
+      [TEST_USER.id, TEST_USER.sessionToken, now]
     );
     await client.query("DELETE FROM goals WHERE owner_id = $1", [TEST_USER.id]);
     await client.query("DELETE FROM tasks WHERE owner_id = $1", [TEST_USER.id]);

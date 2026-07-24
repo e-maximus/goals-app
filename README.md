@@ -70,20 +70,25 @@ src/
       chat/route.ts       # the AI chat endpoint (AI SDK)
       mcp/route.ts        # MCP endpoint (Streamable HTTP), OAuth 2.1-authorized
       health/route.ts     # health probe
+      test/reset/route.ts # env-gated e2e reset to the canonical seed
   components/             # shared UI primitives (ui/) and layout
   features/               # feature modules: goals/, tasks/, chat/, account/
   lib/
     types.ts              # Goal / Group / Step / Note / Task types + helpers
     store.ts              # Zustand store — loads from and writes to the server
+    db.ts                 # the Prisma client singleton
     utils.ts              # cn() and helpers
   server/
     pool.ts               # the shared, migrated pool
-    db.ts                 # pool + migrations runner
+    db.ts                 # Prisma adapter: model API, transactions, raw queries
     repo.ts               # the repo (all reads and writes, scoped by owner)
     domain.ts             # re-exports the shared types for the server
     tools.ts              # the neutral tool registry (shared by MCP and chat)
     mcp.ts                # the MCP server, built from the tool registry
     chat-agent.ts         # the in-app AI agent, built from the same registry
+    chat-repo.ts          # chat threads and messages, scoped by owner
+    llm.ts                # the model client the chat agent runs on
+    log.ts                # structured request logging
     users.ts              # accounts: per-user seeding, cookie + Clerk auth
     seed.ts               # example data, seeded per user on first visit
     migrations.ts         # schema migrations, inlined as strings
