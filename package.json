@@ -1,6 +1,6 @@
 {
   "name": "goals-app",
-  "version": "2.4.6",
+  "version": "2.4.7",
   "private": true,
   "scripts": {
     "postinstall": "prisma generate || echo 'skip prisma generate: schema not present in this install layer; prebuild will generate it'",
