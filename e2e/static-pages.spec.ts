@@ -21,8 +21,9 @@ test.describe("Static pages", () => {
 
   test("the About page tells the story and links back via the nav", async ({ page }) => {
     await page.goto("/about");
-    await expect(page.getByRole("heading", { name: "Keep going.", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("they stay big");
     await expect(page.getByText("Why this exists")).toBeVisible();
+    await expect(page.getByText("What’s inside")).toBeVisible();
     // The page content itself carries no "My Goals" link — only the persistent nav does.
     await expect(page.getByRole("main").getByRole("link", { name: "My Goals" })).toHaveCount(0);
     // The persistent nav is how you get back to the goals.

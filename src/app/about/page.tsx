@@ -1,104 +1,199 @@
 import type { Metadata } from "next";
-import { StaticPage } from "@/components/static-page";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
+import { ArrowRight, Bot, CheckCircle2, ListTodo, NotebookPen, Target } from "lucide-react";
+import { PageShell } from "@/components/page-shell";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
   title: "About — Keep Going",
   description: "Why Keep Going exists: big goals become doable when you break them into steps.",
 };
 
+const STEPS = [
+  {
+    title: "Write the goal down",
+    body: "As big and as vague as it really is. “Learn the guitar” counts. Naming it is what turns a wish into something you can work on.",
+  },
+  {
+    title: "Break it until it’s easy",
+    body: "Split the goal into groups, and groups into steps. Keep splitting until the next step is something you could finish today, without preparing for it.",
+  },
+  {
+    title: "Take one step",
+    body: "Check it off. Progress is computed for you — the bar moves, and the goal stops feeling like a wall and starts feeling like a staircase.",
+  },
+  {
+    title: "Come back tomorrow",
+    body: "That’s the whole method. Not intensity, not a system to maintain — just the next small step, often enough that it adds up.",
+  },
+];
+
+const PIECES = [
+  {
+    icon: Target,
+    title: "Goals, groups, steps",
+    body: "The core. A goal holds groups, a group holds steps, and everything you check off rolls up into one honest progress number. Add a due date where a deadline actually helps.",
+  },
+  {
+    icon: ListTodo,
+    title: "Tasks",
+    body: "The flat list beside your goals — one-off to-dos and daily habits. They can point at a goal for context, but they never inflate its progress. Doing the dishes isn’t progress on a marathon.",
+  },
+  {
+    icon: NotebookPen,
+    title: "Notes",
+    body: "A feed per goal for the thinking the structure can’t hold: what’s working, what stalled, why you changed the plan. Future you will want to know.",
+  },
+  {
+    icon: Bot,
+    title: "An assistant, if you want one",
+    body: "Connect Claude, Cursor, or any MCP client and it can read and edit your goals with you — break one down, tick off steps, leave a note. Authorized through sign-in, no token to paste or leak.",
+  },
+];
+
 export default function AboutPage() {
   return (
-    <StaticPage>
-      <section className="space-y-3 pt-4 text-center">
-        <p className="text-4xl" aria-hidden>
-          🏔️
-        </p>
-        <h1 className="text-3xl font-bold tracking-tight">Keep going.</h1>
-        <p className="text-lg text-muted-foreground">
-          Everything starts with a small step.
-        </p>
-      </section>
+    <PageShell width="lg">
+      <div className="space-y-16 pb-10">
+        {/* Hero — a statement, not a headline */}
+        <section className="pt-6">
+          <p className="text-4xl leading-none" aria-hidden>
+            🏔️
+          </p>
+          <h1 className="mt-5 max-w-3xl text-balance text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">
+            Big goals don’t fail because you’re lazy. They fail because they stay big.
+          </h1>
+          <p className="mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+            Keep Going is a small tool built around one idea: break a goal down until the next
+            step is something you can actually do — then do it, check it off, and let the
+            progress take care of itself.
+          </p>
+          <div className="mt-7 flex flex-wrap items-center gap-3">
+            <Button nativeButton={false} render={<Link href="/goals" />}>
+              Start a goal <ArrowRight data-icon="inline-end" />
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              No sign-up needed — you get your own space on the first visit.
+            </span>
+          </div>
+        </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Why this exists</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm leading-relaxed text-muted-foreground">
-          <p>
-            Big goals fail for a boring reason: they stay big. &ldquo;Learn to play the
-            guitar&rdquo; or &ldquo;run a marathon&rdquo; is not something you can do today —
-            so you do nothing today, and nothing tomorrow.
-          </p>
-          <p>
-            <span className="font-medium text-foreground">Keep Going</span>{" "}
-            is a small tool built around one idea: break a goal into groups and steps until
-            the next step is something you can actually do. Then do it, check it off, and
-            watch the progress bar move. That&apos;s the whole trick — momentum beats
-            motivation.
-          </p>
-          <p>
-            It started as a personal project — built for its author&apos;s own use, not as a
-            product with a business plan behind it. It turned out useful, so it stayed online
-            for anyone who wants it.
-          </p>
-        </CardContent>
-      </Card>
+        {/* The story */}
+        <section className="grid gap-8 border-t border-border pt-10 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] md:gap-12">
+          <h2 className="text-sm font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            Why this exists
+          </h2>
+          <div className="max-w-2xl space-y-4 text-[15px] leading-relaxed text-muted-foreground">
+            <p>
+              “Run a marathon.” “Change careers.” “Finally learn to draw.” None of those are
+              things you can do today, so today you do nothing — and tomorrow the goal is exactly
+              where you left it. The problem was never willpower. It’s that the goal was never
+              turned into a next action.
+            </p>
+            <p>
+              <span className="font-medium text-foreground">Keep Going</span> does one thing:
+              it makes you break the goal apart. Groups, then steps, then smaller steps, until
+              what’s in front of you is boring enough to just start. Check it off and the bar
+              moves — which is the point.{" "}
+              <span className="font-medium text-foreground">Momentum beats motivation.</span>
+            </p>
+            <p>
+              It started as a personal project, built for its author’s own goals — not a startup,
+              not a product with a plan behind it. It turned out useful, so it stayed online for
+              anyone who wants it.
+            </p>
+          </div>
+        </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>How it works</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-muted-foreground">
-            <li>Write down a goal — as big and scary as it really is.</li>
-            <li>Split it into groups, and groups into concrete steps.</li>
-            <li>Check off steps as you go; progress is computed for you.</li>
-            <li>
-              Optionally connect an AI agent over MCP, so your assistant can read and update
-              your goals with you.
-            </li>
+        {/* How it works — four beats */}
+        <section className="grid gap-8 border-t border-border pt-10 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] md:gap-12">
+          <h2 className="text-sm font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            How it works
+          </h2>
+          <ol className="max-w-2xl space-y-6">
+            {STEPS.map((s, i) => (
+              <li key={s.title} className="flex gap-4">
+                <span
+                  aria-hidden
+                  className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-lg bg-secondary text-[13px] font-bold text-secondary-foreground"
+                >
+                  {i + 1}
+                </span>
+                <div>
+                  <h3 className="text-[15px] font-semibold">{s.title}</h3>
+                  <p className="mt-1 text-[15px] leading-relaxed text-muted-foreground">{s.body}</p>
+                </div>
+              </li>
+            ))}
           </ol>
-        </CardContent>
-      </Card>
+        </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Free to use</CardTitle>
-          <CardDescription>A personal project, not a business.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm leading-relaxed text-muted-foreground">
-          <p>
-            Keep Going was made for personal use and is not run for profit. There is nothing to
-            buy, no plan to upgrade to, and no trial that runs out.
-          </p>
-          <p>
-            You&apos;re welcome to use it however it suits you — for your own goals, for as
-            long as it helps. It is offered as is, with no promises about uptime or support.
-          </p>
-        </CardContent>
-      </Card>
+        {/* What's inside */}
+        <section className="grid gap-8 border-t border-border pt-10 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] md:gap-12">
+          <h2 className="text-sm font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            What’s inside
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {PIECES.map((p) => (
+              <div key={p.title} className="rounded-xl bg-card p-5 ring-1 ring-foreground/10">
+                <p.icon className="h-4 w-4 text-primary" aria-hidden />
+                <h3 className="mt-3 text-[15px] font-semibold">{p.title}</h3>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{p.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Your data</CardTitle>
-          <CardDescription>Private by default.</CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm leading-relaxed text-muted-foreground">
-          <p>
-            No sign-up is required to start — you get your own private space on the first
-            visit. Your goals belong to you alone and are never shared with other users. You
-            can create an account later to keep them across devices.
-          </p>
-        </CardContent>
-      </Card>
+        {/* The honest part */}
+        <section className="grid gap-8 border-t border-border pt-10 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] md:gap-12">
+          <h2 className="text-sm font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            The honest part
+          </h2>
+          <dl className="max-w-2xl space-y-5 text-[15px] leading-relaxed">
+            <div>
+              <dt className="font-semibold">It’s free, and there’s nothing to upgrade to.</dt>
+              <dd className="mt-1 text-muted-foreground">
+                Not free-for-now: there is no paid tier waiting, no trial that runs out, nothing
+                to buy. It isn’t run for profit — it’s run because its author uses it.
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold">Your goals are yours.</dt>
+              <dd className="mt-1 text-muted-foreground">
+                Every account is its own private space — goals are never shared with other users
+                and never shown to anyone else. Start anonymously, and create a real account later
+                if you want them on more than one device.
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold">It’s offered as is.</dt>
+              <dd className="mt-1 text-muted-foreground">
+                A one-person project with no uptime promise and no support desk. It’s looked
+                after, but plan accordingly — and see the{" "}
+                <Link href="/privacy" className="font-medium text-foreground hover:underline">
+                  privacy
+                </Link>{" "}
+                and{" "}
+                <Link href="/terms" className="font-medium text-foreground hover:underline">
+                  terms
+                </Link>{" "}
+                pages for the details.
+              </dd>
+            </div>
+          </dl>
+        </section>
 
-      <section className="pt-2 pb-6 text-center text-sm text-muted-foreground">
-        <p>
-          One step today is enough.{" "}
-          <span className="font-medium text-foreground">Keep going — and it will work out.</span>
-        </p>
-      </section>
-    </StaticPage>
+        {/* Close */}
+        <section className="rounded-2xl bg-card px-6 py-8 text-center ring-1 ring-foreground/10 sm:px-10">
+          <CheckCircle2 className="mx-auto h-5 w-5 text-primary" aria-hidden />
+          <p className="mx-auto mt-4 max-w-xl text-balance text-xl font-semibold leading-snug">
+            One step today is enough. Keep going — and it will work out.
+          </p>
+          <Button className="mt-6" nativeButton={false} render={<Link href="/goals" />}>
+            Break down your first goal <ArrowRight data-icon="inline-end" />
+          </Button>
+        </section>
+      </div>
+    </PageShell>
   );
 }
