@@ -11,10 +11,15 @@ import { sessionClearCookie } from "@/server/users";
  *
  * An httpOnly cookie can't be cleared from client JS, so sign-out hard-navigates
  * here and we clear it via Set-Cookie, then redirect home.
+ *
+ * The redirect is a *relative* Location ("/") on purpose: the browser resolves
+ * it against the URL it actually requested. Building an absolute URL from
+ * request.url would leak the server's internal bind address behind a proxy
+ * (e.g. https://0.0.0.0:8080/ on Railway's standalone server) instead of the
+ * public host.
  */
-export function GET(request: Request) {
-  const home = new URL("/", request.url);
-  const headers = new Headers({ location: home.toString() });
+export function GET() {
+  const headers = new Headers({ location: "/" });
   headers.append("set-cookie", sessionClearCookie());
   return new Response(null, { status: 303, headers });
 }
