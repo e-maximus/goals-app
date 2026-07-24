@@ -5,7 +5,6 @@ import Image from "next/image";
 import {
   Show,
   SignInButton,
-  SignOutButton,
   SignUpButton,
   useClerk,
   useUser,
@@ -197,7 +196,15 @@ function GuestIdentityStrip({ me }: { me: Me }) {
  * and the account actions.
  */
 function SignedInAccountCard({ user, me }: { user: ClerkUser; me: Me }) {
-  const { openUserProfile } = useClerk();
+  const { openUserProfile, signOut } = useClerk();
+  // End the Clerk session, then hard-navigate to the route that drops our own
+  // session cookie. That detaches this browser so it becomes a fresh guest —
+  // otherwise the cookie would keep resolving the signed-out account's goals.
+  // The cookie is httpOnly, so it can only be cleared server-side via that route.
+  const handleSignOut = useCallback(
+    () => signOut(() => window.location.assign("/api/auth/sign-out")),
+    [signOut]
+  );
   // An OAuth account (Google/GitHub) carries an external account and owns the
   // name; a plain email sign-up has none, so the name is ours to edit.
   const oauthProvider = oauthProviderLabel(user);
@@ -307,11 +314,9 @@ function SignedInAccountCard({ user, me }: { user: ClerkUser; me: Me }) {
             Manage account
           </Button>
           <span className="flex-1" />
-          <SignOutButton>
-            <Button variant="outline" size="sm">
-              Sign out
-            </Button>
-          </SignOutButton>
+          <Button variant="outline" size="sm" onClick={handleSignOut}>
+            Sign out
+          </Button>
           {editable && (
             <Button size="sm" onClick={save} disabled={!dirty || saving}>
               {saving ? "Saving…" : "Save"}
