@@ -289,4 +289,28 @@ export const migrations: Migration[] = [
       ALTER TABLE users DROP COLUMN IF EXISTS pat;
     `,
   },
+  {
+    name: "014_user_email",
+    sql: `
+      -- The verified primary email of the linked Clerk identity, recorded when
+      -- the account is linked or resolved. It is a *recovery* key, not the
+      -- primary one: \`clerk_user_id\` still resolves first, and this only comes
+      -- into play when that misses.
+      --
+      -- Why it exists: deleting a user in Clerk and signing up again mints a new
+      -- Clerk id, which left the app account orphaned — the web app papered over
+      -- it by claiming the cookie account, but MCP (cookieless) simply minted a
+      -- fresh seeded account and the agent saw none of the user's goals. Matching
+      -- on the email re-links the original account instead.
+      --
+      -- Only ever written from a \`verified\` Clerk email (see
+      -- server/clerk-email.ts) — an unverified address would let anyone sign up
+      -- with someone else's email and inherit their goals.
+      --
+      -- UNIQUE so one address maps to exactly one account, which keeps the
+      -- fallback unambiguous. Nullable, and NULLs don't collide in Postgres, so
+      -- accounts that never signed in are unaffected.
+      ALTER TABLE users ADD COLUMN email TEXT UNIQUE;
+    `,
+  },
 ];

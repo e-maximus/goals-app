@@ -90,6 +90,7 @@ src/
     llm.ts                # the model client the chat agent runs on
     log.ts                # structured request logging
     users.ts              # accounts: per-user seeding, cookie + Clerk auth
+    clerk-email.ts        # the verified email behind the Clerk link (recovery)
     seed.ts               # example data, seeded per user on first visit
     migrations.ts         # schema migrations, inlined as strings
 ```
@@ -104,7 +105,11 @@ src/
   cookie mints a user, seeds them their own example goals, and sets an httpOnly
   cookie; every read and write is scoped to that user in the repo
   ([src/server/repo.ts](src/server/repo.ts)). Signing in with Clerk links a
-  stable identity to that account.
+  stable identity to that account. The identity's **verified** email is recorded
+  alongside it as a recovery key: deleting the Clerk user and signing up again
+  mints a new Clerk id, and the email is what matches the account back instead of
+  orphaning it — which otherwise left MCP, having no cookie to fall back on,
+  minting a fresh seeded account.
 - **The MCP endpoint is the same store from an agent's side.** It's protected by
   OAuth 2.1: a request must carry a Clerk-issued `Authorization: Bearer
   <oauth_token>`. The endpoint verifies it, resolves the Clerk identity to this

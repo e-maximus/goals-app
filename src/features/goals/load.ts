@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { auth } from "@clerk/nextjs/server";
 import { getPool } from "@/server/pool";
 import * as repo from "@/server/repo";
+import { clerkEmailResolver } from "@/server/clerk-email";
 import { resolveWebUserReadonly, SESSION_COOKIE } from "@/server/users";
 import type { ServerState } from "@/lib/sync";
 
@@ -20,7 +21,7 @@ export async function loadInitialState(): Promise<ServerState | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   const { userId: clerkUserId } = await auth();
   const pool = await getPool();
-  const user = await resolveWebUserReadonly(pool, token, clerkUserId);
+  const user = await resolveWebUserReadonly(pool, token, clerkUserId, clerkEmailResolver(clerkUserId));
   if (!user) return null;
   return repo.getState(pool, user.id);
 }

@@ -7,6 +7,7 @@ import {
   type UIMessage,
 } from "ai";
 import { getPool } from "@/server/pool";
+import { clerkEmailResolver } from "@/server/clerk-email";
 import { resolveWebUser } from "@/server/users";
 import {
   appendMessages,
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
   try {
     const { userId: clerkUserId } = await auth();
     const pool = await getPool();
-    const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId);
+    const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId, clerkEmailResolver(clerkUserId));
     const thread = await getOrCreateActiveThread(pool, user.id);
     const messages = await listMessages(pool, user.id, thread.id);
     const headers = new Headers(NEW_USER_HEADER);
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
   try {
     const { userId: clerkUserId } = await auth();
     const pool = await getPool();
-    const { user } = await resolveWebUser(pool, request, clerkUserId);
+    const { user } = await resolveWebUser(pool, request, clerkUserId, clerkEmailResolver(clerkUserId));
     const ownerId = user.id;
 
     const body = (await request.json()) as { messages?: UIMessage[] };

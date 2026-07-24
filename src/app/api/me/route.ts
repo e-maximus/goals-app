@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { getPool } from "@/server/pool";
+import { clerkEmailResolver } from "@/server/clerk-email";
 import { resolveWebUser } from "@/server/users";
 
 /**
@@ -16,7 +17,7 @@ import { resolveWebUser } from "@/server/users";
 export async function GET(request: Request) {
   const { userId: clerkUserId } = await auth();
   const pool = await getPool();
-  const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId);
+  const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId, clerkEmailResolver(clerkUserId));
 
   const headers = new Headers({ "content-type": "application/json" });
   if (setCookie) headers.append("set-cookie", setCookie);
