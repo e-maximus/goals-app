@@ -21,7 +21,7 @@ import type { Pool } from "../db";
  */
 
 // One name for an arm, shared with the client so a hit can say what found it.
-export type { SearchArm as Arm } from "@/lib/search";
+export type { SearchArm as Arm } from "../domain";
 
 export type ArmHit = { kind: string; itemId: string; score: number };
 

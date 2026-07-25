@@ -6,7 +6,7 @@ import { ungroupedSteps, type Goal, type Task } from "../domain";
 import { embedder, type Embedder } from "../embeddings/model";
 import { keywordArm, trigramArm, vectorArm, type Arm, type ArmHit } from "./arms";
 import { fuse } from "./rrf";
-import type { SearchHit, SearchKind } from "@/lib/search";
+import type { SearchHit, SearchKind } from "../domain";
 import { log } from "../log";
 
 /**
@@ -20,9 +20,9 @@ import { log } from "../log";
  * dropped.
  */
 
-// The result shape is the wire format, declared once in src/lib/search.ts so the
+// The result shape is the wire format, declared once in src/lib/types.ts so the
 // palette and this module cannot drift apart.
-export type { SearchHit, SearchKind } from "@/lib/search";
+export type { SearchHit, SearchKind } from "../domain";
 
 export type SearchOptions = {
   limit?: number;

@@ -11,8 +11,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { fetchSearch, SEARCH_DEBOUNCE_MS, type SearchHit, type SearchKind } from "@/lib/search";
+import type { SearchHit, SearchKind } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { searchGoals } from "../actions";
+
+/** How long to sit on keystrokes before asking the server. */
+const SEARCH_DEBOUNCE_MS = 250;
 
 /**
  * The search palette.
@@ -78,18 +82,19 @@ export function SearchDialog({
   useEffect(() => {
     if (!trimmed) return;
 
-    // One in-flight request at a time. Without the abort a slow early keystroke
-    // can land after a fast later one and overwrite the right results with
-    // stale ones.
-    const controller = new AbortController();
+    // Only the newest query's answer is allowed to land. A Server Action has no
+    // abort signal, so a superseded call still completes — this drops its result
+    // rather than letting a slow early keystroke overwrite a fast later one.
+    let current = true;
     const timer = setTimeout(() => {
-      fetchSearch(trimmed, controller.signal).then(
+      searchGoals({ query: trimmed }).then(
         (found) => {
+          if (!current) return;
           setResults({ query: trimmed, hits: found });
           setActive(0);
         },
         () => {
-          if (controller.signal.aborted) return;
+          if (!current) return;
           setFailedFor(trimmed);
         }
       );
@@ -97,7 +102,7 @@ export function SearchDialog({
 
     return () => {
       clearTimeout(timer);
-      controller.abort();
+      current = false;
     };
   }, [trimmed]);
 

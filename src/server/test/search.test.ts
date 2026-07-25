@@ -9,7 +9,7 @@ import { EMBEDDING_DIMENSIONS, type Embedder } from "../embeddings/model";
 import { keywordArm, trigramArm } from "../search/arms";
 import { fuse } from "../search/rrf";
 import { promoteGoals, search } from "../search/search";
-import type { SearchHit } from "@/lib/search";
+import type { SearchHit } from "@/lib/types";
 import { createOwner, reset, setupPool } from "./helpers";
 
 let pool: Pool;

@@ -38,6 +38,15 @@ alongside.
   ([src/server/users.ts](src/server/users.ts)), the MCP server, migrations
   (inlined as strings), and the shared, migrated pool
   ([src/server/pool.ts](src/server/pool.ts)). Data lives in **Postgres**.
+- **Search** — a derived index ([src/server/embeddings/](src/server/embeddings/),
+  the `embeddings` table) rebuilt from the store after every write, and hybrid
+  retrieval over it ([src/server/search/](src/server/search/)): BM25, vectors and
+  trigrams, fused by rank. The index is never a source of truth — it is rebuilt
+  from goals/steps/notes/tasks, so a stale row costs a reindex and nothing more.
+  Without `EMBEDDING_API_KEY` the vector arm is simply absent and the keyword and
+  trigram arms still answer; the ⌘K palette
+  ([src/features/search/](src/features/search/)) reaches it through a Server
+  Action, and the agent through the `search_goals` tool.
 
 The goals live on the server and it is the source of truth. The store is
 optimistic — a mutation updates goals in place and a debounced save action writes
