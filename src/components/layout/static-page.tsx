@@ -1,4 +1,4 @@
-import { PageShell } from "@/components/page-shell";
+import { PageShell } from "@/components/layout/page-shell";
 
 /**
  * The legal pages (Privacy, Terms): the shared app frame with a narrow prose

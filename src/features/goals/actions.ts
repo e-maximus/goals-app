@@ -1,45 +1,26 @@
 "use server";
 
-import { cookies } from "next/headers";
-import { auth } from "@clerk/nextjs/server";
-import { getPool } from "@/server/pool";
+import { currentUserForAction } from "@/server/current-user";
 import * as repo from "@/server/repo";
-import { clerkEmailResolver } from "@/server/clerk-email";
-import { resolveWebUser, SESSION_COOKIE } from "@/server/users";
-import type { Goal, Task } from "@/lib/types";
-import type { ServerState, SaveResult } from "@/lib/sync";
+import type { SaveResult, ServerState } from "@/lib/types";
 import { saveInputSchema } from "./schemas";
 
-const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
-
 /**
- * Resolve the current web user from the session cookie (and a linked Clerk
- * identity when signed in), minting one on first visit. A Server Action can
- * both read and write cookies, so when a (new or switched) session should be
- * adopted we set it here — the same "GET doubles as sign-me-in" behaviour the
- * REST route had.
+ * The whole read/write surface between the client store and the server. There
+ * used to be a REST route (`GET /api/goals`) beside these for reading; two
+ * transports for one store meant two sets of error handling and two places to
+ * keep the owner scoping right, so reading is an action now too.
+ *
+ * The initial render doesn't come through here at all — the `(app)` layout
+ * loads the store server-side (see ./load.ts). {@link loadState} is the
+ * *re*-load: the conflict path, and the reload after the AI chat's agent edited
+ * the goals behind the client's back.
  */
-async function currentUser() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE)?.value;
-  // resolveWebUser reads the session cookie off a Request; hand it one carrying
-  // just that cookie rather than reaching for the raw incoming request.
-  const request = new Request("http://internal", {
-    headers: token ? { cookie: `${SESSION_COOKIE}=${encodeURIComponent(token)}` } : {},
-  });
-  const { userId: clerkUserId } = await auth();
-  const pool = await getPool();
-  const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId, clerkEmailResolver(clerkUserId));
-  if (setCookie) {
-    cookieStore.set(SESSION_COOKIE, user.sessionToken, {
-      path: "/",
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: ONE_YEAR_SECONDS,
-      secure: process.env.NODE_ENV === "production",
-    });
-  }
-  return { pool, user };
+
+/** Re-read the current user's whole store. */
+export async function loadState(): Promise<ServerState> {
+  const { pool, user } = await currentUserForAction();
+  return repo.getState(pool, user.id);
 }
 
 /**
@@ -52,17 +33,13 @@ export async function saveState(input: unknown): Promise<SaveResult> {
   const parsed = saveInputSchema.safeParse(input);
   if (!parsed.success) throw new Error("Invalid goals payload");
 
+  // No casts: the schemas are asserted to match the domain types (./schemas.ts),
+  // so a validated payload *is* a Goal[] / Task[].
   const { goals, tasks, baseUpdatedAt } = parsed.data;
-  const { pool, user } = await currentUser();
+  const { pool, user } = await currentUserForAction();
   try {
-    const state = await repo.replaceAll(
-      pool,
-      user.id,
-      goals as Goal[],
-      baseUpdatedAt ?? null,
-      tasks as Task[] | undefined
-    );
-    return { ok: true, state: state as ServerState };
+    const state = await repo.replaceAll(pool, user.id, goals, baseUpdatedAt ?? null, tasks);
+    return { ok: true, state };
   } catch (err) {
     if (err instanceof repo.ConflictError) {
       return { ok: false, serverUpdatedAt: err.serverUpdatedAt };

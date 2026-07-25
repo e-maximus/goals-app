@@ -1,5 +1,5 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
-import { bootstrapSession } from "@/server/bootstrap";
+import { establishSession } from "@/server/bootstrap";
 
 /**
  * Clerk auth is **optional** here. A visitor with no account still gets a cookie
@@ -12,12 +12,13 @@ import { bootstrapSession } from "@/server/bootstrap";
  * `auth()`; it never calls `auth.protect()`. No route is gated at the edge.
  *
  * The one bit of work it does before anything renders is app initialization:
- * {@link bootstrapSession} mints the anonymous session up front so a first-time
- * visitor resolves to a *single* account — and a single generated identity —
- * everywhere on the page, instead of minting a different one per request.
+ * {@link establishSession} settles the session up front — minting one for a
+ * first-time visitor, linking the Clerk identity for a signed-in one — so the
+ * whole page resolves to a *single* account, and every reader downstream can be
+ * read-only.
  */
 export default clerkMiddleware(async (auth, req) =>
-  bootstrapSession(req, async () => (await auth()).userId != null)
+  establishSession(req, async () => (await auth()).userId)
 );
 
 export const config = {

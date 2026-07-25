@@ -60,6 +60,36 @@ export type Goal = {
   dueDate?: number;
 };
 
+// ---- the wire shapes the two sides exchange ----
+//
+// Both halves of the app speak these: the server builds them (server/repo.ts,
+// the goals Server Actions) and the client store consumes them. They live here,
+// next to the domain types they carry, so neither side has to import a module
+// belonging to the other.
+
+/** A user's whole store, as the server hands it over. */
+export type ServerState = {
+  /**
+   * False when the server has never been written to. The server seeds the
+   * example goals on first run, so in practice the app always sees an
+   * initialized store — the flag is kept for the write path's conflict logic.
+   */
+  initialized: boolean;
+  updatedAt: number;
+  goals: Goal[];
+  tasks: Task[];
+};
+
+/**
+ * The result of the save Server Action. A conflict comes back as data ({ ok:
+ * false }) rather than a thrown error — errors lose their type crossing the
+ * Server Action boundary, so the client turns this into a `SyncConflictError`
+ * on its side instead (see features/goals/sync.ts).
+ */
+export type SaveResult =
+  | { ok: true; state: ServerState }
+  | { ok: false; serverUpdatedAt: number };
+
 /** The goal's own steps, outside any group. Renders above the groups. */
 export function ungroupedSteps(goal: Goal): Step[] {
   return goal.steps ?? [];

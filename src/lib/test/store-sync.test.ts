@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ServerState } from "../sync";
+import type { ServerState } from "../types";
 
 // `sync` statically imports the save Server Action, whose module pulls in the
 // server-only stack (Prisma, Clerk, next/headers). This is a pure client-logic
 // project — stub the action so importing `sync` never evaluates that chain.
-vi.mock("@/features/goals/actions", () => ({ saveState: vi.fn() }));
+vi.mock("@/features/goals/actions", () => ({ loadState: vi.fn(), saveState: vi.fn() }));
 
 // The server half is mocked: these tests exercise the store's own push
 // scheduling (debounce + single-flight), not the network. The real
 // SyncConflictError is kept so the conflict branch stays type-correct.
-vi.mock("../sync", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../sync")>();
+vi.mock("@/features/goals/sync", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/features/goals/sync")>();
   return { ...actual, fetchState: vi.fn(), pushState: vi.fn() };
 });
 
@@ -37,7 +37,7 @@ const serverState = (updatedAt: number): ServerState => ({
 });
 
 describe("store push scheduling", () => {
-  let sync: typeof import("../sync");
+  let sync: typeof import("@/features/goals/sync");
   let store: typeof import("../store");
 
   beforeEach(async () => {
@@ -45,11 +45,11 @@ describe("store push scheduling", () => {
     vi.useFakeTimers();
     // The push subscriber only attaches in a browser (`typeof window`).
     vi.stubGlobal("window", {} as Window & typeof globalThis);
-    sync = await import("../sync");
+    sync = await import("@/features/goals/sync");
     store = await import("../store");
   });
 
-  it("never overlaps two PUTs, and re-pushes with the fresh version", async () => {
+  it("never overlaps two saves, and re-pushes with the fresh version", async () => {
     const pushState = vi.mocked(sync.pushState);
     vi.mocked(sync.fetchState).mockResolvedValue(serverState(100));
 
@@ -66,8 +66,8 @@ describe("store push scheduling", () => {
     expect(pushState).toHaveBeenCalledTimes(1);
     expect(pushState.mock.calls[0]![2]).toBe(100); // baseUpdatedAt
 
-    // A second edit while A is still in flight must NOT start a second PUT —
-    // it would race A with the same stale base and self-inflict a 409.
+    // A second edit while A is still in flight must NOT start a second save —
+    // it would race A with the same stale base and self-inflict a conflict.
     store.useStore.getState().addGoal("B");
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(pushState).toHaveBeenCalledTimes(1);

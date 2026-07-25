@@ -15,31 +15,44 @@ Base UI. It serves the UI **and** its own backend, and deploys as a
 self-contained server (`output: "standalone"`) to **Railway**, with Postgres
 alongside.
 
-- **The UI** — client components under [src/app/](src/app/) and
-  [src/components/](src/components/). State is a Zustand store
+- **The UI** — thin routes under [src/app/](src/app/) (two route groups: `(app)`
+  for the per-user surface, `(site)` for About/Privacy/Terms), views under
+  [src/features/](src/features/), shared chrome under
+  [src/components/layout/](src/components/layout/). State is a Zustand store
   ([src/lib/store.ts](src/lib/store.ts)) that loads from and writes to the server;
   it is **not** persisted in the browser. Derived data (progress, counts) is
   computed by pure helpers in [src/lib/types.ts](src/lib/types.ts) — don't store
   what you can derive.
-- **The API** — route handlers under [src/app/api/](src/app/api/): `/api/goals`
-  (the REST surface the store reads and writes), `/api/me` (the current user's id;
-  no token is returned — MCP is OAuth-authorized now), `/api/health`, and
-  `/api/mcp` (an **MCP** endpoint over Streamable HTTP, so an agent can read and
-  edit goals).
+- **The data path** — the store's initial data and the identity behind the header
+  are loaded **on the server** ([src/features/goals/load.ts](src/features/goals/load.ts),
+  [src/features/account/load.ts](src/features/account/load.ts), both awaited in a
+  layout and request-cached with `cache()`); reads and writes after that go
+  through Server Actions ([src/features/goals/actions.ts](src/features/goals/actions.ts)).
+  No component fetches its own data. There is no REST surface for the app itself.
+- **The API** — route handlers under [src/app/api/](src/app/api/) exist only for
+  what a *non-browser* client needs: `/api/mcp` (an **MCP** endpoint over
+  Streamable HTTP, so an agent can read and edit goals), `/api/chat` (the AI chat
+  stream), `/api/auth/sign-out`, `/api/health`, and the env-gated
+  `/api/test/reset`.
 - **The server internals** — [src/server/](src/server/): the SQL repo, accounts
   ([src/server/users.ts](src/server/users.ts)), the MCP server, migrations
   (inlined as strings), and the shared, migrated pool
   ([src/server/pool.ts](src/server/pool.ts)). Data lives in **Postgres**.
 
 The goals live on the server and it is the source of truth. The store is
-optimistic — a mutation updates goals in place and a debounced `PUT` writes the
-whole store back; a `409` means an agent edited over MCP since the load, so the
-client reloads rather than clobber the newer copy. There is **no offline cache**:
+optimistic — a mutation updates goals in place and a debounced save action writes
+the whole store back; a conflict means an agent edited over MCP since the load, so
+the client reloads rather than clobber the newer copy. There is **no offline cache**:
 no network means a load-error state with a retry, not a stale local copy.
 
 Everything is **per user**. There is no login: a first-time visitor is minted a
 user, seeded their own copy of the example goals, and handed an httpOnly session
-cookie ([src/server/users.ts](src/server/users.ts)). Every repo read and write is
+cookie ([src/server/users.ts](src/server/users.ts)). The session is settled in
+**one** place — [src/server/bootstrap.ts](src/server/bootstrap.ts), run from the
+proxy on a page navigation, which mints the anonymous account and links the Clerk
+identity of a signed-in one. Everything downstream resolves the user *read-only*
+through [src/server/current-user.ts](src/server/current-user.ts), so one page
+render can never resolve two different accounts. Every repo read and write is
 scoped by `owner_id`, so ids are globally unique but never cross accounts — mind
 this when writing SQL or seeding (the example seed's fixed ids are remapped to
 fresh ones per user; only the e2e test user keeps them). The **MCP** endpoint is
@@ -55,8 +68,11 @@ token to paste, and the **Settings** page just shows that URL to connect.
 
 The domain types are the single source of truth for both sides: the UI and the
 server both import [src/lib/types.ts](src/lib/types.ts) directly (the server via
-[src/server/domain.ts](src/server/domain.ts)). Change a type there and everything
-moves together.
+[src/server/domain.ts](src/server/domain.ts)) — including the wire shapes
+(`ServerState`, `SaveResult`) they exchange. Change a type there and everything
+moves together; the write-path Zod schemas
+([src/features/goals/schemas.ts](src/features/goals/schemas.ts)) assert at compile
+time that they still match, so a new field can't be silently dropped on save.
 
 `DATABASE_URL` is required for the server to run. Everything runs together with
 `docker compose up -d --build`; day to day, `docker compose up -d db` for
@@ -204,15 +220,18 @@ You are an expert senior frontend engineer specializing in React, Next.js (App R
 
 ## 2. DATA FETCHING & MUTATIONS
 - **Server-Side Fetching:** Fetch data directly inside async Server Components using native `fetch` or direct database calls.
-- **No Client Fetching Cascades:** Never use `useEffect` for initial data loading. **One
-  deliberate exception in this repo:** the client Zustand store
+- **No Client Fetching Cascades:** Never use `useEffect` for initial data loading, and never
+  add a route handler just so a client component can fetch its own data — load it in a
+  layout or page and hand it down (the identity behind the header works this way, via
+  [src/features/account/load.ts](src/features/account/load.ts) and a context provider).
+  **One deliberate exception in this repo:** the client Zustand store
   ([src/lib/store.ts](src/lib/store.ts)) is not a data-fetching cascade — it is shared,
-  optimistic, mutable client state (in-place mutations, a debounced whole-store `PUT`, and
-  `409` reconciliation with MCP edits). Its initial data is fetched **on the server**
+  optimistic, mutable client state (in-place mutations, a debounced whole-store save, and
+  conflict reconciliation with MCP edits). Its initial data is fetched **on the server**
   ([src/features/goals/load.ts](src/features/goals/load.ts), awaited in the `(app)` layout)
   and the store is only *hydrated* from that `initialData` — no client round-trip. The
-  client `load()` on mount survives solely as a fallback for a brand-new visitor with no
-  session cookie (a Server Component can't mint one). Don't "fix" this into RSC fetching.
+  client `load()` survives as the retry path when that server load couldn't answer. Don't
+  "fix" this into RSC fetching.
 - **Parallel Fetching:** Prevent waterfalls by initializing multiple fetches in parallel using `Promise.all()` or initiate them concurrently.
 - **Server Actions for Mutations:** Handle form submissions, state changes, and data mutations using Server Actions (`'use server'`).
 - **Security in Actions:**
@@ -290,7 +309,10 @@ src/features/billing/
 ├── types.ts          # Local TypeScript interfaces
 └── index.ts          # Public API (clean exports for other features)
 ```
-*Rule for AI:* Never cross-import internal files from another feature directly. Only import from the feature's `index.ts` (Public API).
+*Rule for AI:* Never cross-import internal files from another feature directly. Only import from the feature's `index.ts` (Public API). One exception, by necessity: a
+feature's **server-only** loader (`load.ts`) is imported by path from a layout,
+because putting it in the barrel would drag `server-only` into every client
+component importing that feature.
 
 #### C. Shared Components (`src/components/`)
 - Store globally accessible, non-domain-specific UI elements here (e.g., standard buttons, inputs, modals, cards).
@@ -304,6 +326,13 @@ src/features/billing/
   - `src/lib/db.ts` — Prisma/Drizzle client singleton.
   - `src/lib/auth.ts` — Auth.js/NextAuth/Clerk configuration.
   - `src/lib/utils.ts` — Shared helper functions (e.g., Tailwind `clsx` / `twMerge` merger).
+  - `src/lib/store.ts` — the Zustand store. It lives here rather than in a feature
+    because it is app-global client state: goals, tasks and save status, read by the
+    goals and tasks views, the chat drawer and the topbar. Its transport (the goals
+    Server Actions, via `@/features/goals/sync`) is the one place `lib` reaches up
+    into a feature — deliberate, and documented in the file.
+  - `src/lib/version.ts` — the running version, injected by the build. Don't import
+    `package.json` from application code: it pulls the whole manifest into the bundle.
 
 ---
 

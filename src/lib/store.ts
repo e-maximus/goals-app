@@ -2,8 +2,22 @@
 
 import { toast } from "sonner";
 import { create } from "zustand";
-import { isTaskDone, utcMidnight, type Goal, type GoalStatus, type Step, type Task } from "./types";
-import { SyncConflictError, fetchState, pushState, type ServerState } from "./sync";
+import {
+  isTaskDone,
+  utcMidnight,
+  type Goal,
+  type GoalStatus,
+  type ServerState,
+  type Step,
+  type Task,
+} from "./types";
+// The store is app-global client state — goals, tasks, save status — shared by
+// the goals and tasks views, the chat drawer and the topbar, which is why it
+// sits in `lib` rather than inside one feature. Its transport is the goals
+// feature's Server Actions; that single upward import is deliberate, and the
+// wire types it moves live in ./types so the server never imports a client
+// module for them.
+import { SyncConflictError, fetchState, pushState } from "@/features/goals/sync";
 
 // A short id for optimistically-created goals/steps/tasks, kept in sync with the
 // server's generator (src/server/domain.ts). Six base-36 chars keep goal URLs
@@ -15,7 +29,7 @@ function uid(): string {
 /**
  * Stamp a goal as just-touched. Applied by every mutating action to the one
  * goal it changed — and only that one — so per-goal activity survives the
- * whole-store PUT (the server persists these stamps verbatim).
+ * whole-store save (the server persists these stamps verbatim).
  */
 function touched(goal: Goal): Goal {
   return { ...goal, updatedAt: Date.now() };
@@ -74,7 +88,7 @@ type StoreState = {
    * Unlike `load` (which keeps local-only items ahead of the server's), this is a
    * clean overwrite — used after the AI chat's agent mutated the store
    * server-side, so the client adopts the server's version wholesale, exactly as
-   * the 409 conflict path does.
+   * the conflict path does.
    */
   reloadFromServer: () => Promise<void>;
   /**
@@ -516,9 +530,9 @@ const PUSH_DEBOUNCE_MS = 1500;
 /** Set while we're applying a server response, so the subscriber doesn't push it back. */
 let applyingRemote = false;
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
-// Single-flight: never overlap two PUTs. A second push that starts while one is
+// Single-flight: never overlap two saves. A second push that starts while one is
 // in flight would send the same baseUpdatedAt and lose the race against our own
-// earlier write — a self-inflicted 409. Chain it instead: mark the store dirty
+// earlier write — a self-inflicted conflict. Chain it instead: mark the store dirty
 // and push again, with the fresh serverUpdatedAt, once the current one lands.
 let pushing = false;
 let pendingPush = false;

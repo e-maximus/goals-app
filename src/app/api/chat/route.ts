@@ -1,4 +1,3 @@
-import { auth } from "@clerk/nextjs/server";
 import {
   convertToModelMessages,
   generateId,
@@ -6,9 +5,9 @@ import {
   streamText,
   type UIMessage,
 } from "ai";
-import { getPool } from "@/server/pool";
-import { clerkEmailResolver } from "@/server/clerk-email";
-import { resolveWebUser } from "@/server/users";
+import { currentUserForRequest } from "@/server/current-user";
+import { errorResponse, jsonResponse } from "@/server/http";
+import { chatRequestSchema } from "@/features/chat/schemas";
 import {
   appendMessages,
   getOrCreateActiveThread,
@@ -32,32 +31,26 @@ import { logRequest } from "@/server/log";
  * messages; POST runs the agent (DeepSeek via the AI SDK) over that thread and
  * streams the reply back, persisting the completed turn.
  *
- * The owner is resolved from the session exactly like
- * [api/goals](../goals/route.ts) — a first-time visitor is minted and handed a
- * cookie, so the same session-cookie user the store uses drives the chat. The
- * model never sees an owner id; every tool is bound to it server-side. The chat
+ * The owner is resolved from the session cookie the page navigation settled
+ * (see server/current-user.ts), so the chat runs as the same user the store
+ * does. The model never sees an owner id; every tool is bound to it
+ * server-side. The chat
  * is surfaced as a signed-in feature in the UI (`<Show when="signed-in">`), which
  * is the product boundary; the endpoint itself follows the app's cookie model.
  */
 
-const NEW_USER_HEADER = { "content-type": "application/json" };
-
 export async function GET(request: Request) {
   const startedAt = Date.now();
   try {
-    const { userId: clerkUserId } = await auth();
-    const pool = await getPool();
-    const { user, setCookie } = await resolveWebUser(pool, request, clerkUserId, clerkEmailResolver(clerkUserId));
+    const { pool, user, setCookie } = await currentUserForRequest(request);
     const thread = await getOrCreateActiveThread(pool, user.id);
     const messages = await listMessages(pool, user.id, thread.id);
-    const headers = new Headers(NEW_USER_HEADER);
-    if (setCookie) headers.append("set-cookie", setCookie);
-    const res = new Response(
-      JSON.stringify({
+    const res = jsonResponse(
+      {
         threadId: thread.id,
         messages: messages.map((m) => ({ id: m.id, role: m.role, parts: m.parts })),
-      }),
-      { headers }
+      },
+      { setCookie }
     );
     logRequest(request, res.status, startedAt, { userId: user.id });
     return res;
@@ -69,17 +62,23 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const startedAt = Date.now();
   try {
-    const { userId: clerkUserId } = await auth();
-    const pool = await getPool();
-    const { user } = await resolveWebUser(pool, request, clerkUserId, clerkEmailResolver(clerkUserId));
+    const { pool, user } = await currentUserForRequest(request);
     const ownerId = user.id;
 
-    const body = (await request.json()) as { messages?: UIMessage[] };
-    const incoming = body.messages ?? [];
-    const userMessage = incoming[incoming.length - 1];
-    if (!userMessage || userMessage.role !== "user") {
+    // Never trust the client's transcript: only the trailing user message is
+    // taken from the request, and only after it has been validated.
+    const parsed = chatRequestSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return Response.json({ error: "Malformed chat request." }, { status: 400 });
+    }
+    const incoming = parsed.data.messages;
+    const last = incoming[incoming.length - 1];
+    if (!last || last.role !== "user") {
       return Response.json({ error: "Expected a trailing user message." }, { status: 400 });
     }
+    // The parts are passed through as the AI SDK sent them; the schema checked
+    // the envelope, and the SDK owns the shape of a part.
+    const userMessage = last as UIMessage;
 
     // Build model context from the DB — the rolling summary plus the recent
     // turns — not from what the client sent, so cost stays bounded and history
@@ -153,8 +152,9 @@ function firstText(message: UIMessage): string | null {
 }
 
 function serverError(request: Request, startedAt: number, err: unknown): Response {
-  logRequest(request, 500, startedAt, {
-    error: err instanceof Error ? err.message : String(err),
+  const res = errorResponse(err);
+  logRequest(request, res.status, startedAt, {
+    ...(res.status >= 500 ? { error: err instanceof Error ? err.message : String(err) } : {}),
   });
-  return Response.json({ error: "Internal server error" }, { status: 500 });
+  return res;
 }

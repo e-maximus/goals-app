@@ -9,23 +9,17 @@ import {
   type Goal,
   type GoalStatus,
   type Group,
+  type ServerState,
   type Step,
   type Task,
 } from "./domain";
 
-export type StoreState = {
-  /**
-   * False until the store has been written for the first time. The web app uses
-   * this to decide, on first connect, whether to adopt the server's goals or to
-   * push its own up — pulling an empty store would silently wipe local work. In
-   * practice a user is seeded the moment they're created, so an existing user is
-   * always initialized; the flag stays for the write path's conflict logic.
-   */
-  initialized: boolean;
-  updatedAt: number;
-  goals: Goal[];
-  tasks: Task[];
-};
+/**
+ * A user's whole store. The shape is shared with the client verbatim (see
+ * ServerState in src/lib/types.ts) — this alias just keeps the repo's own
+ * vocabulary readable at its call sites.
+ */
+export type StoreState = ServerState;
 
 /** Raised when a write targets something that isn't there. Mapped to 404 / an MCP error. */
 export class NotFoundError extends Error {

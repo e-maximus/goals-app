@@ -4,7 +4,16 @@
  * re-export the app's types verbatim — `src/lib/types.ts` is the one source of
  * truth for the domain, shared by both sides of the same build.
  */
-export type { Note, Goal, GoalStatus, Group, Step, Task } from "@/lib/types";
+export type {
+  Note,
+  Goal,
+  GoalStatus,
+  Group,
+  SaveResult,
+  ServerState,
+  Step,
+  Task,
+} from "@/lib/types";
 export {
   noteCount,
   goalProgress,
