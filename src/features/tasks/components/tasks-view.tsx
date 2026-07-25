@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { isTaskDone, isTaskOverdue, type Task } from "@/lib/types";
-import { PageShell } from "@/components/page-shell";
+import { PageShell } from "@/components/layout/page-shell";
 import { LoadError } from "@/components/load-error";
 import { TaskDialog } from "./task-dialog";
 import { TaskRow } from "./task-row";

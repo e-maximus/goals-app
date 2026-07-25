@@ -1,9 +1,14 @@
 import { z } from "zod";
+import type { Goal, Task } from "@/lib/types";
 
 /**
- * Zod schemas for the goals store's write payload (§7B). Shared by the save
- * Server Action; mirror the domain types in src/lib/types.ts. Optional fields
+ * Zod schemas for the goals store's write payload. Shared by the save Server
+ * Action; they mirror the domain types in src/lib/types.ts. Optional fields
  * stay optional so a tab opened before a field existed can still save.
+ *
+ * Mirroring by hand is the risk here: add a field to `Goal` and forget it here,
+ * and every save would silently drop it. The assertions at the bottom of this
+ * file make that a build error instead.
  */
 
 const stepSchema = z.object({
@@ -61,3 +66,15 @@ export const saveInputSchema = z.object({
 });
 
 export type SaveInput = z.infer<typeof saveInputSchema>;
+
+// ---- the schemas and the domain types must agree ----
+//
+// Checked in both directions, so neither side can drift: a validated payload
+// has to be a usable domain value (so the action needs no casts), and every
+// domain field has to be something the schema accepts (so adding a field to
+// `Goal` without adding it here fails the build rather than silently dropping
+// it on every save).
+type MutuallyAssignable<A extends B, B extends C, C = A> = true;
+
+export type SchemaMatchesGoal = MutuallyAssignable<z.infer<typeof goalSchema>, Goal>;
+export type SchemaMatchesTask = MutuallyAssignable<z.infer<typeof taskSchema>, Task>;

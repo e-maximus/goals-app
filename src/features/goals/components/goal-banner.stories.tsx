@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { GoalBanner } from "@/features/goals";
+import { GoalBanner } from "./goal-banner";
 
 const meta = {
   title: "Design Lab/GoalBanner",

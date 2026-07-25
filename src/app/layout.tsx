@@ -1,11 +1,10 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
 import "./globals.css";
-import { SectionMemory } from "@/features/goals";
+import { SiteFooter } from "@/components/layout/site-footer";
 import { Toaster } from "@/components/ui/sonner";
-import packageJson from "../../package.json";
+import { SectionMemory } from "@/features/goals";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -19,7 +18,12 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://keepgoing.you"),
-  title: "Keep Going — break big goals into small steps",
+  // Every page below sets a bare title ("Tasks", a goal's name); the template
+  // gives them all the same suffix, and `default` covers the ones that don't.
+  title: {
+    default: "Keep Going — break big goals into small steps",
+    template: "%s — Keep Going",
+  },
   description: "Decompose a goal into groups and steps, and make progress one step at a time.",
   openGraph: {
     title: "Keep Going — break big goals into small steps",
@@ -47,21 +51,7 @@ export default function RootLayout({
         <ClerkProvider>
           <SectionMemory />
           {children}
-          <footer className="mt-auto flex items-center justify-center gap-3 py-2 text-center text-xs text-muted-foreground">
-            <Link href="/about" className="transition-colors hover:text-foreground">
-              About
-            </Link>
-            <span aria-hidden>·</span>
-            <Link href="/privacy" className="transition-colors hover:text-foreground">
-              Privacy
-            </Link>
-            <span aria-hidden>·</span>
-            <Link href="/terms" className="transition-colors hover:text-foreground">
-              Terms
-            </Link>
-            <span aria-hidden>·</span>
-            <span>v{packageJson.version}</span>
-          </footer>
+          <SiteFooter />
           <Toaster />
         </ClerkProvider>
       </body>

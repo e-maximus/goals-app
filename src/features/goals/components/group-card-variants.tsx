@@ -5,11 +5,11 @@
  * store — no copy, so the design lab can never drift from production. The kebab
  * placement exploration is done: variant D (options menu floating in the card
  * corner, percentage badge flush right, Rename + Delete) is now folded into
- * `src/components/group-card.tsx`, and this simply exercises it across states.
+ * `./group-card.tsx`, and this simply exercises it across states.
  */
 
 import { useState } from "react";
-import { GroupCard } from "@/features/goals";
+import { GroupCard } from "./group-card";
 import type { Group } from "@/lib/types";
 
 export type DemoStep = { id: string; text: string; done: boolean };

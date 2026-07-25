@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { StaticPage } from "@/components/static-page";
+import { StaticPage } from "@/components/layout/static-page";
 
 export const metadata: Metadata = {
-  title: "Terms of Use — Keep Going",
+  title: "Terms of Use",
   description: "The plain-language terms for using Keep Going.",
 };
 

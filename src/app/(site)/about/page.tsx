@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Bot, CheckCircle2, ListTodo, NotebookPen, Target } from "lucide-react";
-import { PageShell } from "@/components/page-shell";
+import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
-  title: "About — Keep Going",
+  title: "About",
   description: "Why Keep Going exists: big goals become doable when you break them into steps.",
 };
 

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { StaticPage } from "@/components/static-page";
+import { StaticPage } from "@/components/layout/static-page";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — Keep Going",
+  title: "Privacy Policy",
   description: "What Keep Going stores, why, and what it never does with your data.",
 };
 

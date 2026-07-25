@@ -38,3 +38,20 @@ export function goalHref(goal: { id: string; title: string }): string {
 export function goalIdMatchesPath(goalId: string, param: string): boolean {
   return param === goalId || param.startsWith(`${goalId}-`)
 }
+
+/**
+ * The goal a `[id]` route param points at, preferring the longest matching id
+ * so a shorter one can't shadow a longer one sharing its prefix. Used by the
+ * detail view against the client store, and by the route's `generateMetadata`
+ * against the server-loaded one — the same link must resolve the same way on
+ * both sides.
+ */
+export function findGoalByParam<T extends { id: string }>(
+  goals: readonly T[],
+  param: string,
+): T | undefined {
+  return goals.reduce<T | undefined>((best, goal) => {
+    if (!goalIdMatchesPath(goal.id, param)) return best
+    return !best || goal.id.length > best.id.length ? goal : best
+  }, undefined)
+}
