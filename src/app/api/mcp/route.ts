@@ -4,6 +4,7 @@ import { verifyClerkToken } from "@clerk/mcp-tools/next";
 import { getPool } from "@/server/pool";
 import { createMcpServer } from "@/server/mcp";
 import { logRequest } from "@/server/log";
+import { publicOrigin } from "@/server/http";
 import { clerkEmailResolver } from "@/server/clerk-email";
 import { getOrCreateUserByClerkId } from "@/server/users";
 
@@ -50,9 +51,12 @@ async function describeRpc(request: Request): Promise<Record<string, string>> {
  * OAuth 2.1 flow (dynamic client registration → authorize → token).
  */
 function unauthorized(request: Request): Response {
+  // Built from the forwarded origin, not `request.url`: this URL is for the
+  // client to fetch, and in production `request.url` is the container's
+  // internal address.
   const resourceMetadata = new URL(
     "/.well-known/oauth-protected-resource",
-    request.url
+    publicOrigin(request)
   ).toString();
   return Response.json(
     {
