@@ -1,0 +1,54 @@
+name: Claude Code Review
+
+# Reviews every pull request automatically, and again on each new push to it.
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# One review per PR at a time; a new push supersedes the running one.
+concurrency:
+  group: claude-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    # Drafts aren't ready to be reviewed.
+    if: ${{ !github.event.pull_request.draft }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          use_sticky_comment: true
+          prompt: |
+            Review this pull request. The repo conventions live in AGENTS.md —
+            read it first and hold the diff to those rules, in particular:
+
+            - Next.js 16 App Router: server components by default, `params` and
+              `searchParams` are Promises, `proxy.ts` instead of `middleware`.
+            - Per-user scoping: every query in `src/server/` must stay inside one
+              owner (`owner_id` on goals/tasks/users; groups/steps/notes reach it
+              through their goal). A query filtering on a bare row id leaks across
+              accounts — flag it.
+            - The data path: server-side loading + Server Actions, no client
+              fetching cascades, no new REST surface for the app itself.
+            - Domain types in `src/lib/types.ts` are the single source of truth for
+              both sides; write-path Zod schemas must still match.
+            - Tests: user-facing behavior needs an e2e test, `src/server/` changes
+              need a server test.
+
+            Report only real problems — correctness, security, per-user isolation,
+            and clear convention breaks. Skip praise and nitpicks. If the diff is
+            fine, say so in one line.
+          claude_args: |
+            --allowed-tools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(npm run lint),Bash(npm run typecheck)"
