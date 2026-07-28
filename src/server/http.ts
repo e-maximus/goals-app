@@ -17,6 +17,32 @@ export function jsonResponse(
 }
 
 /**
+ * The origin this request reached us on, as the client sees it.
+ *
+ * `request.url` is not that origin in production: the standalone server binds
+ * `0.0.0.0:8080` inside the container and Railway's proxy forwards to it, so
+ * the URL Next hands the handler is the internal one. Anything we *publish* —
+ * an absolute URL a client is expected to fetch or match — has to be built from
+ * the forwarded headers instead, or we advertise `https://0.0.0.0:8080` to the
+ * outside world. Everything else (routing, logging) should keep using
+ * `request.url`.
+ *
+ * `x-forwarded-host` may carry a list if the request crossed several proxies;
+ * the first entry is the one the client used. Falls back to `host`, then to the
+ * request's own origin, which is what dev and the tests see.
+ */
+export function publicOrigin(request: Request): string {
+  const headers = request.headers;
+  const forwardedHost = headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || headers.get("host")?.trim();
+  if (!host) return new URL(request.url).origin;
+
+  const proto =
+    headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || new URL(request.url).protocol.replace(":", "");
+  return `${proto}://${host}`;
+}
+
+/**
  * The repo's domain errors, mapped onto status codes. Anything else is a 500
  * with a generic message — an internal error's text is for the logs, not for
  * the client.
