@@ -644,6 +644,14 @@ if (typeof window !== "undefined") {
 // path, having ruled out the two cases where reloading would be wrong.
 
 const REMOTE_DEBOUNCE_MS = 300;
+/**
+ * Floor on how often a reload may run. Every reload is a whole-store read, and
+ * an agent building a goal over MCP writes it in pieces — a group, then its
+ * steps, then a note — seconds apart, which no debounce alone would ever
+ * coalesce. The interval bounds that into a steady trickle while still letting a
+ * single, isolated change through at debounce speed.
+ */
+const MIN_RELOAD_INTERVAL_MS = 2_000;
 
 let remoteTimer: ReturnType<typeof setTimeout> | undefined;
 /** The newest stamp the stream has announced, until we've caught up with it. */
@@ -651,14 +659,19 @@ let pendingRemoteUpdatedAt: number | null = null;
 /** Set when the stream reconnected and we can't know what we missed. */
 let resyncRequested = false;
 let reconciling = false;
+let lastReloadAt = 0;
 
 /**
- * An agent editing over MCP writes a step at a time, so a burst of events is the
- * normal case; debouncing resolves the whole burst into one reload.
+ * Queue a reconcile: after the debounce, and never sooner than
+ * {@link MIN_RELOAD_INTERVAL_MS} after the last reload. Every event lands on
+ * this one timer, so a burst — however long it runs — costs one reload per
+ * interval rather than one per event, and the last event always gets its reload.
  */
 function scheduleReconcile(): void {
+  const sinceLast = Date.now() - lastReloadAt;
+  const delay = Math.max(REMOTE_DEBOUNCE_MS, MIN_RELOAD_INTERVAL_MS - sinceLast);
   clearTimeout(remoteTimer);
-  remoteTimer = setTimeout(() => void reconcileRemote(), REMOTE_DEBOUNCE_MS);
+  remoteTimer = setTimeout(() => void reconcileRemote(), delay);
 }
 
 /** A local edit is written but not yet saved — the debounce or the request. */
@@ -667,7 +680,12 @@ function hasUnsavedEdits(): boolean {
 }
 
 async function reconcileRemote(): Promise<void> {
-  if (reconciling) return;
+  // A reload is already running. Come back after it — dropping this would strand
+  // the event that arrived mid-flight until something else happened to nudge us.
+  if (reconciling) {
+    scheduleReconcile();
+    return;
+  }
 
   const target = pendingRemoteUpdatedAt;
   if (target === null && !resyncRequested) return;
@@ -696,6 +714,9 @@ async function reconcileRemote(): Promise<void> {
     await useStore.getState().load();
   } finally {
     reconciling = false;
+    // From when the reload *finished*: a slow one shouldn't be followed
+    // immediately by the next.
+    lastReloadAt = Date.now();
   }
 
   // Only clear once we've actually caught up: a failed load leaves the target
