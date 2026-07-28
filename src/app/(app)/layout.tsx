@@ -1,7 +1,7 @@
 import { AppFrame } from "@/components/layout/app-frame";
 import { loadMe } from "@/features/account/load";
 import { ChatDrawer } from "@/features/chat";
-import { StoreHydration } from "@/features/goals";
+import { GoalsStream, StoreHydration } from "@/features/goals";
 import { loadInitialState } from "@/features/goals/load";
 
 /**
@@ -16,12 +16,16 @@ import { loadInitialState } from "@/features/goals/load";
  * started at once rather than stacking two round trips to Postgres. Both
  * loaders are request-cached, so {@link AppFrame} reuses the identity this
  * already awaited.
+ *
+ * {@link GoalsStream} sits beside the hydration for the same reason: one event
+ * stream per tab, mounted where the store is seeded, rather than one per view.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const [initialData] = await Promise.all([loadInitialState(), loadMe()]);
   return (
     <AppFrame>
       <StoreHydration initialData={initialData} />
+      <GoalsStream />
       {children}
       <ChatDrawer />
     </AppFrame>

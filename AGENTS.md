@@ -30,10 +30,10 @@ alongside.
   through Server Actions ([src/features/goals/actions.ts](src/features/goals/actions.ts)).
   No component fetches its own data. There is no REST surface for the app itself.
 - **The API** — route handlers under [src/app/api/](src/app/api/) exist only for
-  what a *non-browser* client needs: `/api/mcp` (an **MCP** endpoint over
+  what a Server Action can't be: `/api/mcp` (an **MCP** endpoint over
   Streamable HTTP, so an agent can read and edit goals), `/api/chat` (the AI chat
-  stream), `/api/auth/sign-out`, `/api/health`, and the env-gated
-  `/api/test/reset`.
+  stream), `/api/goals/stream` (the goals event stream — see below),
+  `/api/auth/sign-out`, `/api/health`, and the env-gated `/api/test/reset`.
 - **The server internals** — [src/server/](src/server/): the SQL repo, accounts
   ([src/server/users.ts](src/server/users.ts)), the MCP server, migrations
   (inlined as strings), and the shared, migrated pool
@@ -44,6 +44,19 @@ optimistic — a mutation updates goals in place and a debounced save action wri
 the whole store back; a conflict means an agent edited over MCP since the load, so
 the client reloads rather than clobber the newer copy. There is **no offline cache**:
 no network means a load-error state with a retry, not a stale local copy.
+
+A write made *elsewhere* — another tab, the AI chat, an agent over MCP — reaches
+an open tab live, over SSE ([src/app/api/goals/stream/](src/app/api/goals/stream/)).
+The event carries a signal, never state: only the owner's new `updatedAt`, and the
+client answers by reloading through the store's normal `load()`. That keeps one
+path from server state to store state, and makes a dropped connection a non-event
+— reconnecting *is* the resync, so there's no replay buffer and no `Last-Event-ID`.
+Server-side it's an in-process bus ([src/server/events.ts](src/server/events.ts)):
+`touch()` in the repo records the change against its transaction and the pool
+publishes it **after the commit**, so no listener can be woken to read pre-write
+state. It is in-process on purpose — one Node process serves both the web and MCP
+writes. A second replica would need Postgres `LISTEN/NOTIFY` behind those same two
+functions, not Redis. The stream is only open while the tab is visible.
 
 Everything is **per user**. There is no login: a first-time visitor is minted a
 user, seeded their own copy of the example goals, and handed an httpOnly session
