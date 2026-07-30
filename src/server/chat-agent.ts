@@ -3,7 +3,7 @@ import { generateText, tool, type ToolSet, type UIMessage } from "ai";
 import { z } from "zod";
 import { chatModel } from "./llm";
 import { updateSummary, type StoredChatMessage } from "./chat-repo";
-import { tools as registry, type ToolContext } from "./tools";
+import { runTool, tools as registry, type ToolContext } from "./tools";
 import type { Pool } from "./db";
 
 /** How many recent turns (a turn starts at a user message) stay in live context. */
@@ -28,6 +28,14 @@ export function buildSystemPrompt(summary: string | null): string {
     "- The tools are the source of truth for the user's current data. Before acting on a",
     "  specific goal or task, read it fresh with list_goals / get_goal / list_tasks — do not",
     "  rely on earlier messages for the current state.",
+    "- Pick the reading tool that fits the question, and prefer a narrow one to a full dump:",
+    "    - about content ('what was I planning about the move?', 'did I write anything on",
+    "      pricing?') → search_goals. It handles paraphrases and typos.",
+    "    - about priority or timing ('what should I do today?', \"what's urgent?\", 'am I",
+    "      slipping?') → get_agenda. Do NOT search for these — they are about deadlines and",
+    "      status, not wording, and a search would return whatever merely sounds similar.",
+    "    - a named goal → get_goal. The whole picture, or nothing narrower will do →",
+    "      list_goals.",
     "- When a request is ambiguous (which step? which goal?), ask a brief clarifying question",
     "  instead of guessing.",
     "- Confirm with the user before deleting more than one thing at once.",
@@ -58,7 +66,7 @@ export function buildChatTools(ctx: ToolContext): ToolSet {
     out[def.name] = tool({
       description: def.description,
       inputSchema: z.object(def.inputSchema),
-      execute: (args) => def.handler(args, ctx),
+      execute: (args) => runTool(def, args, ctx),
     });
   }
   return out;

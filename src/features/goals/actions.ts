@@ -2,6 +2,7 @@
 
 import { currentUserForAction } from "@/server/current-user";
 import * as repo from "@/server/repo";
+import { scheduleReindex } from "@/server/embeddings/schedule";
 import type { SaveResult, ServerState } from "@/lib/types";
 import { saveInputSchema } from "./schemas";
 
@@ -39,6 +40,10 @@ export async function saveState(input: unknown): Promise<SaveResult> {
   const { pool, user } = await currentUserForAction();
   try {
     const state = await repo.replaceAll(pool, user.id, goals, baseUpdatedAt ?? null, tasks);
+    // The web app's write path, so this is where most reindexing is triggered
+    // from. It runs after the action has answered — the user is waiting on the
+    // save, not on the index.
+    scheduleReindex(pool, user.id);
     return { ok: true, state };
   } catch (err) {
     if (err instanceof repo.ConflictError) {

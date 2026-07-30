@@ -10,11 +10,16 @@ export type {
   GoalStatus,
   Group,
   SaveResult,
+  SearchArm,
+  SearchHit,
+  SearchKind,
   ServerState,
   Step,
   Task,
 } from "@/lib/types";
 export {
+  daysSinceActivity,
+  isGoalStale,
   noteCount,
   goalProgress,
   goalStepCounts,

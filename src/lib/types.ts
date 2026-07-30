@@ -90,6 +90,30 @@ export type SaveResult =
   | { ok: true; state: ServerState }
   | { ok: false; serverUpdatedAt: number };
 
+/** What a search hit can point at. */
+export type SearchKind = "goal" | "step" | "note" | "task";
+
+/** Which retrieval arm found a hit. Useful for debugging a surprising ranking. */
+export type SearchArm = "keyword" | "vector" | "trigram";
+
+/**
+ * One search result, as the search Server Action hands it over
+ * (see features/search/actions.ts, built by server/search/search.ts).
+ */
+export type SearchHit = {
+  kind: SearchKind;
+  id: string;
+  /** The item's own headline — a goal's title, a step's text, a note's text. */
+  title: string;
+  /** Supporting text, when the item has any: a why, a description. */
+  detail?: string;
+  /** The goal this sits under, with a link, or null for an unlinked task. */
+  goal: { id: string; title: string; url: string } | null;
+  done?: boolean;
+  score: number;
+  arms: SearchArm[];
+};
+
 /** The goal's own steps, outside any group. Renders above the groups. */
 export function ungroupedSteps(goal: Goal): Step[] {
   return goal.steps ?? [];
