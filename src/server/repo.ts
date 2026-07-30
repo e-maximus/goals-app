@@ -184,6 +184,17 @@ async function goalIdOfStep(
   return step.goal_id ?? step.group?.goal_id ?? null;
 }
 
+/**
+ * The owner's last-write stamp on its own — one column, no goals.
+ *
+ * What the goals stream answers a new connection with, so the tab can decide
+ * whether it missed anything while it was away rather than reloading the whole
+ * store to find out (see src/app/api/goals/stream/route.ts).
+ */
+export async function getUpdatedAt(pool: Pool, ownerId: string): Promise<number | null> {
+  return readUpdatedAt(pool, ownerId);
+}
+
 /** The owner's last-write stamp, or null if they've never been written to. */
 async function readUpdatedAt(client: Client | Pool, ownerId: string): Promise<number | null> {
   const user = await client.db.user.findUnique({
