@@ -397,4 +397,22 @@ export const migrations: Migration[] = [
       -- when a single account's corpus makes that untrue.
     `,
   },
+  {
+    name: "016_drop_anonymous_index",
+    sql: `
+      -- Search is signed-in only (\`isSignedIn\` in users.ts, applied at the write
+      -- path's choke point in embeddings/schedule.ts). Anonymous accounts are no
+      -- longer indexed — but rows written before that gate landed are still
+      -- here, and nothing will ever remove them: the delete path runs on write,
+      -- and these owners can no longer reach it.
+      --
+      -- So they are a derived copy of a cookie-only visitor's writing, plus
+      -- vectors that were paid for and can never be queried. Drop them.
+      --
+      -- Nothing is lost. The index is derived, so if such an account signs in
+      -- later, its next write rebuilds the rows from the goals themselves.
+      DELETE FROM embeddings
+       WHERE owner_id IN (SELECT id FROM users WHERE clerk_user_id IS NULL);
+    `,
+  },
 ];
