@@ -43,7 +43,7 @@ export async function saveState(input: unknown): Promise<SaveResult> {
     // The web app's write path, so this is where most reindexing is triggered
     // from. It runs after the action has answered — the user is waiting on the
     // save, not on the index.
-    scheduleReindex(pool, user.id);
+    scheduleReindex(pool, user);
     return { ok: true, state };
   } catch (err) {
     if (err instanceof repo.ConflictError) {

@@ -1,6 +1,7 @@
 "use server";
 
 import { currentUserForAction } from "@/server/current-user";
+import { isSignedIn } from "@/server/users";
 import { search } from "@/server/search/search";
 import type { SearchHit } from "@/lib/types";
 import { searchInputSchema } from "./schemas";
@@ -15,12 +16,20 @@ import { searchInputSchema } from "./schemas";
  * someone's private notes.
  *
  * The owner comes from the session, never from the caller.
+ *
+ * Signed-in only, and enforced here rather than only in the UI that hides the
+ * palette: a Server Action is a public endpoint, reachable by anyone who can
+ * craft the request. An anonymous account also has no index to search — nothing
+ * writes one (see server/embeddings/schedule.ts) — so answering would mean
+ * pretending the store is empty. Rejecting says which it is.
  */
 export async function searchGoals(input: unknown): Promise<SearchHit[]> {
   const parsed = searchInputSchema.safeParse(input);
   if (!parsed.success) throw new Error("Invalid search request");
 
   const { pool, user } = await currentUserForAction();
+  if (!isSignedIn(user)) throw new Error("Search requires a signed-in account");
+
   const { query, limit, kinds } = parsed.data;
   return search(pool, user.id, query, { limit, kinds });
 }

@@ -9,6 +9,7 @@ import { useChatUi } from "@/lib/chat-ui";
 import { Button } from "@/components/ui/button";
 import { SaveStatus } from "@/components/save-status";
 import { SearchButton } from "@/features/search";
+import { useMe } from "@/features/account";
 import { Brand, NavLinks } from "./nav-links";
 import { UserChip } from "./user-chip";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,12 @@ export function Topbar() {
   const saveStatus = useStore((s) => s.saveStatus);
   const setChatOpen = useChatUi((s) => s.setOpen);
   const scrolled = useScrolled();
+  // Search is signed-in only, and the server is what decides that (see
+  // server/users.ts). Reading the identity it already resolved — rather than
+  // Clerk's <Show>, which renders nothing until the browser has settled its own
+  // session — means the button is right in the very first paint instead of
+  // popping in a moment later.
+  const signedIn = useMe()?.clerkUserId != null;
 
   return (
     <header
@@ -56,7 +63,7 @@ export function Topbar() {
         <NavLinks />
       </div>
       <div className="flex flex-shrink-0 items-center gap-2.5">
-        <SearchButton />
+        {signedIn && <SearchButton />}
         <SaveStatus status={saveStatus} />
         <UserChip />
         {/* Only when definitively signed out — Show renders nothing while Clerk

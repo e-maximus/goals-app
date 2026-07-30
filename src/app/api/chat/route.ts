@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       tools: buildChatTools({
         pool,
         ownerId,
-        onMutation: () => scheduleReindex(pool, ownerId),
+        onMutation: () => scheduleReindex(pool, user),
       }),
       stopWhen: stepCountIs(MAX_STEPS),
       abortSignal: request.signal,
