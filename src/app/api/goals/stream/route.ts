@@ -1,5 +1,6 @@
 import { currentUserReadonly } from "@/server/current-user";
 import { subscribe } from "@/server/events";
+import { getUpdatedAt } from "@/server/repo";
 
 /**
  * `GET /api/goals/stream` — Server-Sent Events telling a tab that its goals
@@ -41,7 +42,8 @@ export async function GET(request: Request): Promise<Response> {
   const current = await currentUserReadonly();
   if (!current) return new Response("No session", { status: 401 });
 
-  const ownerId = current.user.id;
+  const { pool, user } = current;
+  const ownerId = user.id;
   const encoder = new TextEncoder();
 
   let unsubscribe: (() => void) | undefined;
@@ -69,6 +71,26 @@ export async function GET(request: Request): Promise<Response> {
 
       send(`retry: ${RETRY_MS}\n\n`);
       unsubscribe = subscribe(ownerId, (updatedAt) => send(frame("goals-changed", { updatedAt })));
+
+      // Where the owner stands *now*, so a reconnecting tab can tell "I missed a
+      // write" from "nothing happened while I was away". A tab reconnects every
+      // time it returns to the foreground, and without this it can only assume
+      // the worst and reload the whole store — a visible refresh of the page you
+      // just came back to, for no news.
+      //
+      // Read *after* subscribing, never before: a write landing in the gap must
+      // end up on one side of it or the other, and this way the subscription
+      // catches it. The reverse order would drop it — read the old stamp, miss
+      // the event, and the tab sits on stale goals until the next write. A
+      // duplicate is harmless by comparison; the store reconciles on the stamp
+      // and takes the newest, whichever frame carried it.
+      void getUpdatedAt(pool, ownerId).then(
+        (updatedAt) => send(frame("goals-stamp", { updatedAt })),
+        // Couldn't read it. Say so rather than staying quiet: the client falls
+        // back to reloading, which is what it used to do unconditionally — right,
+        // just not free.
+        () => send(frame("goals-stamp", { updatedAt: null }))
+      );
 
       heartbeat = setInterval(() => send(":\n\n"), HEARTBEAT_MS);
       // Don't let an open stream hold a shutting-down process open.

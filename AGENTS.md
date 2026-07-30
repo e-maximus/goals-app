@@ -67,6 +67,10 @@ The event carries a signal, never state: only the owner's new `updatedAt`, and t
 client answers by reloading through the store's normal `load()`. That keeps one
 path from server state to store state, and makes a dropped connection a non-event
 — reconnecting *is* the resync, so there's no replay buffer and no `Last-Event-ID`.
+A connection opens with a `goals-stamp` frame saying where the server stands, which
+is what makes that cheap: a tab returning from the background compares stamps and
+reloads only if something actually happened while it was away, instead of
+refetching the whole store on every visit back to the tab.
 Server-side it's an in-process bus ([src/server/events.ts](src/server/events.ts)):
 `touch()` in the repo records the change against its transaction and the pool
 publishes it **after the commit**, so no listener can be woken to read pre-write

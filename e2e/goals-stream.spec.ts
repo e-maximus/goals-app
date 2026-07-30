@@ -61,4 +61,37 @@ test.describe("Live goal updates", () => {
 
     await other.close();
   });
+
+  test("coming back to an unchanged store doesn't refetch it", async ({ page }) => {
+    // The counterpart to the test above, and the reason the stream announces its
+    // stamp on connect. Every return to the tab reopens the stream; when nothing
+    // happened meanwhile, that must cost nothing. It used to cost a full store
+    // reload, which re-rendered the page under whoever had just come back to it.
+    const streamOpened = page.waitForRequest("**/api/goals/stream");
+    await page.goto("/goal/goal-podcast");
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+    await streamOpened;
+
+    // Server Actions are how this page talks to the server at all, so any of
+    // them firing here — loadState above all — is the refetch we're ruling out.
+    const actions: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.headers()["next-action"]) {
+        actions.push(request.url());
+      }
+    });
+
+    await setVisibility(page, "hidden");
+    await setVisibility(page, "visible");
+
+    // Asserting an absence, so there is nothing to wait *for*: sit out the
+    // store's reconcile debounce and its minimum reload interval (300ms + 2s),
+    // which is the window any reload would have landed in.
+    await page.waitForTimeout(3_500);
+    expect(actions).toEqual([]);
+
+    // …and the page is still live, not merely quiet: the goal is on screen and
+    // the stream is open again.
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+  });
 });
