@@ -1,6 +1,7 @@
 import "server-only";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma, createPrisma } from "@/lib/db";
+import { discardChanges, flushChanges } from "./events";
 import { migrations } from "./migrations";
 
 /**
@@ -86,8 +87,25 @@ class PrismaPool implements Pool {
     return runQuery<T>(this.client, sql, params);
   }
 
-  transaction<T>(fn: (client: Client) => Promise<T>): Promise<T> {
-    return this.client.$transaction((tx) => fn(makeClient(tx)));
+  /**
+   * Run `fn` in a transaction and, once it has committed, publish whatever
+   * changes it recorded (see server/events.ts). The publish deliberately happens
+   * *here* rather than inside the write: a listener woken before the commit
+   * would read the pre-write state and report it as the new one.
+   */
+  async transaction<T>(fn: (client: Client) => Promise<T>): Promise<T> {
+    let scope: Client | undefined;
+    try {
+      const result = await this.client.$transaction((tx) => {
+        scope = makeClient(tx);
+        return fn(scope);
+      });
+      if (scope) flushChanges(scope);
+      return result;
+    } catch (err) {
+      if (scope) discardChanges(scope);
+      throw err;
+    }
   }
 
   end(): Promise<void> {

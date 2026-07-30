@@ -1,6 +1,7 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
 import { withTransaction, type Client, type Pool } from "./db";
+import { recordChange } from "./events";
 import {
   isTaskDone,
   uid,
@@ -128,10 +129,18 @@ function ownedNote(ownerId: string, noteId: string): Prisma.NoteWhereInput {
   return { id: noteId, goal: { owner_id: ownerId } };
 }
 
-/** Bump the owner's last-write stamp and return it. */
+/**
+ * Bump the owner's last-write stamp and return it.
+ *
+ * Every mutation below funnels through here, which makes it the one place that
+ * knows a write happened — so it is also where the change is recorded for the
+ * goals stream. Recorded, not published: db.ts publishes it after the
+ * transaction commits (see server/events.ts).
+ */
 async function touch(client: Client, ownerId: string): Promise<number> {
   const now = Date.now();
   await client.db.user.updateMany({ where: { id: ownerId }, data: { goals_updated_at: BigInt(now) } });
+  recordChange(client, ownerId, now);
   return now;
 }
 

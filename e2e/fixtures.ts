@@ -48,3 +48,4 @@ export const test = base.extend<{ seededStore: void }>({
 });
 
 export { expect };
+export type { Page } from "@playwright/test";

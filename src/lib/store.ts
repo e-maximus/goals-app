@@ -97,6 +97,18 @@ type StoreState = {
    * for a known user; the first-visit path (no session yet) still calls `load`.
    */
   hydrate: (state: ServerState) => void;
+  /**
+   * A write to this user's goals landed on the server, and `updatedAt` is the
+   * stamp it produced — pushed by the goals stream (SSE). Reconciles by
+   * reloading, but only when the change is genuinely someone else's and no local
+   * edit is waiting to be saved; see `reconcileRemote`.
+   */
+  onRemoteChange: (updatedAt: number) => void;
+  /**
+   * The goals stream (re)connected, so anything written while it was down was
+   * never announced. Reconciles the same way, but on no particular stamp.
+   */
+  requestResync: () => void;
 
   addGoal: (title: string, why?: string, dueDate?: number) => Goal;
   updateGoal: (goalId: string, title: string, why?: string, dueDate?: number) => void;
@@ -224,6 +236,16 @@ export const useStore = create<StoreState>((set) => ({
       loadStatus: "ready",
     });
     applyingRemote = false;
+  },
+
+  onRemoteChange: (updatedAt) => {
+    pendingRemoteUpdatedAt = Math.max(pendingRemoteUpdatedAt ?? 0, updatedAt);
+    scheduleReconcile();
+  },
+
+  requestResync: () => {
+    resyncRequested = true;
+    scheduleReconcile();
   },
 
   addGoal: (title, why, dueDate) => {
@@ -550,6 +572,10 @@ async function pushToServer(): Promise<void> {
     if (pendingPush) {
       pendingPush = false;
       void pushToServer();
+    } else {
+      // Our own write is settled, so a remote change we held back for it can
+      // now be applied without eating an unsaved edit.
+      void reconcileRemote();
     }
   }
 }
@@ -602,6 +628,102 @@ if (typeof window !== "undefined") {
     if (applyingRemote) return;
 
     clearTimeout(pushTimer);
-    pushTimer = setTimeout(() => void pushToServer(), PUSH_DEBOUNCE_MS);
+    pushTimer = setTimeout(() => {
+      // Cleared before the push so `hasUnsavedEdits` reads false from here on:
+      // a live timer id would otherwise look like a pending edit forever.
+      pushTimer = undefined;
+      void pushToServer();
+    }, PUSH_DEBOUNCE_MS);
   });
+}
+
+// ---- reconciliation with writes made elsewhere ----
+//
+// The goals stream (src/app/api/goals/stream) says only *that* the server moved
+// and to what stamp. Turning that into state is this: reload through the normal
+// path, having ruled out the two cases where reloading would be wrong.
+
+const REMOTE_DEBOUNCE_MS = 300;
+/**
+ * Floor on how often a reload may run. Every reload is a whole-store read, and
+ * an agent building a goal over MCP writes it in pieces — a group, then its
+ * steps, then a note — seconds apart, which no debounce alone would ever
+ * coalesce. The interval bounds that into a steady trickle while still letting a
+ * single, isolated change through at debounce speed.
+ */
+const MIN_RELOAD_INTERVAL_MS = 2_000;
+
+let remoteTimer: ReturnType<typeof setTimeout> | undefined;
+/** The newest stamp the stream has announced, until we've caught up with it. */
+let pendingRemoteUpdatedAt: number | null = null;
+/** Set when the stream reconnected and we can't know what we missed. */
+let resyncRequested = false;
+let reconciling = false;
+let lastReloadAt = 0;
+
+/**
+ * Queue a reconcile: after the debounce, and never sooner than
+ * {@link MIN_RELOAD_INTERVAL_MS} after the last reload. Every event lands on
+ * this one timer, so a burst — however long it runs — costs one reload per
+ * interval rather than one per event, and the last event always gets its reload.
+ */
+function scheduleReconcile(): void {
+  const sinceLast = Date.now() - lastReloadAt;
+  const delay = Math.max(REMOTE_DEBOUNCE_MS, MIN_RELOAD_INTERVAL_MS - sinceLast);
+  clearTimeout(remoteTimer);
+  remoteTimer = setTimeout(() => void reconcileRemote(), delay);
+}
+
+/** A local edit is written but not yet saved — the debounce or the request. */
+function hasUnsavedEdits(): boolean {
+  return pushTimer !== undefined || pushing;
+}
+
+async function reconcileRemote(): Promise<void> {
+  // A reload is already running. Come back after it — dropping this would strand
+  // the event that arrived mid-flight until something else happened to nudge us.
+  if (reconciling) {
+    scheduleReconcile();
+    return;
+  }
+
+  const target = pendingRemoteUpdatedAt;
+  if (target === null && !resyncRequested) return;
+
+  const { serverUpdatedAt, loadStatus } = useStore.getState();
+
+  // Our own write, echoed back to us: the save already gave us this state. A
+  // reconnect skips this — there is no stamp to compare, only the possibility
+  // of having missed something.
+  if (!resyncRequested && target !== null && serverUpdatedAt !== null && target <= serverUpdatedAt) {
+    pendingRemoteUpdatedAt = null;
+    return;
+  }
+  // A load is already in flight (or the store is in its error state with a
+  // retry of its own); it will land on state at least as new as this.
+  if (loadStatus !== "ready") return;
+  // An unsaved edit would be clobbered by a reload — `load` keeps local-only
+  // *items*, but the server's copy of an item that already exists there wins.
+  // The pending push settles it: on success we're current, on conflict it
+  // reloads, and either way it calls back here.
+  if (hasUnsavedEdits()) return;
+
+  reconciling = true;
+  const before = useStore.getState().serverUpdatedAt;
+  try {
+    await useStore.getState().load();
+  } finally {
+    reconciling = false;
+    // From when the reload *finished*: a slow one shouldn't be followed
+    // immediately by the next.
+    lastReloadAt = Date.now();
+  }
+
+  // Only clear once we've actually caught up: a failed load leaves the target
+  // standing so the next event (or push) tries again. A load that answered at
+  // all satisfies a reconnect, whatever stamp it came back with.
+  const { serverUpdatedAt: reached } = useStore.getState();
+  const answered = reached !== null && (before === null || reached >= before);
+  if (answered) resyncRequested = false;
+  if (target !== null && reached !== null && reached >= target) pendingRemoteUpdatedAt = null;
 }
