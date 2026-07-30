@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { syncIdentity } from "../actions";
+import { shouldSyncIdentity } from "../identity-sync";
 import type { Me } from "../types";
 
 const MeContext = createContext<Me | null>(null);
@@ -19,18 +20,21 @@ const MeContext = createContext<Me | null>(null);
  * resolves. That's the single case where the identity is settled from the
  * client: {@link syncIdentity} links the account and answers with the new
  * identity, and a refresh re-renders the tree the server already owns.
+ *
+ * "That case" is narrow on purpose — see {@link shouldSyncIdentity}, which owns
+ * the rule and explains why.
  */
 export function MeProvider({ me, children }: { me: Me | null; children: React.ReactNode }) {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
   const lastSignedIn = useRef<boolean | null>(null);
+  const linked = me?.clerkUserId != null;
 
   useEffect(() => {
     if (!isLoaded) return;
-    const previous = lastSignedIn.current;
+    const previousSignedIn = lastSignedIn.current;
     lastSignedIn.current = isSignedIn;
-    // Skip the first settled reading — it describes the render we already have.
-    if (previous === null || previous === isSignedIn) return;
+    if (!shouldSyncIdentity({ previousSignedIn, isSignedIn, linked })) return;
     // Link the account, then let the server re-render this tree with the
     // identity it now resolves. The value below stays the server's either way —
     // there is one source for it, not two.
@@ -38,7 +42,7 @@ export function MeProvider({ me, children }: { me: Me | null; children: React.Re
       () => router.refresh(),
       () => {} // the chip falls back to the Clerk profile; nothing to recover
     );
-  }, [isLoaded, isSignedIn, router]);
+  }, [isLoaded, isSignedIn, linked, router]);
 
   return <MeContext.Provider value={me}>{children}</MeContext.Provider>;
 }

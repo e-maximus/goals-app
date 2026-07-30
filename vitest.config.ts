@@ -39,14 +39,15 @@ export default defineConfig({
         },
       },
       {
-        // Pure client-side logic (the store's sync/persistence), with the server
-        // mocked out. No Postgres, no browser — the module only needs a stubbed
-        // `window` for its push subscriber to attach.
+        // Pure client-side logic (the store's sync/persistence, and the rules a
+        // feature's components defer to), with the server mocked out. No
+        // Postgres, no browser — the store module only needs a stubbed `window`
+        // for its push subscriber to attach.
         extends: true,
         test: {
           name: 'lib',
           environment: 'node',
-          include: ['src/lib/test/**/*.test.ts'],
+          include: ['src/lib/test/**/*.test.ts', 'src/features/*/test/**/*.test.ts'],
         },
       },
       {
