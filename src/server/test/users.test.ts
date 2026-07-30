@@ -10,6 +10,8 @@ import {
   getUserByClerkId,
   getUserByEmail,
   getUserBySession,
+  isSignedIn,
+  resetTestUser,
   resolveWebUser,
   sessionClearCookie,
 } from "../users";
@@ -259,5 +261,31 @@ describe("email fallback (a Clerk identity deleted and signed up again)", () => 
     const resolved = await getOrCreateUserByClerkId(pool, "clerk_b1", email("back@example.com"));
     assert.equal(resolved.id, anon.id);
     assert.equal(resolved.email, "back@example.com", "the next deletion is now recoverable");
+  });
+});
+
+describe("isSignedIn", () => {
+  const withCookie = (token: string) =>
+    new Request("http://localhost/api/goals", { headers: { cookie: `session=${token}` } });
+
+  it("is false for a freshly minted cookie account and true once Clerk is linked", async () => {
+    const anon = await createUser(pool);
+    assert.equal(isSignedIn(anon), false);
+
+    const { user } = await resolveWebUser(pool, withCookie(anon.sessionToken), "clerk_gate");
+    assert.equal(isSignedIn(user), true);
+  });
+});
+
+describe("resetTestUser (the e2e fixture's account)", () => {
+  it("comes back linked, so the suite covers the signed-in features", async () => {
+    // Search and the embedding index are signed-in only. The e2e suite drives
+    // them through this account with no Clerk session in the browser, so if this
+    // ever stops being linked, six search specs fail with a missing button and
+    // no explanation. Fail here instead, where the reason is written down.
+    const { id } = await resetTestUser(pool);
+    const user = await getUserBySession(pool, "e2e-session-token");
+    assert.equal(user?.id, id);
+    assert.equal(isSignedIn(user!), true);
   });
 });

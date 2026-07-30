@@ -103,6 +103,20 @@ export type User = {
   avatar: string | null;
 };
 
+/**
+ * Whether this account is signed in — i.e. has a Clerk identity linked to it.
+ *
+ * The one server-side answer to that question. An anonymous account is a cookie
+ * and nothing more: it can disappear with the cookie, so the features that cost
+ * real money or store derived copies of someone's writing (search and its
+ * embedding index) are held back until there's a durable identity behind them.
+ * Don't ask Clerk's client state for this — the browser can be between session
+ * reads, and every one of those features is gated on the server anyway.
+ */
+export function isSignedIn(user: User): boolean {
+  return user.clerkUserId !== null;
+}
+
 /** A URL-safe, unguessable token. 32 bytes of randomness, base64url encoded. */
 function newToken(): string {
   return randomBytes(32).toString("base64url");
@@ -452,6 +466,13 @@ export async function resolveWebUser(
 const TEST_USER = {
   id: "e2e-user",
   sessionToken: "e2e-session-token",
+  // Linked, so the suite covers the signed-in features — search and its index —
+  // rather than only what an anonymous visitor can reach. There is no Clerk
+  // session in the browser, and this id belongs to no real Clerk instance: it
+  // makes the *server* treat this account as signed in, which is where those
+  // features are gated (see isSignedIn). The Clerk-driven UI (the account chip,
+  // the Settings cards) is unaffected and still renders its signed-out shape.
+  clerkUserId: "e2e-clerk-user",
 };
 
 /**
@@ -463,10 +484,11 @@ export async function resetTestUser(pool: Pool): Promise<{ id: string; sessionTo
   await withTransaction(pool, async (client) => {
     const now = Date.now();
     await client.query(
-      `INSERT INTO users (id, session_token, goals_updated_at, created_at, display_name, avatar)
-       VALUES ($1, $2, $3, $3, 'Shiny Fox', '🦊')
-       ON CONFLICT (id) DO UPDATE SET goals_updated_at = $3, display_name = 'Shiny Fox', avatar = '🦊'`,
-      [TEST_USER.id, TEST_USER.sessionToken, now]
+      `INSERT INTO users (id, session_token, clerk_user_id, goals_updated_at, created_at, display_name, avatar)
+       VALUES ($1, $2, $4, $3, $3, 'Shiny Fox', '🦊')
+       ON CONFLICT (id) DO UPDATE
+         SET goals_updated_at = $3, clerk_user_id = $4, display_name = 'Shiny Fox', avatar = '🦊'`,
+      [TEST_USER.id, TEST_USER.sessionToken, now, TEST_USER.clerkUserId]
     );
     await client.query("DELETE FROM goals WHERE owner_id = $1", [TEST_USER.id]);
     await client.query("DELETE FROM tasks WHERE owner_id = $1", [TEST_USER.id]);

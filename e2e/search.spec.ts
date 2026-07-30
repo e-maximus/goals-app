@@ -124,3 +124,26 @@ test.describe("Search", () => {
     }).toPass({ timeout: 30_000 });
   });
 });
+
+/**
+ * Search is a signed-in feature: an anonymous account is a cookie and nothing
+ * more, and nothing indexes one. The suite's own user is linked on the server
+ * (see resetTestUser), so this is the one place the signed-out shape is covered
+ * — by dropping that cookie and letting the app mint a plain anonymous visitor.
+ */
+test.describe("Search, signed out", () => {
+  test("an anonymous visitor gets no palette and no ⌘K", async ({ page, context }) => {
+    // Only the app's session cookie: Clerk's testing-token cookies have to
+    // survive, or the browser hangs on the dev-browser handshake.
+    await context.clearCookies({ name: "session" });
+    await page.goto("/goals");
+
+    // The page itself still works — this is a gate on search, not on the app.
+    // A fresh visitor gets their own seeded copy, so it's a goal of theirs.
+    await expect(page.getByRole("main").getByRole("link").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Search" })).toHaveCount(0);
+
+    await page.keyboard.press("ControlOrMeta+k");
+    await expect(page.getByRole("dialog", { name: "Search" })).toHaveCount(0);
+  });
+});

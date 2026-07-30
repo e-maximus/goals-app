@@ -1,6 +1,7 @@
 import "server-only";
 import { after } from "next/server";
 import type { Pool } from "../db";
+import { isSignedIn, type User } from "../users";
 import { reindexQuietly } from "./reindex";
 
 /**
@@ -13,15 +14,25 @@ import { reindexQuietly } from "./reindex";
  *
  * Nothing here throws: the index is derived data, so a failed reindex must not
  * turn a successful save into a failed one (see reindexQuietly).
+ *
+ * It takes the whole {@link User} rather than an owner id so the "signed-in
+ * only" rule lives here, at the single choke point every write path goes
+ * through, instead of being re-remembered at each call site. An anonymous
+ * account indexes nothing: search is a signed-in feature, so its index would be
+ * a derived copy of that user's writing — and, with a provider configured, a
+ * paid API call — that nothing ever reads. Signing in later needs no backfill:
+ * the first write after linking indexes the whole store, because the index is
+ * diffed by content hash rather than appended to.
  */
-export function scheduleReindex(pool: Pool, ownerId: string): void {
+export function scheduleReindex(pool: Pool, user: User): void {
+  if (!isSignedIn(user)) return;
   try {
-    after(() => reindexQuietly(pool, ownerId));
+    after(() => reindexQuietly(pool, user.id));
   } catch {
     // `after` throws when there is no request scope to attach to — a script, a
     // test, or any future caller that isn't a route handler. Falling through to
     // a detached run keeps the index correct there; silently skipping would make
     // search go stale with no symptom but worse results.
-    void reindexQuietly(pool, ownerId);
+    void reindexQuietly(pool, user.id);
   }
 }

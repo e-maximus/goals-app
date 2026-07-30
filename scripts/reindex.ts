@@ -1,8 +1,8 @@
-// Rebuild the search index for every user.
+// Rebuild the search index for every signed-in user.
 //
-//   npm run reindex             # every user
+//   npm run reindex             # every signed-in user
 //   npm run reindex -- --dry-run
-//   npm run reindex -- <userId> # just one
+//   npm run reindex -- <userId> # just one, signed in or not
 //
 // On Railway:  railway run npm run reindex
 //
@@ -28,8 +28,15 @@ async function main() {
 
   const pool = createPool();
   try {
+    // The sweep covers signed-in accounts only, matching what the write paths
+    // index (see src/server/embeddings/schedule.ts): an anonymous account can't
+    // reach search, so indexing it would be embedding calls nobody ever queries.
+    // Naming a user id explicitly still works either way — that's an operator
+    // asking for one specific account, not a sweep.
     const { rows } = await pool.query<{ id: string }>(
-      only ? "SELECT id FROM users WHERE id = $1" : "SELECT id FROM users ORDER BY created_at",
+      only
+        ? "SELECT id FROM users WHERE id = $1"
+        : "SELECT id FROM users WHERE clerk_user_id IS NOT NULL ORDER BY created_at",
       only ? [only] : []
     );
     if (rows.length === 0) {

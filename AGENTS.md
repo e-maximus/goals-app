@@ -46,7 +46,14 @@ alongside.
   Without `EMBEDDING_API_KEY` the vector arm is simply absent and the keyword and
   trigram arms still answer; the ⌘K palette
   ([src/features/search/](src/features/search/)) reaches it through a Server
-  Action, and the agent through the `search_goals` tool.
+  Action, and the agent through the `search_goals` tool. Both search **and**
+  indexing are **signed-in only** — an anonymous account indexes nothing and
+  can't query. The rule is one predicate (`isSignedIn` in
+  [src/server/users.ts](src/server/users.ts)), applied at the write path's single
+  choke point ([src/server/embeddings/schedule.ts](src/server/embeddings/schedule.ts))
+  and in the search action; the topbar hides the palette from the same
+  server-resolved answer. Signing in needs no backfill — the index is diffed by
+  content hash, so the first write after linking indexes the whole store.
 
 The goals live on the server and it is the source of truth. The store is
 optimistic — a mutation updates goals in place and a debounced save action writes

@@ -93,7 +93,7 @@ export async function POST(request: Request) {
   }
 
   const user = await getOrCreateUserByClerkId(pool, clerkUserId, clerkEmailResolver(clerkUserId));
-  const server = createMcpServer(pool, user.id, () => scheduleReindex(pool, user.id));
+  const server = createMcpServer(pool, user.id, () => scheduleReindex(pool, user));
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
