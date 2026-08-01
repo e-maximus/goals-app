@@ -73,14 +73,16 @@ export function Topbar() {
             <Button size="sm">Sign in</Button>
           </SignInButton>
         </Show>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={() => setChatOpen(true)}
-          aria-label="Assistant"
-        >
-          <Sparkles />
-        </Button>
+        {signedIn && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setChatOpen(true)}
+            aria-label="Assistant"
+          >
+            <Sparkles />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
