@@ -6,7 +6,6 @@ import type { Embedder } from "../embeddings/model";
 import * as repo from "../repo";
 import { reindexOwner } from "../embeddings/reindex";
 import { search } from "../search/search";
-import { searchViaLangchain } from "../search/langchain/search";
 import {
   corpusGoals,
   corpusTasks,
@@ -52,10 +51,6 @@ const implementations: Implementation[] = [
     name: "sql",
     run: (query, embed = embedder) => search(pool, owner, query, { embed }),
   },
-  {
-    name: "langchain",
-    run: (query, embed = embedder) => searchViaLangchain(pool, owner, query, { embed }),
-  },
 ];
 
 for (const implementation of implementations) {
@@ -99,44 +94,3 @@ for (const implementation of implementations) {
     });
   });
 }
-
-describe("search implementations agree", () => {
-  // The bar above proves each implementation is good enough on its own. This
-  // proves they are the *same* — which is the question that matters while one
-  // replaces the other, because a difference the cases happen not to cover is
-  // exactly the kind that ships unnoticed.
-  it("returns identical results for every case", async () => {
-    const divergences: string[] = [];
-
-    for (const testCase of searchCases) {
-      const sql = await search(pool, owner, testCase.query, { embed: embedder });
-      const langchain = await searchViaLangchain(pool, owner, testCase.query, { embed: embedder });
-
-      const shape = (hits: Awaited<ReturnType<typeof search>>) =>
-        hits.map((hit) => `${hit.kind}:${hit.id}[${[...hit.arms].sort().join("+")}]`);
-      if (shape(sql).join(" ") !== shape(langchain).join(" ")) {
-        divergences.push(
-          `${testCase.query}\n    sql: ${shape(sql).join(", ")}\n    lc:  ${shape(langchain).join(", ")}`
-        );
-      }
-    }
-
-    assert.deepEqual(divergences, []);
-  });
-
-  it("agrees with no embedding provider either", async () => {
-    // Losing the vector arm changes the number of rankings fused, and the
-    // ensemble pairs weights to retrievers by position — the arithmetic most
-    // likely to drift between the two.
-    for (const query of ["переезд", "Барселона", "микрофон"]) {
-      const sql = await search(pool, owner, query, { embed: null });
-      const langchain = await searchViaLangchain(pool, owner, query, { embed: null });
-
-      assert.deepEqual(
-        langchain.map((hit) => hit.id),
-        sql.map((hit) => hit.id),
-        `diverged on "${query}"`
-      );
-    }
-  });
-});

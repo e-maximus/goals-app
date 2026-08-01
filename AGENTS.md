@@ -41,7 +41,16 @@ alongside.
 - **Search** — a derived index ([src/server/embeddings/](src/server/embeddings/),
   the `embeddings` table) rebuilt from the store after every write, and hybrid
   retrieval over it ([src/server/search/](src/server/search/)): BM25, vectors and
-  trigrams, fused by rank. The index is never a source of truth — it is rebuilt
+  trigrams, fused by rank. The three arms are **LangChain retrievers**
+  ([src/server/search/langchain/](src/server/search/langchain/)) merged by an
+  `EnsembleRetriever`; the rankings themselves stay SQL, because nothing LangChain
+  ships computes BM25 against one owner's corpus — the framework contributes
+  parallel invocation, weighted RRF and a callback surface (set `LANGSMITH_TRACING`
+  and `LANGSMITH_API_KEY` to see each arm's contribution in a trace; note that
+  sends goal and note text to a third party, so leave it off in production unless
+  that is a decision someone has actually made). A retriever binds its owner at
+  construction, so it is built **per request** — never hoist one to module scope.
+  The index is never a source of truth — it is rebuilt
   from goals/steps/notes/tasks, so a stale row costs a reindex and nothing more.
   Without `EMBEDDING_API_KEY` the vector arm is simply absent and the keyword and
   trigram arms still answer; the ⌘K palette

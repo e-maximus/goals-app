@@ -2,8 +2,7 @@ import "server-only";
 import { EnsembleRetriever } from "@langchain/classic/retrievers/ensemble";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import type { DocumentInterface } from "@langchain/core/documents";
-import type { Arm } from "../arms";
-import { parseDocKey, type BuiltRetrievers } from "./retrievers";
+import { parseDocKey, type Arm, type BuiltRetrievers } from "./retrievers";
 
 /**
  * Fusing the arms with LangChain's `EnsembleRetriever`.

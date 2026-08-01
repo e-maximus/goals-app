@@ -2,21 +2,27 @@ import "server-only";
 import type { Pool } from "../db";
 import * as repo from "../repo";
 import { embedder, type Embedder } from "../embeddings/model";
-import { keywordArm, trigramArm, vectorArm, type Arm, type ArmHit } from "./arms";
-import { fuse } from "./rrf";
-import { buildIndex, promoteGoals } from "./hydrate";
 import type { SearchHit, SearchKind } from "../domain";
-import { log } from "../log";
+import { buildIndex, promoteGoals } from "./hydrate";
+import { ARM_LIMIT, buildRetrievers } from "./langchain/retrievers";
+import { fuseWithEnsemble } from "./langchain/fusion";
 
 /**
  * Search over one user's goals, steps, notes and tasks.
  *
- * Three arms run in parallel and are fused by rank ([rrf.ts](./rrf.ts)). Then
- * the winners are hydrated from the real tables rather than served out of the
- * index: the index is derived data that a failed reindex can leave briefly
- * stale, and returning a row for a step that has since been deleted would be
- * worse than returning one result fewer. A hit that no longer resolves is
- * dropped.
+ * Three arms run in parallel and are fused by rank: they are LangChain
+ * retrievers ([langchain/retrievers.ts](./langchain/retrievers.ts)) merged by an
+ * `EnsembleRetriever` ([langchain/fusion.ts](./langchain/fusion.ts)). The
+ * rankings themselves are still SQL — LangChain has nothing that computes BM25
+ * against one owner's corpus — so what the framework contributes is the
+ * plumbing: parallel invocation, weighted RRF, and a callback surface that makes
+ * each arm's contribution observable.
+ *
+ * Then the winners are hydrated from the real tables rather than served out of
+ * the index ([hydrate.ts](./hydrate.ts)): the index is derived data that a
+ * failed reindex can leave briefly stale, and returning a row for a step that
+ * has since been deleted would be worse than returning one result fewer. A hit
+ * that no longer resolves is dropped.
  */
 
 // The result shape is the wire format, declared once in src/lib/types.ts so the
@@ -47,17 +53,10 @@ export async function search(
   const limit = options.limit ?? DEFAULT_LIMIT;
   const embed = options.embed === undefined ? embedder() : options.embed;
 
-  const rankings: { arm: Arm; hits: ArmHit[] }[] = [];
-  const [keyword, trigram, vector] = await Promise.all([
-    keywordArm(pool, ownerId, trimmed),
-    trigramArm(pool, ownerId, trimmed),
-    semanticArm(pool, ownerId, trimmed, embed),
-  ]);
-  rankings.push({ arm: "keyword", hits: keyword });
-  rankings.push({ arm: "trigram", hits: trigram });
-  if (vector) rankings.push({ arm: "vector", hits: vector });
-
-  const fused = fuse(rankings);
+  // Built per request because the owner is bound into each retriever — see the
+  // note in retrievers.ts on why that is not a module-level singleton.
+  const built = buildRetrievers(pool, ownerId, embed, ARM_LIMIT);
+  const fused = await fuseWithEnsemble(built, trimmed);
   if (fused.length === 0) return [];
 
   const state = await repo.getState(pool, ownerId);
@@ -71,29 +70,4 @@ export async function search(
     hits.push({ ...item, score: hit.score, arms: hit.arms });
   }
   return promoteGoals(hits).slice(0, limit);
-}
-
-/**
- * The semantic arm, or null when it cannot run. A missing provider is a normal
- * state; a provider that errors is not, but it still must not take the whole
- * search down with it — the other two arms have already answered.
- */
-async function semanticArm(
-  pool: Pool,
-  ownerId: string,
-  query: string,
-  embed: Embedder | null
-): Promise<ArmHit[] | null> {
-  if (!embed) return null;
-  try {
-    const [vector] = await embed.embed([query]);
-    if (!vector) return null;
-    return await vectorArm(pool, ownerId, vector, embed.modelName);
-  } catch (err) {
-    log.error("search_vector_arm_failed", {
-      userId: ownerId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
 }

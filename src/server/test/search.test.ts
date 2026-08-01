@@ -6,8 +6,6 @@ import type { Goal, Task } from "../domain";
 import * as repo from "../repo";
 import { reindexOwner } from "../embeddings/reindex";
 import { EMBEDDING_DIMENSIONS, type Embedder } from "../embeddings/model";
-import { keywordArm, trigramArm } from "../search/arms";
-import { fuse } from "../search/rrf";
 import { promoteGoals, search } from "../search/search";
 import type { SearchHit } from "@/lib/types";
 import { createOwner, reset, setupPool } from "./helpers";
@@ -60,105 +58,6 @@ async function indexed(goals: Goal[], tasks: Task[] = [], embed: Embedder | null
 }
 
 const titles = (hits: { title: string }[]) => hits.map((h) => h.title);
-
-describe("keyword arm (BM25)", () => {
-  it("ranks the rare term above the common one", async () => {
-    // "move" is in every goal; "Barcelona" is in one. Without IDF both terms
-    // count the same and the most "move"-heavy row wins — which is not what the
-    // user asked for. This is the test ts_rank could not pass.
-    await indexed([
-      goal({ id: "g-1", title: "Move to Barcelona", why: "Live by the sea" }),
-      goal({ id: "g-2", title: "Move the sofa", why: "Move it out of the hallway, then move it back" }),
-      goal({ id: "g-3", title: "Move house paperwork", why: "Move everything before the move deadline" }),
-      goal({ id: "g-4", title: "Move the gym sessions", why: "Move them to the morning" }),
-    ]);
-
-    const hits = await keywordArm(pool, owner, "move to Barcelona");
-
-    assert.equal(hits[0]!.itemId, "g-1");
-  });
-
-  it("ranks a hit in the item's own title above one in its body", async () => {
-    await indexed([
-      goal({ id: "g-title", title: "Visa paperwork" }),
-      goal({ id: "g-body", title: "Relocation", why: "Sort out the visa at some point" }),
-    ]);
-
-    const hits = await keywordArm(pool, owner, "visa");
-
-    assert.equal(hits[0]!.itemId, "g-title");
-  });
-
-  it("does not let a parent's title leak into a child's keyword score", async () => {
-    // The step says nothing about Barcelona; only its goal does. The step's
-    // embedded text carries the goal title for the vector arm's benefit, and
-    // this proves that text never reached the keyword index.
-    await indexed([
-      goal({
-        id: "g-1",
-        title: "Move to Barcelona",
-        steps: [{ id: "s-1", text: "Cancel the gym membership", done: false }],
-      }),
-    ]);
-
-    const hits = await keywordArm(pool, owner, "Barcelona");
-
-    assert.deepEqual(
-      hits.map((h) => h.itemId),
-      ["g-1"]
-    );
-  });
-
-  it("finds nothing for a query with no shared words", async () => {
-    await indexed([goal({ title: "Move to Barcelona" })]);
-    assert.deepEqual(await keywordArm(pool, owner, "kitchen renovation"), []);
-  });
-});
-
-describe("trigram arm", () => {
-  it("still finds the row when the query is misspelled", async () => {
-    await indexed([goal({ id: "g-1", title: "Move to Barcelona" })]);
-
-    // BM25 sees "barcelna" as simply a different word; this is the arm that
-    // covers typos — and the same mechanism covers Russian morphology, which
-    // the 'simple' config does not stem.
-    assert.deepEqual(await keywordArm(pool, owner, "Barcelna"), []);
-    const hits = await trigramArm(pool, owner, "Barcelna");
-    assert.equal(hits[0]!.itemId, "g-1");
-  });
-});
-
-describe("fuse", () => {
-  it("puts a row several arms agree on above one only a single arm loves", () => {
-    const fused = fuse([
-      {
-        arm: "keyword",
-        hits: [
-          { kind: "goal", itemId: "loved-by-one", score: 99 },
-          { kind: "goal", itemId: "agreed", score: 1 },
-        ],
-      },
-      { arm: "vector", hits: [{ kind: "goal", itemId: "agreed", score: 0.4 }] },
-      { arm: "trigram", hits: [{ kind: "goal", itemId: "agreed", score: 0.5 }] },
-    ]);
-
-    // Note the scores are wildly different scales — 99 vs 0.4 — and RRF ignores
-    // them entirely, which is the point: only the orderings are comparable.
-    assert.equal(fused[0]!.itemId, "agreed");
-    assert.deepEqual(fused[0]!.arms, ["keyword", "vector", "trigram"]);
-  });
-
-  it("works with an arm missing entirely", () => {
-    const fused = fuse([
-      { arm: "keyword", hits: [{ kind: "goal", itemId: "a", score: 2 }] },
-      { arm: "trigram", hits: [] },
-    ]);
-    assert.deepEqual(
-      fused.map((h) => h.itemId),
-      ["a"]
-    );
-  });
-});
 
 describe("promoteGoals", () => {
   const hit = (over: Partial<SearchHit> & Pick<SearchHit, "kind" | "id">): SearchHit => ({
@@ -327,35 +226,6 @@ describe("search", () => {
     assert.deepEqual(
       mine.map((h) => h.id),
       ["g-mine"]
-    );
-  });
-
-  it("computes term statistics per owner, not across the whole table", async () => {
-    // IDF is a corpus statistic. Computed over the whole table, another user's
-    // goals would change how rare a word looks here — leaking their content into
-    // this owner's ranking, and quietly making their own scores wrong.
-    const other = await createOwner(pool, "owner-2");
-    await repo.replaceAll(
-      pool,
-      other,
-      Array.from({ length: 8 }, (_, i) =>
-        goal({ id: `t-${i}`, title: `Barcelona plan ${i}`, why: "Barcelona Barcelona" })
-      ),
-      null,
-      []
-    );
-    await reindexOwner(pool, other, null);
-
-    await indexed([
-      goal({ id: "g-rare", title: "Barcelona" }),
-      goal({ id: "g-common", title: "Weekly review", why: "Review the week" }),
-    ]);
-
-    const hits = await keywordArm(pool, owner, "Barcelona");
-
-    assert.deepEqual(
-      hits.map((h) => h.itemId),
-      ["g-rare"]
     );
   });
 });

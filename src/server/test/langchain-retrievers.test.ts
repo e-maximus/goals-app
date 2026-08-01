@@ -5,26 +5,30 @@ import type { Goal } from "../domain";
 import * as repo from "../repo";
 import { reindexOwner } from "../embeddings/reindex";
 import type { Embedder } from "../embeddings/model";
-import { keywordArm, trigramArm } from "../search/arms";
+import { fuseWithEnsemble } from "../search/langchain/fusion";
 import {
+  ArmRetriever,
   Bm25Retriever,
   TrigramRetriever,
   VectorRetriever,
   buildRetrievers,
   docKey,
   parseDocKey,
+  type Arm,
+  type ArmHit,
 } from "../search/langchain/retrievers";
 import { lexicalEmbedder } from "./search-cases";
 import { createOwner, reset, setupPool } from "./helpers";
 
 /**
- * The LangChain adapters over the three arms.
+ * The three retrievers and the ensemble that fuses them.
  *
- * There is no new ranking to test — the SQL is covered in search.test.ts. What
- * these assert is that the wrappers are *transparent*: same rows, same order,
- * same scores as calling the arm directly. A retriever that quietly reordered or
- * dropped results would be worse than no retriever at all, because the fused
- * search it feeds would look plausible while being wrong.
+ * Two kinds of assertion live here. The ranking ones — IDF beats term frequency,
+ * a title beats a body, a parent's title never reaches a child — are about the
+ * SQL each retriever carries, and they are the reason the SQL is there at all
+ * rather than a stock LangChain retriever. The rest are about the seams the
+ * framework introduces: the identity a document is keyed by, the owner bound
+ * into a retriever, and everything the ensemble drops on the way out.
  */
 
 let pool: Pool;
@@ -83,21 +87,68 @@ describe("docKey", () => {
 });
 
 describe("Bm25Retriever", () => {
-  it("returns the arm's ranking unchanged", async () => {
-    await indexed(owner, corpus);
+  it("ranks the rare term above the common one", async () => {
+    // "move" is in every goal; "Barcelona" is in one. Without IDF both terms
+    // count the same and the most "move"-heavy row wins — which is not what the
+    // user asked for. This is the test ts_rank could not pass, and the reason
+    // LangChain's own BM25Retriever is not what sits here.
+    await indexed(owner, [
+      goal({ id: "g-1", title: "Move to Barcelona", why: "Live by the sea" }),
+      goal({
+        id: "g-2",
+        title: "Move the sofa",
+        why: "Move it out of the hallway, then move it back",
+      }),
+      goal({
+        id: "g-3",
+        title: "Move house paperwork",
+        why: "Move everything before the move deadline",
+      }),
+      goal({ id: "g-4", title: "Move the gym sessions", why: "Move them to the morning" }),
+    ]);
 
-    const expected = await keywordArm(pool, owner, "move to Barcelona");
     const docs = await new Bm25Retriever({ pool, ownerId: owner }).invoke("move to Barcelona");
 
-    assert.ok(expected.length > 1, "the fixture should produce more than one hit");
+    assert.equal(docs[0]!.metadata.itemId, "g-1");
+  });
+
+  it("ranks a hit in the item's own title above one in its body", async () => {
+    await indexed(owner, [
+      goal({ id: "g-title", title: "Visa paperwork" }),
+      goal({ id: "g-body", title: "Relocation", why: "Sort out the visa at some point" }),
+    ]);
+
+    const docs = await new Bm25Retriever({ pool, ownerId: owner }).invoke("visa");
+
+    assert.equal(docs[0]!.metadata.itemId, "g-title");
+  });
+
+  it("does not let a parent's title leak into a child's keyword score", async () => {
+    // The step says nothing about Barcelona; only its goal does. The step's
+    // embedded text carries the goal title for the vector arm's benefit, and
+    // this proves that text never reached the keyword index.
+    await indexed(owner, [
+      goal({
+        id: "g-1",
+        title: "Move to Barcelona",
+        steps: [{ id: "s-1", text: "Cancel the gym membership", done: false }],
+      }),
+    ]);
+
+    const docs = await new Bm25Retriever({ pool, ownerId: owner }).invoke("Barcelona");
+
     assert.deepEqual(
       docs.map((d) => d.metadata.itemId),
-      expected.map((h) => h.itemId)
+      ["g-1"]
     );
-    assert.deepEqual(
-      docs.map((d) => d.metadata.score),
-      expected.map((h) => h.score)
-    );
+  });
+
+  it("finds nothing for a query with no shared words", async () => {
+    await indexed(owner, [goal({ title: "Move to Barcelona" })]);
+
+    const docs = await new Bm25Retriever({ pool, ownerId: owner }).invoke("kitchen renovation");
+
+    assert.deepEqual(docs, []);
   });
 
   it("puts the result's identity in pageContent, not its text", async () => {
@@ -153,6 +204,30 @@ describe("Bm25Retriever", () => {
     );
   });
 
+  it("computes term statistics per owner, not across the whole table", async () => {
+    // IDF is a corpus statistic. Computed over the whole table, another user's
+    // goals would change how rare a word looks here — leaking their content into
+    // this owner's ranking, and quietly making their own scores wrong.
+    const other = await createOwner(pool, "owner-2");
+    await indexed(
+      other,
+      Array.from({ length: 8 }, (_, i) =>
+        goal({ id: `t-${i}`, title: `Barcelona plan ${i}`, why: "Barcelona Barcelona" })
+      )
+    );
+    await indexed(owner, [
+      goal({ id: "g-rare", title: "Barcelona" }),
+      goal({ id: "g-common", title: "Weekly review", why: "Review the week" }),
+    ]);
+
+    const docs = await new Bm25Retriever({ pool, ownerId: owner }).invoke("Barcelona");
+
+    assert.deepEqual(
+      docs.map((d) => d.metadata.itemId),
+      ["g-rare"]
+    );
+  });
+
   it("returns nothing rather than throwing when the corpus is empty", async () => {
     const docs = await new Bm25Retriever({ pool, ownerId: owner }).invoke("Barcelona");
 
@@ -161,17 +236,17 @@ describe("Bm25Retriever", () => {
 });
 
 describe("TrigramRetriever", () => {
-  it("returns the arm's ranking unchanged", async () => {
-    await indexed(owner, corpus);
+  it("still finds the row when the query is misspelled", async () => {
+    await indexed(owner, [goal({ id: "g-1", title: "Move to Barcelona" })]);
 
-    const expected = await trigramArm(pool, owner, "Barcelna");
+    // BM25 sees "barcelna" as simply a different word; this is the arm that
+    // covers typos — and the same mechanism covers Russian morphology, which
+    // the 'simple' config does not stem.
+    assert.deepEqual(await new Bm25Retriever({ pool, ownerId: owner }).invoke("Barcelna"), []);
+
     const docs = await new TrigramRetriever({ pool, ownerId: owner }).invoke("Barcelna");
 
-    assert.ok(expected.length > 0, "the typo should still match");
-    assert.deepEqual(
-      docs.map((d) => d.metadata.itemId),
-      expected.map((h) => h.itemId)
-    );
+    assert.equal(docs[0]!.metadata.itemId, "g-1");
     assert.equal(docs[0]!.metadata.arm, "trigram");
   });
 
@@ -257,5 +332,127 @@ describe("buildRetrievers", () => {
       ["keyword", "trigram"]
     );
     assert.deepEqual(weights, [1, 0.5]);
+  });
+});
+
+/**
+ * A retriever with a ranking dictated by the test.
+ *
+ * Fusion is about how orderings combine, and driving three real arms into a
+ * chosen disagreement means fighting IDF, length normalisation and a similarity
+ * threshold at once — a fixture that would break for reasons having nothing to
+ * do with the fusion. The arms have their own tests above; these stubs let this
+ * block assert only what the ensemble does with what it is given.
+ */
+class StubRetriever extends ArmRetriever {
+  readonly arm: Arm;
+  private readonly stub: ArmHit[];
+
+  constructor(pool: Pool, ownerId: string, arm: Arm, itemIds: string[]) {
+    super({ pool, ownerId });
+    this.arm = arm;
+    this.stub = itemIds.map((itemId, index) => ({
+      kind: "goal",
+      itemId,
+      // Wildly different scales on purpose: RRF must ignore these entirely.
+      score: arm === "keyword" ? 99 - index : 1 / (index + 1),
+    }));
+  }
+
+  protected async hits(): Promise<ArmHit[]> {
+    return this.stub;
+  }
+}
+
+describe("fuseWithEnsemble", () => {
+  it("puts a row several arms agree on above one only a single arm loves", async () => {
+    const fused = await fuseWithEnsemble(
+      {
+        retrievers: [
+          new StubRetriever(pool, owner, "keyword", ["loved-by-one", "agreed"]),
+          new StubRetriever(pool, owner, "trigram", ["agreed"]),
+          new StubRetriever(pool, owner, "vector", ["agreed"]),
+        ],
+        weights: [1, 0.5, 1],
+      },
+      "anything"
+    );
+
+    assert.equal(fused[0]!.itemId, "agreed");
+    assert.deepEqual(fused[0]!.arms, ["keyword", "trigram", "vector"]);
+  });
+
+  it("breaks a tie the same way every time", async () => {
+    // Two rows on an identical score: without a total order they swap between
+    // otherwise identical requests and the result depends on the query plan.
+    const build = () => ({
+      retrievers: [new StubRetriever(pool, owner, "keyword", ["b-row", "a-row"])],
+      weights: [1],
+    });
+    const tie = {
+      retrievers: [
+        new StubRetriever(pool, owner, "keyword", ["b-row"]),
+        new StubRetriever(pool, owner, "trigram", ["a-row"]),
+      ],
+      weights: [1, 1],
+    };
+
+    assert.deepEqual(
+      (await fuseWithEnsemble(build(), "q")).map((h) => h.itemId),
+      ["b-row", "a-row"]
+    );
+    // Same score, same arm count — only the id can decide, and it must decide
+    // the same way on every call.
+    const first = await fuseWithEnsemble(tie, "q");
+    assert.deepEqual(
+      first.map((h) => h.itemId),
+      ["a-row", "b-row"]
+    );
+  });
+
+  it("scores by weighted rank, not by what the arms reported", async () => {
+    const fused = await fuseWithEnsemble(
+      {
+        retrievers: [
+          new StubRetriever(pool, owner, "keyword", ["first", "second"]),
+          new StubRetriever(pool, owner, "trigram", ["first"]),
+        ],
+        weights: [1, 0.5],
+      },
+      "q"
+    );
+
+    // The keyword arm reported 99 and 98; the fused scores are weight/(rank + 60).
+    assert.equal(fused[0]!.score.toFixed(6), (1 / 61 + 0.5 / 61).toFixed(6));
+    assert.equal(fused[1]!.score.toFixed(6), (1 / 62).toFixed(6));
+  });
+
+  it("names every arm that found a row, in a stable order", async () => {
+    // The arms run in parallel, so the order their callbacks fire in varies
+    // between requests. `arms` reaches the client, so it must not.
+    await indexed(owner, [goal({ id: "g-1", title: "Barcelona" })], embedder);
+
+    const first = await fuseWithEnsemble(buildRetrievers(pool, owner, embedder), "Barcelona");
+    const second = await fuseWithEnsemble(buildRetrievers(pool, owner, embedder), "Barcelona");
+
+    assert.deepEqual(first[0]!.arms, second[0]!.arms);
+    assert.deepEqual(first[0]!.arms, ["keyword", "trigram", "vector"]);
+  });
+
+  it("works with an arm missing entirely", async () => {
+    await indexed(owner, corpus);
+
+    const fused = await fuseWithEnsemble(buildRetrievers(pool, owner, null), "Barcelona");
+
+    assert.ok(fused.some((hit) => hit.itemId === "g-1"));
+    assert.ok(fused.every((hit) => !hit.arms.includes("vector")));
+  });
+
+  it("returns nothing when no arm found anything", async () => {
+    await indexed(owner, corpus);
+
+    const fused = await fuseWithEnsemble(buildRetrievers(pool, owner, null), "квантовая");
+
+    assert.deepEqual(fused, []);
   });
 });
