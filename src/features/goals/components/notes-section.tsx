@@ -15,23 +15,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CornerDownRight, MoreVertical, Pencil, Plus, Trash2 } from "lucide-react";
-
-const DAY = 1000 * 60 * 60 * 24;
+import { formatWhen } from "../notes-time";
 
 // How many notes are shown before the "Load more" button appears, and how many
 // each press reveals. The list also lives in a height-capped, scrollable
 // container, so once more than this are loaded they scroll in place.
 const PAGE_SIZE = 7;
-
-function formatWhen(createdAt: number): string {
-  const days = Math.floor((Date.now() - createdAt) / DAY);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Yesterday";
-  return new Date(createdAt).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-}
 
 /** Flat lookup from a step id to its label — for showing a note's link. */
 function stepLabels(groups: Group[]): Map<string, string> {

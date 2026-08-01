@@ -102,6 +102,56 @@ test.describe("Goal notes", () => {
   });
 });
 
+// The "Today" / "Yesterday" label compares calendar days, not elapsed hours
+// (issue #84): a note written late in the evening must say "Yesterday" the next
+// morning even though only an hour has gone by. The browser clock is pinned so
+// the note is stamped with an exact, known time, and the label is asserted
+// after a reload, which recomputes it from the persisted timestamp.
+test.describe("Goal notes — day labels", () => {
+  test("labels a late-evening note as Yesterday the next morning", async ({ page }) => {
+    // The issue's repro times (Jul 31 23:30 → Aug 1 00:30), pinned to a future
+    // year so the fake browser clock never lands before the real-world session
+    // timestamps the page also sees.
+    const written = new Date(2030, 6, 31, 23, 30);
+    const nextMorning = new Date(2030, 7, 1, 0, 30);
+
+    // Pin Date.now() before the page loads, so the note added below is stamped
+    // with exactly `written`. Timers keep running in real time, so the app's
+    // debounced save still fires.
+    await page.clock.setFixedTime(written);
+    await page.goto("/goal/goal-podcast");
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+
+    // Written and viewed the same evening: "Today" under both the old and the
+    // fixed logic.
+    await page.getByRole("button", { name: "Add note" }).click();
+    await page.getByLabel("Note", { exact: true }).fill("Late night thought.");
+
+    // Writes reach the server on a short debounce, so wait for that save to
+    // land before reloading — the reload would otherwise race it and pull a
+    // copy from before the note existed.
+    const saved = page.waitForResponse(
+      (r) => r.request().method() === "POST" && !!r.request().headers()["next-action"] && r.ok()
+    );
+    await page.getByRole("button", { name: "Add note" }).click();
+
+    const note = page.locator("div.group\\/note").filter({ hasText: "Late night thought." });
+    await expect(note).toContainText("Today");
+    await saved;
+
+    // An hour later a calendar day has turned over: the label must flip to
+    // "Yesterday". The old elapsed-hours logic kept saying "Today" here.
+    await page.clock.setFixedTime(nextMorning);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Launch my podcast", level: 1 })).toBeVisible();
+
+    const reloadedNote = page.locator("div.group\\/note").filter({ hasText: "Late night thought." });
+    // The note survived the reload, so this asserted the persisted timestamp.
+    await expect(reloadedNote).toContainText("Late night thought.");
+    await expect(reloadedNote).toContainText("Yesterday");
+  });
+});
+
 // The watercolor goal is seeded with no groups and no notes — the empty state.
 test.describe("Goal notes — empty state", () => {
   test("shows the empty state and adds the first note", async ({ page }) => {
