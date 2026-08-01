@@ -5,6 +5,7 @@ import "./globals.css";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { Toaster } from "@/components/ui/sonner";
 import { SectionMemory } from "@/features/goals";
+import { SITE_URL } from "@/lib/site";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -17,7 +18,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://keepgoing.you"),
+  metadataBase: SITE_URL,
   // Every page below sets a bare title ("Tasks", a goal's name); the template
   // gives them all the same suffix, and `default` covers the ones that don't.
   title: {
