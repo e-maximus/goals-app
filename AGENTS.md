@@ -133,10 +133,13 @@ LangChain reports to LangSmith on its own. What this repo adds is the owner,
 thread and engine on each run ([tracing.ts](src/server/langchain/tracing.ts)) —
 identifiers only, since a trace is a third-party copy of the conversation.
 
-Still to come: confirming a destructive tool before it runs. The middleware for it
-exists and does stop the call, but the return leg does not — the POST route
-assumes a trailing user message and resuming a paused graph needs a `Command`, so
-enabling it today would hang every delete.
+Destructive tools ask first. `humanInTheLoopMiddleware` pauses the run on any tool
+the registry marks `destructive`, and nothing reaches the database until the user
+answers — so the old system-prompt instruction to confirm before deleting is a
+property of the loop rather than advice the model may ignore. The answer comes
+back as a trailing *assistant* message carrying the approval, which is why the
+POST route accepts one, and the run resumes with a `Command` rather than new
+messages (messages would replay the turn and ask again).
 
 `DATABASE_URL` is required for the server to run. Everything runs together with
 `docker compose up -d --build`; day to day, `docker compose up -d db` for
