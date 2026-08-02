@@ -206,7 +206,7 @@ function ToolRun({ parts }: { parts: UIMessage["parts"] }) {
   const byName = new Map<string, { count: number; working: boolean }>();
   for (const part of parts) {
     const p = part as { type?: string; state?: string };
-    const name = (p.type ?? "").slice("tool-".length).replace(/_/g, " ");
+    const name = toolName(part);
     const done = p.state === "output-available" || p.state === "output-error";
     let entry = byName.get(name);
     if (!entry) {
@@ -242,8 +242,25 @@ function ReasoningPart({ text }: { text: string }) {
   );
 }
 
-/** A UIMessage part representing a tool call (`type: "tool-<name>"`). */
+/**
+ * A UIMessage part representing a tool call.
+ *
+ * Two shapes reach us, one per engine ([chat-engine.ts](@/server/chat-engine)):
+ * the AI SDK names the part after the tool (`tool-create_goal`), while the
+ * LangChain engine's tools are dynamic as far as the AI SDK is concerned, so
+ * they arrive as `dynamic-tool` with the name in a field. Both are tool
+ * activity, and this predicate is what decides whether the store is reloaded
+ * after a turn — miss one and the agent's edits never show up in the UI.
+ */
 function isToolPart(part: UIMessage["parts"][number]): boolean {
   const type = (part as { type?: string }).type;
-  return typeof type === "string" && type.startsWith("tool-");
+  if (typeof type !== "string") return false;
+  return type.startsWith("tool-") || type === "dynamic-tool";
+}
+
+/** The tool's name, from whichever of the two part shapes this is. */
+function toolName(part: UIMessage["parts"][number]): string {
+  const p = part as { type?: string; toolName?: string };
+  const name = p.type === "dynamic-tool" ? (p.toolName ?? "") : (p.type ?? "").slice("tool-".length);
+  return name.replace(/_/g, " ");
 }

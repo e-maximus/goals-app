@@ -10,6 +10,7 @@ import { toBaseMessages, toUIMessageStream } from "@ai-sdk/langchain";
 import type { ChatEngine, TurnInput } from "../chat-engine";
 import { buildChatAgent } from "./agent";
 import { chatModel } from "./model";
+import { buildLangChainTools } from "./tools";
 
 /**
  * The LangChain engine: the same chat, driven by a LangChain agent instead of
@@ -56,7 +57,11 @@ export function streamTurn(
   });
 }
 
-export const langchainEngine: ChatEngine = async ({ system, ...turn }) => {
-  const agent = buildChatAgent({ model: chatModel(), system });
+export const langchainEngine: ChatEngine = async ({ system, toolContext, ...turn }) => {
+  const agent = buildChatAgent({
+    model: chatModel(),
+    system,
+    tools: buildLangChainTools(toolContext),
+  });
   return createUIMessageStreamResponse({ stream: streamTurn(agent, turn) });
 };

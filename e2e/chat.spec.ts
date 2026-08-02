@@ -30,6 +30,45 @@ const stream =
     "data: [DONE]",
   ].join("\n\n") + "\n\n";
 
+/**
+ * A turn that used a tool, as the LangChain engine streams it: its tools are
+ * dynamic as far as the AI SDK is concerned, so the parts arrive as
+ * `dynamic-tool` rather than `tool-<name>`. The drawer has to recognise both —
+ * it is what tells the store to reload after the agent edited something.
+ */
+const TOOL_REPLY = "Added it.";
+
+const toolStream =
+  [
+    `data: ${JSON.stringify({ type: "start", messageId: "assistant-tools" })}`,
+    `data: ${JSON.stringify({ type: "start-step" })}`,
+    `data: ${JSON.stringify({
+      type: "tool-input-start",
+      toolCallId: "call-0",
+      toolName: "create_goal",
+      dynamic: true,
+    })}`,
+    `data: ${JSON.stringify({
+      type: "tool-input-available",
+      toolCallId: "call-0",
+      toolName: "create_goal",
+      input: { title: "Learn to swim" },
+      dynamic: true,
+    })}`,
+    `data: ${JSON.stringify({
+      type: "tool-output-available",
+      toolCallId: "call-0",
+      output: '{"id":"abc12"}',
+      dynamic: true,
+    })}`,
+    `data: ${JSON.stringify({ type: "text-start", id: "t1" })}`,
+    `data: ${JSON.stringify({ type: "text-delta", id: "t1", delta: TOOL_REPLY })}`,
+    `data: ${JSON.stringify({ type: "text-end", id: "t1" })}`,
+    `data: ${JSON.stringify({ type: "finish-step" })}`,
+    `data: ${JSON.stringify({ type: "finish" })}`,
+    "data: [DONE]",
+  ].join("\n\n") + "\n\n";
+
 const SESSION_COOKIE = "session";
 
 test.describe("AI chat, signed out", () => {
@@ -70,6 +109,29 @@ test.describe("AI chat, signed in (e2e user)", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByText("Ask it to plan or update your goals")).toBeVisible();
     await expect(dialog.getByLabel("Message the assistant")).toBeVisible();
+  });
+
+  test("shows the tools the assistant used", async ({ page }) => {
+    await page.route("**/api/chat", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: { "x-vercel-ai-ui-message-stream": "v1" },
+        body: toolStream,
+      });
+    });
+
+    await page.goto("/goals");
+    await page.getByRole("button", { name: "Assistant" }).click();
+
+    const dialog = page.getByRole("dialog");
+    const composer = dialog.getByLabel("Message the assistant");
+    await composer.fill("Add a goal");
+    await composer.press("Enter");
+
+    await expect(dialog.getByText("Done: create goal")).toBeVisible();
+    await expect(dialog.getByText(TOOL_REPLY)).toBeVisible();
   });
 });
 
