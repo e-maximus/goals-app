@@ -154,3 +154,36 @@ describe("a LangChain turn", () => {
     );
   });
 });
+
+describe("an interrupted LangChain turn", () => {
+  it("reports the abort, so a truncated turn is never persisted", async () => {
+    const agent = buildChatAgent({
+      model: scriptedModel([{ text: "one two three four five six seven eight" }]),
+      system: "You are a test.",
+      tools: buildLangChainTools({ pool, ownerId: owner }),
+    });
+
+    const controller = new AbortController();
+    const message = userMessage("hello");
+    let aborted: boolean | undefined;
+
+    const stream = streamTurn(agent, {
+      conversation: [message],
+      userMessage: message,
+      signal: controller.signal,
+      onEnd: async ({ isAborted }) => {
+        aborted = isAborted;
+      },
+    });
+
+    let seen = 0;
+    for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
+      void chunk;
+      if (++seen === 3) controller.abort();
+    }
+
+    // The stream ends early and otherwise looks like a clean finish; only the
+    // signal knows better. Getting this wrong writes half a reply to the thread.
+    assert.equal(aborted, true, "an aborted turn must report as aborted");
+  });
+});

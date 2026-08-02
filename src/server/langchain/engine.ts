@@ -53,7 +53,12 @@ export function streamTurn(
       );
       writer.merge(toUIMessageStream(agentStream));
     },
-    onEnd: ({ responseMessage, isAborted }) => onEnd({ responseMessage, isAborted }),
+    onEnd: ({ responseMessage, isAborted }) =>
+      // `createUIMessageStream` only reports an abort it caused itself. Ours
+      // comes from the request signal and stops the agent from the inside, so
+      // the stream simply ends early and looks complete — and the route would
+      // persist a truncated turn. Consult the signal directly.
+      onEnd({ responseMessage, isAborted: isAborted || signal.aborted }),
   });
 }
 
