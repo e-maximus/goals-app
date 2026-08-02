@@ -2,6 +2,7 @@ import "server-only";
 import { createAgent } from "langchain";
 import type { LanguageModelLike } from "@langchain/core/language_models/base";
 import type { ClientTool } from "@langchain/core/tools";
+import { chatMiddleware } from "./middleware";
 
 /**
  * Builds the chat's LangChain agent.
@@ -25,5 +26,6 @@ export function buildChatAgent({ model, system, tools = [] }: ChatAgentOptions) 
     model,
     tools,
     systemPrompt: system,
+    middleware: chatMiddleware(),
   });
 }
