@@ -22,6 +22,8 @@ import type { ToolContext } from "./tools";
 export type TurnInput = {
   /** The system prompt, already carrying the thread's rolling summary. */
   system: string;
+  /** The chat thread this turn belongs to — also the graph's state key. */
+  threadId: string;
   /** Live context from the database plus the new user message, oldest first. */
   conversation: UIMessage[];
   /** The new user message — the engine echoes its id back for persistence. */

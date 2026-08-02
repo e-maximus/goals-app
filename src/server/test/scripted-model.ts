@@ -26,6 +26,13 @@ export class ScriptedChatModel extends BaseChatModel {
   private readonly script: ScriptedTurn[];
   /** How many times the model has been invoked — also the script cursor. */
   calls = 0;
+  /**
+   * The messages handed to the model on each invocation, in order. This is what
+   * lets a test assert on the *context* the agent built rather than only on
+   * what came back — how you tell "the agent forgot" from "the model answered
+   * badly".
+   */
+  readonly seen: BaseMessage[][] = [];
 
   constructor(script: ScriptedTurn[]) {
     super({});
@@ -56,10 +63,11 @@ export class ScriptedChatModel extends BaseChatModel {
   }
 
   async *_streamResponseChunks(
-    _messages: BaseMessage[],
+    messages: BaseMessage[],
     options: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun
   ): AsyncGenerator<ChatGenerationChunk> {
+    this.seen.push(messages);
     const turn = this.next();
 
     if ("toolCalls" in turn) {

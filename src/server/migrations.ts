@@ -415,4 +415,57 @@ export const migrations: Migration[] = [
        WHERE owner_id IN (SELECT id FROM users WHERE clerk_user_id IS NULL);
     `,
   },
+  {
+    name: "017_chat_checkpoints",
+    sql: `
+      -- LangGraph's checkpoints for the chat agent: the graph state after each
+      -- step of a turn, which is what lets the agent keep its own conversation
+      -- history and pause mid-run.
+      --
+      -- LangGraph's own Postgres saver keys these tables on thread_id alone.
+      -- That does not hold here: ids are globally unique but every read and
+      -- write in this app names its owner, and a bare-id filter would cross
+      -- accounts. So \`owner_id\` leads the primary key and the saver
+      -- (server/langchain/checkpointer.ts) is constructed per request with the
+      -- owner already bound — there is no code path that can ask for a
+      -- checkpoint without saying whose.
+      --
+      -- \`checkpoint\` and \`metadata\` are stored as bytes, not JSON: they are
+      -- whatever LangGraph's serializer produced, and reading them back through
+      -- a JSON column would quietly change types on the way through.
+      CREATE TABLE IF NOT EXISTS chat_checkpoints (
+        owner_id      TEXT   NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        thread_id     TEXT   NOT NULL,
+        checkpoint_ns TEXT   NOT NULL DEFAULT '',
+        checkpoint_id TEXT   NOT NULL,
+        parent_id     TEXT,
+        type          TEXT,
+        checkpoint    BYTEA  NOT NULL,
+        metadata      BYTEA  NOT NULL,
+        created_at    BIGINT NOT NULL,
+
+        PRIMARY KEY (owner_id, thread_id, checkpoint_ns, checkpoint_id)
+      );
+
+      -- The writes a task produced but that are not yet folded into a
+      -- checkpoint. Same owner-first key, for the same reason.
+      CREATE TABLE IF NOT EXISTS chat_checkpoint_writes (
+        owner_id      TEXT   NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        thread_id     TEXT   NOT NULL,
+        checkpoint_ns TEXT   NOT NULL DEFAULT '',
+        checkpoint_id TEXT   NOT NULL,
+        task_id       TEXT   NOT NULL,
+        idx           INT    NOT NULL,
+        channel       TEXT   NOT NULL,
+        type          TEXT,
+        value         BYTEA,
+
+        PRIMARY KEY (owner_id, thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
+      );
+
+      -- Listing a thread walks its checkpoints newest first.
+      CREATE INDEX IF NOT EXISTS chat_checkpoints_thread_idx
+        ON chat_checkpoints (owner_id, thread_id, checkpoint_ns, created_at DESC);
+    `,
+  },
 ];

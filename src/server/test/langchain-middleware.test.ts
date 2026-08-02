@@ -33,15 +33,25 @@ beforeEach(async () => {
   await repo.replaceAll(
     pool,
     owner,
-    [{ id: "goal-5k", title: "Run a 5k", createdAt: 1_700_000_000_000, groups: [], notes: [] }],
-    null
+    [
+      {
+        id: "goal-5k",
+        title: "Run a 5k",
+        createdAt: 1_700_000_000_000,
+        groups: [],
+        notes: [],
+      },
+    ],
+    null,
   );
 });
 
 type Outcome = { message: UIMessage; model: ScriptedChatModel };
 
 /** Run a turn against a scripted model and report what came back. */
-async function runTurn(script: Parameters<typeof scriptedModel>[0]): Promise<Outcome> {
+async function runTurn(
+  script: Parameters<typeof scriptedModel>[0],
+): Promise<Outcome> {
   const model = scriptedModel(script);
   const agent = buildChatAgent({
     model,
@@ -50,8 +60,13 @@ async function runTurn(script: Parameters<typeof scriptedModel>[0]): Promise<Out
   });
 
   let finished: UIMessage | undefined;
-  const message: UIMessage = { id: "user-1", role: "user", parts: [{ type: "text", text: "go" }] };
+  const message: UIMessage = {
+    id: "user-1",
+    role: "user",
+    parts: [{ type: "text", text: "go" }],
+  };
   const stream = streamTurn(agent, {
+    threadId: "thread-test",
     conversation: [message],
     userMessage: message,
     signal: new AbortController().signal,
@@ -77,13 +92,18 @@ describe("the chat agent's middleware", () => {
 
     assert.ok(
       model.calls <= MAX_MODEL_CALLS,
-      `the model was called ${model.calls} times, past the ${MAX_MODEL_CALLS} cap`
+      `the model was called ${model.calls} times, past the ${MAX_MODEL_CALLS} cap`,
     );
-    assert.ok(model.calls > 1, "the loop should have run more than once before being cut off");
+    assert.ok(
+      model.calls > 1,
+      "the loop should have run more than once before being cut off",
+    );
   });
 
   it("ends the turn rather than failing it when the cap is hit", async () => {
-    const { message } = await runTurn([{ toolCalls: [{ name: "list_goals", args: {} }] }]);
+    const { message } = await runTurn([
+      { toolCalls: [{ name: "list_goals", args: {} }] },
+    ]);
 
     // The user gets whatever the agent managed, not an error page: the turn is
     // still a well-formed assistant message the drawer can render and the
@@ -99,12 +119,21 @@ describe("the chat agent's middleware", () => {
     ]);
 
     const toolPart = message.parts.find(
-      (p) => (p as { type?: string }).type === "dynamic-tool"
+      (p) => (p as { type?: string }).type === "dynamic-tool",
     ) as { output?: unknown; errorText?: unknown } | undefined;
-    assert.ok(toolPart, "the failed call should still appear in the transcript");
+    assert.ok(
+      toolPart,
+      "the failed call should still appear in the transcript",
+    );
 
-    const reported = JSON.stringify(toolPart.output ?? toolPart.errorText ?? "");
-    assert.match(reported, /not found/, `the model should be told what went wrong: ${reported}`);
+    const reported = JSON.stringify(
+      toolPart.output ?? toolPart.errorText ?? "",
+    );
+    assert.match(
+      reported,
+      /not found/,
+      `the model should be told what went wrong: ${reported}`,
+    );
   });
 
   it("does not retry a write — a retried create would duplicate the goal", async () => {
@@ -113,7 +142,11 @@ describe("the chat agent's middleware", () => {
     let mutations = 0;
     const agent = buildChatAgent({
       model: scriptedModel([
-        { toolCalls: [{ name: "create_goal", args: { title: "Learn to swim" } }] },
+        {
+          toolCalls: [
+            { name: "create_goal", args: { title: "Learn to swim" } },
+          ],
+        },
         { text: "Done." },
       ]),
       system: "You are a test.",
@@ -126,8 +159,13 @@ describe("the chat agent's middleware", () => {
       }),
     });
 
-    const message: UIMessage = { id: "u", role: "user", parts: [{ type: "text", text: "go" }] };
+    const message: UIMessage = {
+      id: "u",
+      role: "user",
+      parts: [{ type: "text", text: "go" }],
+    };
     const stream = streamTurn(agent, {
+      threadId: "thread-test",
       conversation: [message],
       userMessage: message,
       signal: new AbortController().signal,
@@ -141,7 +179,7 @@ describe("the chat agent's middleware", () => {
     assert.equal(
       goals.filter((g) => g.title === "Learn to swim").length,
       1,
-      "the goal must exist exactly once"
+      "the goal must exist exactly once",
     );
     assert.equal(mutations, 1);
   });

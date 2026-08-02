@@ -1,7 +1,8 @@
 import "server-only";
 import { createAgent } from "langchain";
-import type { LanguageModelLike } from "@langchain/core/language_models/base";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { ClientTool } from "@langchain/core/tools";
+import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import { chatMiddleware } from "./middleware";
 
 /**
@@ -9,23 +10,31 @@ import { chatMiddleware } from "./middleware";
  *
  * Kept apart from [engine.ts](./engine.ts) — which owns the HTTP stream — so the
  * agent can be built with a fake model in a test and exercised without a key or
- * a network. The model and tools are parameters for that reason and no other;
- * production always passes the model from [model.ts](./model.ts) and the tools
- * from [tools.ts](./tools.ts).
+ * a network. The model, tools and checkpointer are parameters for that reason
+ * and no other; production always passes the model from [model.ts](./model.ts),
+ * the tools from [tools.ts](./tools.ts) and an owner-bound saver from
+ * [checkpointer.ts](./checkpointer.ts).
  */
 export type ChatAgentOptions = {
-  model: LanguageModelLike;
+  model: BaseChatModel;
   /** The system prompt, already carrying the thread's rolling summary. */
   system: string;
   /** The owner-bound goals/tasks tools; empty for a chat that can only talk. */
   tools?: ClientTool[];
+  /**
+   * Where the thread's state lives between turns. Without one the agent starts
+   * from whatever messages it is handed, and summarization has nothing to keep
+   * a summary in, so it is left out of the stack.
+   */
+  checkpointer?: BaseCheckpointSaver;
 };
 
-export function buildChatAgent({ model, system, tools = [] }: ChatAgentOptions) {
+export function buildChatAgent({ model, system, tools = [], checkpointer }: ChatAgentOptions) {
   return createAgent({
     model,
     tools,
     systemPrompt: system,
-    middleware: chatMiddleware(),
+    middleware: chatMiddleware({ model: checkpointer ? model : undefined }),
+    ...(checkpointer ? { checkpointer } : {}),
   });
 }

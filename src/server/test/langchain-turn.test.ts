@@ -52,7 +52,9 @@ function userMessage(text: string): UIMessage {
 type TurnOutcome = { message: UIMessage; mutations: number };
 
 /** Run one turn end to end and report the assistant message it produced. */
-async function runTurn(script: Parameters<typeof scriptedModel>[0]): Promise<TurnOutcome> {
+async function runTurn(
+  script: Parameters<typeof scriptedModel>[0],
+): Promise<TurnOutcome> {
   let mutations = 0;
   const agent = buildChatAgent({
     model: scriptedModel(script),
@@ -69,6 +71,7 @@ async function runTurn(script: Parameters<typeof scriptedModel>[0]): Promise<Tur
   let finished: UIMessage | undefined;
   const message = userMessage("add a goal");
   const stream = streamTurn(agent, {
+    threadId: "thread-test",
     conversation: [message],
     userMessage: message,
     signal: new AbortController().signal,
@@ -98,7 +101,10 @@ function toolParts(message: UIMessage): ToolPart[] {
   return message.parts
     .filter((p) => {
       const type = (p as { type?: string }).type;
-      return typeof type === "string" && (type.startsWith("tool-") || type === "dynamic-tool");
+      return (
+        typeof type === "string" &&
+        (type.startsWith("tool-") || type === "dynamic-tool")
+      );
     })
     .map((p) => p as unknown as ToolPart);
 }
@@ -106,16 +112,22 @@ function toolParts(message: UIMessage): ToolPart[] {
 describe("a LangChain turn", () => {
   it("calls a tool, writes to the database, and answers", async () => {
     const { message, mutations } = await runTurn([
-      { toolCalls: [{ name: "create_goal", args: { title: "Learn to swim" } }] },
+      {
+        toolCalls: [{ name: "create_goal", args: { title: "Learn to swim" } }],
+      },
       { text: "Added it." },
     ]);
 
     const { goals } = await repo.getState(pool, owner);
-    assert.deepEqual(
-      goals.map((g) => g.title).sort(),
-      ["Learn to swim", "Run a 5k"]
+    assert.deepEqual(goals.map((g) => g.title).sort(), [
+      "Learn to swim",
+      "Run a 5k",
+    ]);
+    assert.equal(
+      mutations,
+      1,
+      "the write must be reported so search reindexes",
     );
-    assert.equal(mutations, 1, "the write must be reported so search reindexes");
 
     const text = message.parts
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
@@ -126,17 +138,23 @@ describe("a LangChain turn", () => {
 
   it("puts the tool call in the transcript, so the drawer can show it", async () => {
     const { message } = await runTurn([
-      { toolCalls: [{ name: "create_goal", args: { title: "Learn to swim" } }] },
+      {
+        toolCalls: [{ name: "create_goal", args: { title: "Learn to swim" } }],
+      },
       { text: "Added it." },
     ]);
 
     const parts = toolParts(message);
-    assert.equal(parts.length, 1, "the assistant message should carry one tool part");
+    assert.equal(
+      parts.length,
+      1,
+      "the assistant message should carry one tool part",
+    );
     assert.equal(parts[0].toolName, "create_goal");
     assert.equal(
       parts[0].state,
       "output-available",
-      "a finished call must carry its result — the drawer reads state to say Done"
+      "a finished call must carry its result — the drawer reads state to say Done",
     );
   });
 
@@ -149,8 +167,9 @@ describe("a LangChain turn", () => {
     const parts = toolParts(message);
     assert.equal(parts.length, 1);
     assert.ok(
-      parts[0].state === "output-error" || parts[0].state === "output-available",
-      `a failed tool call must still resolve, got ${parts[0].state}`
+      parts[0].state === "output-error" ||
+        parts[0].state === "output-available",
+      `a failed tool call must still resolve, got ${parts[0].state}`,
     );
   });
 });
@@ -158,7 +177,9 @@ describe("a LangChain turn", () => {
 describe("an interrupted LangChain turn", () => {
   it("reports the abort, so a truncated turn is never persisted", async () => {
     const agent = buildChatAgent({
-      model: scriptedModel([{ text: "one two three four five six seven eight" }]),
+      model: scriptedModel([
+        { text: "one two three four five six seven eight" },
+      ]),
       system: "You are a test.",
       tools: buildLangChainTools({ pool, ownerId: owner }),
     });
@@ -168,6 +189,7 @@ describe("an interrupted LangChain turn", () => {
     let aborted: boolean | undefined;
 
     const stream = streamTurn(agent, {
+      threadId: "thread-test",
       conversation: [message],
       userMessage: message,
       signal: controller.signal,

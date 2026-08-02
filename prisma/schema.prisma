@@ -35,6 +35,9 @@ model User {
   chatThreads  ChatThread[]
   chatMessages ChatMessage[]
 
+  chatCheckpoints      ChatCheckpoint[]
+  chatCheckpointWrites ChatCheckpointWrite[]
+
   @@map("users")
 }
 
@@ -159,6 +162,46 @@ model ChatMessage {
   @@index([thread_id])
   @@index([owner_id])
   @@map("chat_messages")
+}
+
+// LangGraph's checkpoints for the chat agent (migration 016). `owner_id` leads
+// both keys: LangGraph's own saver keys on thread_id alone, which would let a
+// lookup cross accounts, so the saver here is bound to an owner and every query
+// names it. The payloads are bytes — whatever LangGraph's serializer produced —
+// rather than Json, which would change types on the way back out.
+model ChatCheckpoint {
+  owner_id      String
+  thread_id     String
+  checkpoint_ns String  @default("")
+  checkpoint_id String
+  parent_id     String?
+  type          String?
+  checkpoint    Bytes
+  metadata      Bytes
+  created_at    BigInt
+
+  owner User @relation(fields: [owner_id], references: [id])
+
+  @@id([owner_id, thread_id, checkpoint_ns, checkpoint_id])
+  @@index([owner_id, thread_id, checkpoint_ns, created_at])
+  @@map("chat_checkpoints")
+}
+
+model ChatCheckpointWrite {
+  owner_id      String
+  thread_id     String
+  checkpoint_ns String  @default("")
+  checkpoint_id String
+  task_id       String
+  idx           Int
+  channel       String
+  type          String?
+  value         Bytes?
+
+  owner User @relation(fields: [owner_id], references: [id])
+
+  @@id([owner_id, thread_id, checkpoint_ns, checkpoint_id, task_id, idx])
+  @@map("chat_checkpoint_writes")
 }
 
 // `embeddings` (migration 015) has no model here on purpose. Its columns are
