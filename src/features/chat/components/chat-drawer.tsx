@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
-import type { UIMessage } from "ai";
+import { lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from "ai";
 import { toast } from "sonner";
 import { SendHorizontal, Square } from "lucide-react";
 
@@ -41,7 +41,11 @@ export function ChatDrawer() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const smoothScroll = useRef(false);
 
-  const { messages, sendMessage, status, stop, setMessages } = useChat({
+  const { messages, sendMessage, status, stop, setMessages, addToolApprovalResponse } = useChat({
+    // The agent pauses before anything irreversible and asks. Answering is a
+    // request in its own right — this is what sends it, once every pending
+    // question in the message has an answer.
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     onError: () =>
       toast.error("The assistant hit a problem", { description: "Please try again in a moment." }),
     onFinish: ({ message, isAbort, isError }) => {
@@ -102,7 +106,11 @@ export function ChatDrawer() {
             </p>
           )}
           {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
+            <ChatMessage
+              key={message.id}
+              message={message}
+              onDecide={(id, approved) => addToolApprovalResponse({ id, approved })}
+            />
           ))}
           {status === "submitted" && (
             <p className="text-xs text-muted-foreground italic">Thinking…</p>
@@ -146,7 +154,13 @@ export function ChatDrawer() {
   );
 }
 
-function ChatMessage({ message }: { message: UIMessage }) {
+function ChatMessage({
+  message,
+  onDecide,
+}: {
+  message: UIMessage;
+  onDecide: DecideHandler;
+}) {
   const isUser = message.role === "user";
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
@@ -156,7 +170,7 @@ function ChatMessage({ message }: { message: UIMessage }) {
           isUser ? "bg-primary text-primary-foreground" : "bg-muted"
         )}
       >
-        {renderParts(message.parts ?? [])}
+        {renderParts(message.parts ?? [], onDecide)}
       </div>
     </div>
   );
@@ -167,7 +181,7 @@ function ChatMessage({ message }: { message: UIMessage }) {
  * line per tool name with a count (`Done: add step ×24`) so a bulk operation
  * doesn't spam a wall of identical lines. Text and reasoning parts break a run.
  */
-function renderParts(parts: UIMessage["parts"]): ReactNode[] {
+function renderParts(parts: UIMessage["parts"], onDecide: DecideHandler): ReactNode[] {
   const out: ReactNode[] = [];
   let run: UIMessage["parts"] = [];
   const flush = (key: string) => {
@@ -176,6 +190,13 @@ function renderParts(parts: UIMessage["parts"]): ReactNode[] {
     run = [];
   };
   parts.forEach((part, i) => {
+    // A call waiting on the user is the opposite of a folded "Done:" line —
+    // it's the one thing in the message that needs looking at.
+    if (isAwaitingApproval(part)) {
+      flush(`tools-${i}`);
+      out.push(<ApprovalPrompt key={i} part={part} onDecide={onDecide} />);
+      return;
+    }
     if (isToolPart(part)) {
       run.push(part);
       return;
@@ -185,6 +206,45 @@ function renderParts(parts: UIMessage["parts"]): ReactNode[] {
   });
   flush("tools-end");
   return out;
+}
+
+type DecideHandler = (id: string, approved: boolean) => void;
+
+/** A tool call the agent stopped on, waiting to be allowed or refused. */
+function isAwaitingApproval(part: UIMessage["parts"][number]): boolean {
+  return (part as { state?: string }).state === "approval-requested";
+}
+
+/**
+ * The confirmation the agent is waiting on. Deliberately plain and a little
+ * loud: this is the last thing between the user and something that cannot be
+ * undone, so it should not look like the muted "Done:" lines around it.
+ */
+function ApprovalPrompt({
+  part,
+  onDecide,
+}: {
+  part: UIMessage["parts"][number];
+  onDecide: DecideHandler;
+}) {
+  const p = part as { approval?: { id?: string } };
+  const id = p.approval?.id;
+  if (!id) return null;
+
+  return (
+    <div className="my-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+      <p className="text-sm font-medium">Allow the assistant to {toolName(part)}?</p>
+      <p className="mt-1 text-xs text-muted-foreground">This cannot be undone.</p>
+      <div className="mt-3 flex gap-2">
+        <Button size="sm" variant="destructive" onClick={() => onDecide(id, true)}>
+          Allow
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => onDecide(id, false)}>
+          Don&apos;t
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function MessagePart({ part }: { part: UIMessage["parts"][number] }) {

@@ -7,6 +7,7 @@ import {
   type UIMessageChunk,
 } from "ai";
 import { toBaseMessages, toUIMessageStream } from "@ai-sdk/langchain";
+import { Command } from "@langchain/langgraph";
 import type { ChatEngine, Completer, TurnInput } from "../chat-engine";
 import { buildChatAgent } from "./agent";
 import { OwnerScopedCheckpointer } from "./checkpointer";
@@ -57,7 +58,14 @@ export type StreamTurnOptions = {
 
 export function streamTurn(
   agent: StreamableAgent,
-  { threadId, conversation, userMessage, signal, onEnd }: Omit<TurnInput, "system" | "toolContext">,
+  {
+    threadId,
+    conversation,
+    userMessage,
+    approvals,
+    signal,
+    onEnd,
+  }: Omit<TurnInput, "system" | "toolContext">,
   { seeded = false, trace }: StreamTurnOptions = {}
 ): ReadableStream<UIMessageChunk> {
   return createUIMessageStream({
@@ -66,16 +74,27 @@ export function streamTurn(
     // the messages table's primary key.
     generateId,
     execute: async ({ writer }) => {
-      const outgoing = seeded ? [userMessage] : (conversation as UIMessage[]);
-      const agentStream = await agent.stream(
-        { messages: await toBaseMessages(outgoing) },
-        {
+      // Answering a paused run resumes the graph where it stopped; it must not
+      // hand over messages, or the agent would replay the turn from the top and
+      // ask again. The decisions go in as a resume value instead.
+      const input = approvals
+        ? new Command({
+            resume: {
+              decisions: approvals.map((approval) =>
+                approval.approved
+                  ? { type: "approve" as const }
+                  : { type: "reject" as const, message: approval.reason }
+              ),
+            },
+          })
+        : { messages: await toBaseMessages(seeded ? [userMessage] : (conversation as UIMessage[])) };
+
+      const agentStream = await agent.stream(input, {
           ...(trace ? traceConfig(trace) : {}),
           streamMode: ["values", "messages", "tools"],
           signal,
           configurable: { thread_id: threadId, checkpoint_ns: "" },
-        }
-      );
+      });
       writer.merge(toUIMessageStream(agentStream));
     },
     onEnd: ({ responseMessage, isAborted }) =>

@@ -1,11 +1,13 @@
 import "server-only";
 import {
+  humanInTheLoopMiddleware,
   modelCallLimitMiddleware,
   modelRetryMiddleware,
   summarizationMiddleware,
   toolErrorMiddleware,
   toolRetryMiddleware,
   type AnyAgentMiddleware,
+  type InterruptOnConfig,
 } from "langchain";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { NotFoundError, ValidationError } from "../repo";
@@ -64,23 +66,35 @@ function describeToolError(error: unknown): string {
 }
 
 /**
- * Confirming a destructive tool is deliberately NOT wired up yet, though the
- * checkpointer this file's summarization relies on is also what would make it
- * possible. `humanInTheLoopMiddleware({ interruptOn: ... })` over the registry's
- * `destructive` flag does stop the call — verified — but stopping is only half
- * of it: with no way to answer, a delete would hang forever, which is worse
- * than the current behaviour of asking the model nicely in the system prompt.
+ * The tools that ask before they run: the irreversible ones.
  *
- * The path is scouted. `@ai-sdk/langchain` already translates the interrupt
- * into the AI SDK's own approval protocol — a `tool-approval-request` chunk and
- * a part in `approval-requested` state — and `useChat` exposes
- * `addToolApprovalResponse`. What is missing is the return leg: the POST route
- * assumes a trailing *user* message, and resuming the graph needs a `Command`
- * rather than new messages.
+ * The system prompt has always asked the model to confirm before deleting, which
+ * left it to the model's judgement. The registry already marks which tools are
+ * destructive, so the same rule becomes a property of the agent loop instead —
+ * the call stops whether or not the model meant it to.
+ *
+ * No "edit" decision: rewriting *which* goal gets deleted is not a
+ * confirmation, and there is no sane way to offer it in a chat drawer.
  */
+function destructiveInterrupts(): Record<string, InterruptOnConfig> {
+  return Object.fromEntries(
+    registry
+      .filter((def) => def.destructive)
+      .map((def) => [
+        def.name,
+        {
+          allowedDecisions: ["approve", "reject"],
+          description: `${def.title} — this cannot be undone.`,
+        } satisfies InterruptOnConfig,
+      ])
+  );
+}
 
 export function chatMiddleware(options: { model?: BaseChatModel } = {}): AnyAgentMiddleware[] {
   return [
+    // Pausing mid-run only works if the run can be resumed, which needs
+    // somewhere to keep the state — the same condition summarization has.
+    ...(options.model ? [humanInTheLoopMiddleware({ interruptOn: destructiveInterrupts() })] : []),
     // Only useful with a checkpointer: it folds the thread's own state, which
     // is only kept between turns when there is somewhere to keep it. Passing
     // the chat's model rather than a cheaper one is deliberate for now — the

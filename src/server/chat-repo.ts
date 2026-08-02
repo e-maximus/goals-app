@@ -139,15 +139,23 @@ export async function appendMessages(
     const base = Date.now();
     for (let i = 0; i < messages.length; i++) {
       const m = messages[i];
-      await client.db.chatMessage.create({
-        data: {
-          id: m.id || uid(),
-          thread_id: threadId,
-          owner_id: ownerId,
-          role: m.role,
-          parts: m.parts as Prisma.InputJsonValue,
-          created_at: BigInt(base + i),
-        },
+      const id = m.id || uid();
+      const row = {
+        id,
+        thread_id: threadId,
+        owner_id: ownerId,
+        role: m.role,
+        parts: m.parts as Prisma.InputJsonValue,
+        created_at: BigInt(base + i),
+      };
+      // Upsert, not insert: a turn the agent paused on is stored when it
+      // pauses, and the same assistant message comes back extended once the
+      // user answers. Its id is stable across that, by design — the client is
+      // continuing one message, not starting another.
+      await client.db.chatMessage.upsert({
+        where: { id },
+        create: row,
+        update: { parts: row.parts, role: row.role },
       });
     }
     await client.db.chatThread.updateMany({
