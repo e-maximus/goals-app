@@ -119,12 +119,19 @@ the e2e suite are the same on either path; `ai` therefore stays a dependency as 
 [src/server/langchain/](src/server/langchain/): the model, the agent, the tool
 adapter over the shared registry, and the middleware that caps a runaway loop and
 decides what a failed tool tells the model. It reaches feature parity with the AI
-SDK path — tools, streaming, reasoning, persistence, abort — but the rolling
-summary and the live context window are still built by the route from
-`chat_messages` ([chat-agent.ts](src/server/chat-agent.ts)) rather than held in
-graph state, so there is no checkpointer yet. Adding one is the next step, and it
-must scope by `owner_id`: LangGraph's own Postgres saver keys on `thread_id`
-alone, which would break the isolation rule below.
+SDK path — tools, streaming, reasoning, persistence, abort — and on that path the
+agent keeps its own conversation in **checkpoints** rather than having the route
+rebuild it from `chat_messages` each request, so `summarizationMiddleware` folds
+the thread instead of [chat-agent.ts](src/server/chat-agent.ts)'s hand-rolled
+window. The saver is ours ([checkpointer.ts](src/server/langchain/checkpointer.ts))
+because LangGraph's keys on `thread_id` alone, which would break the isolation
+rule below; the owner is bound at construction, so no call site can name a
+different one. `chat_messages` stays the display history the drawer loads.
+
+Still to come: confirming a destructive tool before it runs. The middleware for it
+exists and does stop the call, but the return leg does not — the POST route
+assumes a trailing user message and resuming a paused graph needs a `Command`, so
+enabling it today would hang every delete.
 
 `DATABASE_URL` is required for the server to run. Everything runs together with
 `docker compose up -d --build`; day to day, `docker compose up -d db` for

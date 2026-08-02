@@ -63,6 +63,22 @@ function describeToolError(error: unknown): string {
   return "The tool failed unexpectedly. Tell the user it didn't work and don't retry it.";
 }
 
+/**
+ * Confirming a destructive tool is deliberately NOT wired up yet, though the
+ * checkpointer this file's summarization relies on is also what would make it
+ * possible. `humanInTheLoopMiddleware({ interruptOn: ... })` over the registry's
+ * `destructive` flag does stop the call — verified — but stopping is only half
+ * of it: with no way to answer, a delete would hang forever, which is worse
+ * than the current behaviour of asking the model nicely in the system prompt.
+ *
+ * The path is scouted. `@ai-sdk/langchain` already translates the interrupt
+ * into the AI SDK's own approval protocol — a `tool-approval-request` chunk and
+ * a part in `approval-requested` state — and `useChat` exposes
+ * `addToolApprovalResponse`. What is missing is the return leg: the POST route
+ * assumes a trailing *user* message, and resuming the graph needs a `Command`
+ * rather than new messages.
+ */
+
 export function chatMiddleware(options: { model?: BaseChatModel } = {}): AnyAgentMiddleware[] {
   return [
     // Only useful with a checkpointer: it folds the thread's own state, which
