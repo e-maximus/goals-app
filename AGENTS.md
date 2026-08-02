@@ -116,7 +116,15 @@ persisting the turn) stays in the route and is shared. Both engines speak the AI
 SDK's UI message stream to the browser, so the drawer, the stored `parts` shape and
 the e2e suite are the same on either path; `ai` therefore stays a dependency as the
 **protocol**, not as the engine. The LangChain stack lives under
-[src/server/langchain/](src/server/langchain/).
+[src/server/langchain/](src/server/langchain/): the model, the agent, the tool
+adapter over the shared registry, and the middleware that caps a runaway loop and
+decides what a failed tool tells the model. It reaches feature parity with the AI
+SDK path — tools, streaming, reasoning, persistence, abort — but the rolling
+summary and the live context window are still built by the route from
+`chat_messages` ([chat-agent.ts](src/server/chat-agent.ts)) rather than held in
+graph state, so there is no checkpointer yet. Adding one is the next step, and it
+must scope by `owner_id`: LangGraph's own Postgres saver keys on `thread_id`
+alone, which would break the isolation rule below.
 
 `DATABASE_URL` is required for the server to run. Everything runs together with
 `docker compose up -d --build`; day to day, `docker compose up -d db` for
