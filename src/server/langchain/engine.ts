@@ -11,6 +11,7 @@ import type { ChatEngine, Completer, TurnInput } from "../chat-engine";
 import { buildChatAgent } from "./agent";
 import { OwnerScopedCheckpointer } from "./checkpointer";
 import { chatModel } from "./model";
+import { traceConfig, type TraceContext } from "./tracing";
 import { buildLangChainTools } from "./tools";
 
 /**
@@ -47,12 +48,17 @@ export type StreamTurnOptions = {
    * `chat_messages`.
    */
   seeded?: boolean;
+  /**
+   * Who and what this turn is, for the trace. Omitted in tests, where a run
+   * with no owner attached is exactly what we want.
+   */
+  trace?: TraceContext;
 };
 
 export function streamTurn(
   agent: StreamableAgent,
   { threadId, conversation, userMessage, signal, onEnd }: Omit<TurnInput, "system" | "toolContext">,
-  { seeded = false }: StreamTurnOptions = {}
+  { seeded = false, trace }: StreamTurnOptions = {}
 ): ReadableStream<UIMessageChunk> {
   return createUIMessageStream({
     originalMessages: [userMessage],
@@ -64,6 +70,7 @@ export function streamTurn(
       const agentStream = await agent.stream(
         { messages: await toBaseMessages(outgoing) },
         {
+          ...(trace ? traceConfig(trace) : {}),
           streamMode: ["values", "messages", "tools"],
           signal,
           configurable: { thread_id: threadId, checkpoint_ns: "" },
@@ -100,7 +107,10 @@ export const langchainEngine: ChatEngine = async ({ system, toolContext, ...turn
   });
 
   return createUIMessageStreamResponse({
-    stream: streamTurn(agent, turn, { seeded: existing !== undefined }),
+    stream: streamTurn(agent, turn, {
+      seeded: existing !== undefined,
+      trace: { ownerId: toolContext.ownerId, threadId: turn.threadId, engine: "langchain" },
+    }),
   });
 };
 
