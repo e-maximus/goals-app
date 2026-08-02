@@ -107,6 +107,17 @@ moves together; the write-path Zod schemas
 ([src/features/goals/schemas.ts](src/features/goals/schemas.ts)) assert at compile
 time that they still match, so a new field can't be silently dropped on save.
 
+The **AI chat's model stack is being moved to LangChain**, and the two stacks run
+side by side while that happens. `CHAT_ENGINE` picks one — the Vercel AI SDK
+(default) or `langchain` — and the seam is
+[src/server/chat-engine.ts](src/server/chat-engine.ts): everything that is not the
+model call (resolving the owner, validating, rebuilding context from the database,
+persisting the turn) stays in the route and is shared. Both engines speak the AI
+SDK's UI message stream to the browser, so the drawer, the stored `parts` shape and
+the e2e suite are the same on either path; `ai` therefore stays a dependency as the
+**protocol**, not as the engine. The LangChain stack lives under
+[src/server/langchain/](src/server/langchain/).
+
 `DATABASE_URL` is required for the server to run. Everything runs together with
 `docker compose up -d --build`; day to day, `docker compose up -d db` for
 Postgres plus `npm run dev` for the app.
