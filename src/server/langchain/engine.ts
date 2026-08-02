@@ -7,7 +7,7 @@ import {
   type UIMessageChunk,
 } from "ai";
 import { toBaseMessages, toUIMessageStream } from "@ai-sdk/langchain";
-import type { ChatEngine, TurnInput } from "../chat-engine";
+import type { ChatEngine, Completer, TurnInput } from "../chat-engine";
 import { buildChatAgent } from "./agent";
 import { chatModel } from "./model";
 import { buildLangChainTools } from "./tools";
@@ -64,4 +64,10 @@ export const langchainEngine: ChatEngine = async ({ system, toolContext, ...turn
     tools: buildLangChainTools(toolContext),
   });
   return createUIMessageStreamResponse({ stream: streamTurn(agent, turn) });
+};
+
+/** One-shot completion on LangChain — see `Completer` in chat-engine.ts. */
+export const langchainCompleter: Completer = async (prompt) => {
+  const reply = await chatModel().invoke(prompt);
+  return reply.text;
 };

@@ -39,6 +39,13 @@ export type TurnInput = {
 
 export type ChatEngine = (input: TurnInput) => Promise<Response>;
 
+/**
+ * A one-shot, non-streaming completion. The rolling summary needs this and
+ * nothing else, and it belongs to the engine: a deployment running on LangChain
+ * should not still be reaching for the AI SDK to fold its history.
+ */
+export type Completer = (prompt: string) => Promise<string>;
+
 export type ChatEngineName = "ai-sdk" | "langchain";
 
 /**
@@ -47,4 +54,20 @@ export type ChatEngineName = "ai-sdk" | "langchain";
  */
 export function chatEngineName(): ChatEngineName {
   return process.env.CHAT_ENGINE === "langchain" ? "langchain" : "ai-sdk";
+}
+
+/**
+ * The engine's one-shot completer, resolved lazily.
+ *
+ * Imported through `await import` rather than at module load so that picking one
+ * engine never constructs the other's model — which would demand its
+ * credentials, at import time, on a deployment that doesn't use it.
+ */
+export async function completer(): Promise<Completer> {
+  if (chatEngineName() === "langchain") {
+    const { langchainCompleter } = await import("./langchain/engine");
+    return langchainCompleter;
+  }
+  const { aiSdkCompleter } = await import("./chat-engine-ai-sdk");
+  return aiSdkCompleter;
 }

@@ -1,7 +1,7 @@
 import "server-only";
-import { convertToModelMessages, generateId, stepCountIs, streamText } from "ai";
+import { convertToModelMessages, generateId, generateText, stepCountIs, streamText } from "ai";
 import { buildChatTools, MAX_STEPS } from "./chat-agent";
-import type { ChatEngine } from "./chat-engine";
+import type { ChatEngine, Completer } from "./chat-engine";
 import { chatModel } from "./llm";
 
 /**
@@ -37,4 +37,10 @@ export const aiSdkEngine: ChatEngine = async ({
     generateMessageId: generateId,
     onEnd: ({ responseMessage, isAborted }) => onEnd({ responseMessage, isAborted }),
   });
+};
+
+/** One-shot completion on the AI SDK — see `Completer` in chat-engine.ts. */
+export const aiSdkCompleter: Completer = async (prompt) => {
+  const { text } = await generateText({ model: chatModel(), prompt });
+  return text;
 };
