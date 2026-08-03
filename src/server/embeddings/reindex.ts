@@ -59,7 +59,7 @@ export async function reindexOwner(
     return { chunks: chunks.length, ...sync, embedded: 0, textOnly: false };
   }
 
-  const vectors = await embed.embed(pending.map((p) => p.content));
+  const vectors = await embed.embeddings.embedDocuments(pending.map((p) => p.content));
   const embedded = await saveVectors(
     pool,
     ownerId,

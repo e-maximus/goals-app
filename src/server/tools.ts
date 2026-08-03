@@ -135,8 +135,18 @@ export const tools: ToolDef[] = [
         .describe("Restrict to some kinds; omit to search everything"),
       limit: z.number().int().min(1).max(25).optional().describe("Default 8"),
     },
+    // Expanded and reranked, unlike the ⌘K palette's search. An agent searches
+    // once inside a turn the user already expects to take seconds, and reads
+    // the results rather than scanning them — so it is worth two model calls to
+    // have the right answer first instead of fourth. This applies to the MCP
+    // transport too: both are agents, both are on the same budget.
     handler: (args, { pool, ownerId }) =>
-      search(pool, ownerId, args.query, { kinds: args.kinds, limit: args.limit }),
+      search(pool, ownerId, args.query, {
+        kinds: args.kinds,
+        limit: args.limit,
+        expand: true,
+        rerank: true,
+      }),
   }),
   defineTool({
     name: "get_agenda",
