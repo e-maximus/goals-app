@@ -9,15 +9,8 @@ import {
   listMessages,
   setThreadTitle,
 } from "@/server/chat-repo";
-import {
-  buildSystemPrompt,
-  maintainSummary,
-  sanitize,
-  selectContext,
-  toUiMessage,
-} from "@/server/chat-agent";
-import { chatEngineName, type ToolApproval } from "@/server/chat-engine";
-import { aiSdkEngine } from "@/server/chat-engine-ai-sdk";
+import { buildSystemPrompt, sanitize, selectContext, toUiMessage } from "@/server/chat-agent";
+import { type ToolApproval } from "@/server/chat-engine";
 import { langchainEngine } from "@/server/langchain/engine";
 import { logRequest } from "@/server/log";
 import { isSignedIn } from "@/server/users";
@@ -27,11 +20,11 @@ import { isSignedIn } from "@/server/users";
  * messages; POST runs the agent over that thread and streams the reply back,
  * persisting the completed turn.
  *
- * The model stack behind POST is pluggable — the AI SDK or LangChain, chosen by
- * `CHAT_ENGINE` ([chat-engine.ts](../../../server/chat-engine.ts)). Everything
- * that is not the model call lives here and is shared by both: resolving the
- * owner, validating the request, rebuilding context from the database, and
- * persisting the turn once the stream ends.
+ * POST is only the model call away from being all of the chat: everything that
+ * is not it lives here — resolving the owner, validating the request, seeding a
+ * thread's context from the database, and persisting the turn once the stream
+ * ends. The model call itself is the engine's
+ * ([chat-engine.ts](../../../server/chat-engine.ts)), and it runs on LangChain.
  *
  * The owner is resolved from the session cookie the page navigation settled
  * (see server/current-user.ts), so the chat runs as the same user the store
@@ -112,9 +105,11 @@ export async function POST(request: Request) {
     // the envelope, and the SDK owns the shape of a part.
     const userMessage = last as UIMessage;
 
-    // Build model context from the DB — the rolling summary plus the recent
-    // turns — not from what the client sent, so cost stays bounded and history
-    // can't be tampered with. Only the new user message comes from the request.
+    // Build the thread's context from the DB — its stored summary plus the
+    // recent turns — not from what the client sent, so cost stays bounded and
+    // history can't be tampered with. Only the new user message comes from the
+    // request. The engine uses this to seed a thread the agent has no
+    // checkpoint for and ignores it otherwise; see langchain/engine.ts.
     const thread = await getOrCreateActiveThread(pool, ownerId);
     const stored = await listMessages(pool, ownerId, thread.id);
     const context = sanitize(
@@ -122,9 +117,7 @@ export async function POST(request: Request) {
     );
     const conversation: UIMessage[] = [...context, userMessage];
 
-    const onLangChain = chatEngineName() === "langchain";
-    const engine = onLangChain ? langchainEngine : aiSdkEngine;
-    const response = await engine({
+    const response = await langchainEngine({
       system: buildSystemPrompt(thread.summary),
       threadId: thread.id,
       conversation,
@@ -150,21 +143,6 @@ export async function POST(request: Request) {
           if (!thread.title && !approvals) {
             const title = firstText(userMessage);
             if (title) await setThreadTitle(pool, ownerId, thread.id, title.slice(0, 80));
-          }
-          // On LangChain the agent keeps its own history in graph state and
-          // `summarizationMiddleware` folds it, so running this too would pay
-          // for a second summary that nothing reads. The AI SDK engine has no
-          // state of its own and still needs it.
-          if (!onLangChain) {
-            const all = await listMessages(pool, ownerId, thread.id);
-            await maintainSummary(
-              pool,
-              ownerId,
-              thread.id,
-              all,
-              thread.summary,
-              thread.summaryThroughCreatedAt
-            );
           }
         } catch (err) {
           console.error("chat persistence failed", err);

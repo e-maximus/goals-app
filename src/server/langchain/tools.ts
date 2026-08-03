@@ -7,10 +7,9 @@ import { runTool, tools as registry, type ToolContext } from "../tools";
 /**
  * The shared tool registry ([tools.ts](../tools.ts)), adapted for LangChain.
  *
- * This is the LangChain counterpart of the MCP adapter in [mcp.ts](../mcp.ts) and
- * of `buildChatTools` in [chat-agent.ts](../chat-agent.ts): one vocabulary of
- * goals/tasks operations, three transports. Adding a capability stays a one-file
- * change in the registry.
+ * This is the LangChain counterpart of the MCP adapter in [mcp.ts](../mcp.ts):
+ * one vocabulary of goals/tasks operations, two transports. Adding a capability
+ * stays a one-file change in the registry.
  *
  * Two things matter here and are easy to get wrong:
  *

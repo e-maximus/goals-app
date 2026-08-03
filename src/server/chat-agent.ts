@@ -1,19 +1,27 @@
 import "server-only";
-import { tool, type ToolSet, type UIMessage } from "ai";
-import { z } from "zod";
-import { completer } from "./chat-engine";
-import { updateSummary, type StoredChatMessage } from "./chat-repo";
-import { runTool, tools as registry, type ToolContext } from "./tools";
-import type { Pool } from "./db";
+import { type UIMessage } from "ai";
+import type { StoredChatMessage } from "./chat-repo";
+
+/**
+ * What the chat route builds before it hands a turn to the engine: the system
+ * prompt, and the conversation a thread starts from.
+ *
+ * The agent keeps its own history in checkpoints
+ * ([langchain/checkpointer.ts](./langchain/checkpointer.ts)) and folds it with
+ * `summarizationMiddleware`, so the helpers here only seed a thread that has no
+ * graph state yet — a fresh one, or one that predates the checkpointer and lives
+ * only in `chat_messages`. After its first turn a thread is the agent's to
+ * remember, and none of this runs for it again.
+ */
 
 /** How many recent turns (a turn starts at a user message) stay in live context. */
 export const CONTEXT_TURNS = 8;
-/** Cap on tool-call/response steps in one agent run — guards runaway loops. */
-export const MAX_STEPS = 12;
 
 /**
- * The chat's system prompt. The rolling `summary` (if any) is appended so the
- * model keeps earlier context without us resending every message. The prompt
+ * The chat's system prompt. A `summary` — which only a thread predating the
+ * checkpointer carries — is appended so the model keeps earlier context without
+ * us resending every message; newer threads pass null and the agent's own
+ * summarization does that job. The prompt
  * makes the model treat tools — not the conversation — as the source of truth
  * for the user's current data, which is what keeps stale history from causing
  * edits against a goal that has since changed.
@@ -57,19 +65,6 @@ export function buildSystemPrompt(summary: string | null): string {
   ].join("\n");
   if (!summary) return base;
   return `${base}\n\nSummary of the earlier conversation:\n${summary}`;
-}
-
-/** Adapt the shared tool registry into AI SDK tools, binding the owner context. */
-export function buildChatTools(ctx: ToolContext): ToolSet {
-  const out: ToolSet = {};
-  for (const def of registry) {
-    out[def.name] = tool({
-      description: def.description,
-      inputSchema: z.object(def.inputSchema),
-      execute: (args) => runTool(def, args, ctx),
-    });
-  }
-  return out;
 }
 
 /** A stored row rebuilt as a UIMessage the AI SDK can convert to model messages. */
@@ -117,74 +112,4 @@ export function sanitize(messages: UIMessage[]): UIMessage[] {
       return { ...m, parts } as UIMessage;
     })
     .filter((m) => (m.parts?.length ?? 0) > 0);
-}
-
-/** Flatten a message's parts into plain text for summarization. */
-function messageText(m: StoredChatMessage): string {
-  const parts = (m.parts as Array<{ type?: string; text?: string }>) ?? [];
-  const text = parts
-    .filter((p) => p.type === "text" && typeof p.text === "string")
-    .map((p) => p.text)
-    .join(" ")
-    .trim();
-  return text ? `${m.role}: ${text}` : "";
-}
-
-/**
- * Roll the summary forward: fold the turns that have dropped out of live context
- * into `summary`, moving the pointer to the last folded message. Runs after a
- * turn is persisted, once the tail exceeds {@link CONTEXT_TURNS}. Best-effort —
- * any failure leaves the pointer put, so the next request just carries a longer
- * tail rather than losing anything.
- */
-export async function maintainSummary(
-  pool: Pool,
-  ownerId: string,
-  threadId: string,
-  allMessages: StoredChatMessage[],
-  currentSummary: string | null,
-  summaryThroughCreatedAt: number | null,
-  maxTurns = CONTEXT_TURNS
-): Promise<void> {
-  const after =
-    summaryThroughCreatedAt == null
-      ? allMessages
-      : allMessages.filter((m) => m.createdAt > summaryThroughCreatedAt);
-  const userStarts = after.reduce<number[]>((acc, m, i) => {
-    if (m.role === "user") acc.push(i);
-    return acc;
-  }, []);
-  if (userStarts.length <= maxTurns) return;
-
-  const keepStart = userStarts[userStarts.length - maxTurns];
-  const falling = after.slice(0, keepStart);
-  if (falling.length === 0) return;
-
-  const transcript = falling.map(messageText).filter(Boolean).join("\n");
-  if (!transcript) {
-    // Nothing summarizable (e.g. only tool traffic) — still advance the pointer.
-    await updateSummary(
-      pool,
-      ownerId,
-      threadId,
-      currentSummary ?? "",
-      falling[falling.length - 1].createdAt
-    );
-    return;
-  }
-
-  const prompt = [
-    currentSummary ? `Existing summary so far:\n${currentSummary}\n` : "",
-    "Extend the summary with the following conversation excerpt. Preserve the user's explicit",
-    "preferences and constraints verbatim. Summarize intentions and decisions; do NOT list the",
-    "current goal/task state (that is read live from tools). Keep it brief.",
-    "",
-    transcript,
-  ].join("\n");
-
-  // Summarizing runs on whichever engine the chat runs on: a LangChain
-  // deployment should not still reach for the AI SDK to fold its own history.
-  const summarize = await completer();
-  const text = await summarize(prompt);
-  await updateSummary(pool, ownerId, threadId, text.trim(), falling[falling.length - 1].createdAt);
 }

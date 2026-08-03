@@ -2,12 +2,13 @@ import "server-only";
 import { ChatDeepSeek } from "@langchain/deepseek";
 
 /**
- * The chat's language model, as LangChain sees it.
+ * The chat's language model.
  *
- * This is the LangChain counterpart of [llm.ts](../llm.ts) and reads the exact
- * same environment: one provider, one set of variables, so switching engines
- * with `CHAT_ENGINE` never means switching credentials too. Keys are server-only;
- * they must never be `NEXT_PUBLIC_`.
+ * The provider is DeepSeek (an OpenAI-compatible API), configured entirely by
+ * environment variables so the model or endpoint can change without a code
+ * change — mirroring how the rest of the server reads `DATABASE_URL` at the
+ * point of use ([db.ts](../db.ts)). Keys are server-only; they must never be
+ * `NEXT_PUBLIC_`.
  */
 function required(name: string): string {
   const value = process.env[name];

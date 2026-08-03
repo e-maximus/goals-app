@@ -8,7 +8,7 @@ import {
 } from "ai";
 import { toBaseMessages, toUIMessageStream } from "@ai-sdk/langchain";
 import { Command } from "@langchain/langgraph";
-import type { ChatEngine, Completer, TurnInput } from "../chat-engine";
+import type { ChatEngine, TurnInput } from "../chat-engine";
 import { buildChatAgent } from "./agent";
 import { OwnerScopedCheckpointer } from "./checkpointer";
 import { chatModel } from "./model";
@@ -16,16 +16,15 @@ import { traceConfig, type TraceContext } from "./tracing";
 import { buildLangChainTools } from "./tools";
 
 /**
- * The LangChain engine: the same chat, driven by a LangChain agent instead of
- * the AI SDK's `streamText`. Selected with `CHAT_ENGINE=langchain` — see
- * [chat-engine.ts](../chat-engine.ts) for why both exist at once.
+ * The chat engine: a LangChain agent behind the route's
+ * [contract](../chat-engine.ts).
  *
- * The browser still speaks the AI SDK's UI message stream. `@ai-sdk/langchain`
+ * The browser speaks the AI SDK's UI message stream. `@ai-sdk/langchain`
  * translates the agent's LangGraph stream into that protocol, and
  * `createUIMessageStream` assembles the finished assistant message for us, in
- * exactly the `parts` shape the messages table already stores. That is what
- * keeps this a server-side change: the drawer, the stored history and the e2e
- * suite are all untouched.
+ * exactly the `parts` shape the messages table stores. That boundary is why the
+ * drawer, the stored history and the e2e suite never had to learn what drives
+ * the model.
  *
  * The stream is merged into the writer rather than returned directly because we
  * need `onEnd` — persistence hangs off it, and only `createUIMessageStream`
@@ -131,10 +130,4 @@ export const langchainEngine: ChatEngine = async ({ system, toolContext, ...turn
       trace: { ownerId: toolContext.ownerId, threadId: turn.threadId, engine: "langchain" },
     }),
   });
-};
-
-/** One-shot completion on LangChain — see `Completer` in chat-engine.ts. */
-export const langchainCompleter: Completer = async (prompt) => {
-  const reply = await chatModel().invoke(prompt);
-  return reply.text;
 };

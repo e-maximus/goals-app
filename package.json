@@ -21,7 +21,6 @@
     "reindex": "tsx --conditions react-server --env-file-if-exists=.env.local scripts/reindex.ts"
   },
   "dependencies": {
-    "@ai-sdk/deepseek": "^3.0.13",
     "@ai-sdk/langchain": "^3.0.48",
     "@ai-sdk/openai": "^4.0.20",
     "@ai-sdk/react": "^4.0.51",
