@@ -128,6 +128,11 @@ because LangGraph's keys on `thread_id` alone, which would break the isolation
 rule below; the owner is bound at construction, so no call site can name a
 different one. `chat_messages` stays the display history the drawer loads.
 
+Turns are traceable: set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` and
+LangChain reports to LangSmith on its own. What this repo adds is the owner,
+thread and engine on each run ([tracing.ts](src/server/langchain/tracing.ts)) —
+identifiers only, since a trace is a third-party copy of the conversation.
+
 Still to come: confirming a destructive tool before it runs. The middleware for it
 exists and does stop the call, but the return leg does not — the POST route
 assumes a trailing user message and resuming a paused graph needs a `Command`, so
