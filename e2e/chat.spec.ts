@@ -69,6 +69,39 @@ const toolStream =
     "data: [DONE]",
   ].join("\n\n") + "\n\n";
 
+/**
+ * A turn the agent paused on: it wants to delete something and is asking first.
+ * The drawer must surface that as a choice rather than folding it into the
+ * muted "Done:" lines — it is the last thing between the user and an
+ * irreversible write.
+ */
+const approvalStream =
+  [
+    `data: ${JSON.stringify({ type: "start", messageId: "assistant-approval" })}`,
+    `data: ${JSON.stringify({ type: "start-step" })}`,
+    `data: ${JSON.stringify({
+      type: "tool-input-start",
+      toolCallId: "call-9",
+      toolName: "delete_goal",
+      dynamic: true,
+    })}`,
+    `data: ${JSON.stringify({
+      type: "tool-input-available",
+      toolCallId: "call-9",
+      toolName: "delete_goal",
+      input: { goalId: "g1" },
+      dynamic: true,
+    })}`,
+    `data: ${JSON.stringify({
+      type: "tool-approval-request",
+      approvalId: "call-9",
+      toolCallId: "call-9",
+    })}`,
+    `data: ${JSON.stringify({ type: "finish-step" })}`,
+    `data: ${JSON.stringify({ type: "finish" })}`,
+    "data: [DONE]",
+  ].join("\n\n") + "\n\n";
+
 const SESSION_COOKIE = "session";
 
 test.describe("AI chat, signed out", () => {
@@ -132,6 +165,42 @@ test.describe("AI chat, signed in (e2e user)", () => {
 
     await expect(dialog.getByText("Done: create goal")).toBeVisible();
     await expect(dialog.getByText(TOOL_REPLY)).toBeVisible();
+  });
+
+  test("asks before deleting, and does not act until answered", async ({ page }) => {
+    const posts: string[] = [];
+    await page.route("**/api/chat", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST") return route.fallback();
+      posts.push(request.postData() ?? "");
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        headers: { "x-vercel-ai-ui-message-stream": "v1" },
+        body: approvalStream,
+      });
+    });
+
+    await page.goto("/goals");
+    await page.getByRole("button", { name: "Assistant" }).click();
+
+    const dialog = page.getByRole("dialog");
+    const composer = dialog.getByLabel("Message the assistant");
+    await composer.fill("Delete my 5k goal");
+    await composer.press("Enter");
+
+    // The pause is a question, not a "Done:" line.
+    await expect(dialog.getByText("This cannot be undone.")).toBeVisible();
+    const allow = dialog.getByRole("button", { name: "Allow" });
+    await expect(allow).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Don't" })).toBeVisible();
+    expect(posts).toHaveLength(1);
+
+    // Answering sends the decision back on its own.
+    await allow.click();
+    await expect.poll(() => posts.length).toBe(2);
+    expect(posts[1]).toContain("approval-responded");
+    expect(posts[1]).toContain('"approved":true');
   });
 });
 

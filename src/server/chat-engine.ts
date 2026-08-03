@@ -18,6 +18,12 @@ import type { ToolContext } from "./tools";
  * the e2e suite stay untouched across the move.
  */
 
+/**
+ * One answer to one paused tool call. `reason` is the user's words when they
+ * said no, which the model reads so its reply can acknowledge why.
+ */
+export type ToolApproval = { approved: boolean; reason?: string };
+
 /** Everything an engine needs to run one turn. */
 export type TurnInput = {
   /** The system prompt, already carrying the thread's rolling summary. */
@@ -28,6 +34,12 @@ export type TurnInput = {
   conversation: UIMessage[];
   /** The new user message — the engine echoes its id back for persistence. */
   userMessage: UIMessage;
+  /**
+   * Present when this request answers a paused turn rather than starting one:
+   * the user has approved or rejected the tool the agent stopped on. The
+   * decisions are in the order the agent asked for them.
+   */
+  approvals?: ToolApproval[];
   /** Owner-bound context every tool call runs under. */
   toolContext: ToolContext;
   /** Aborted when the client goes away mid-stream. */
