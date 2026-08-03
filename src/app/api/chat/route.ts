@@ -112,9 +112,11 @@ export async function POST(request: Request) {
     );
     const conversation: UIMessage[] = [...context, userMessage];
 
-    const engine = chatEngineName() === "langchain" ? langchainEngine : aiSdkEngine;
+    const onLangChain = chatEngineName() === "langchain";
+    const engine = onLangChain ? langchainEngine : aiSdkEngine;
     const response = await engine({
       system: buildSystemPrompt(thread.summary),
+      threadId: thread.id,
       conversation,
       userMessage,
       toolContext: { pool, ownerId, onMutation: () => scheduleReindex(pool, user) },
@@ -133,15 +135,21 @@ export async function POST(request: Request) {
             const title = firstText(userMessage);
             if (title) await setThreadTitle(pool, ownerId, thread.id, title.slice(0, 80));
           }
-          const all = await listMessages(pool, ownerId, thread.id);
-          await maintainSummary(
-            pool,
-            ownerId,
-            thread.id,
-            all,
-            thread.summary,
-            thread.summaryThroughCreatedAt
-          );
+          // On LangChain the agent keeps its own history in graph state and
+          // `summarizationMiddleware` folds it, so running this too would pay
+          // for a second summary that nothing reads. The AI SDK engine has no
+          // state of its own and still needs it.
+          if (!onLangChain) {
+            const all = await listMessages(pool, ownerId, thread.id);
+            await maintainSummary(
+              pool,
+              ownerId,
+              thread.id,
+              all,
+              thread.summary,
+              thread.summaryThroughCreatedAt
+            );
+          }
         } catch (err) {
           console.error("chat persistence failed", err);
         }

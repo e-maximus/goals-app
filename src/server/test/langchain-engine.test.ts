@@ -36,6 +36,7 @@ async function runTurn(responses: string[]): Promise<TurnResult> {
   const message = userMessage("hello");
 
   const stream = streamTurn(agent, {
+    threadId: "thread-test",
     conversation: [message],
     userMessage: message,
     signal: new AbortController().signal,
@@ -68,12 +69,20 @@ describe("the LangChain engine", () => {
 
     assert.equal(message.role, "assistant");
     assert.equal(textOf(message), "Here is your plan.");
-    assert.equal(aborted, false, "a completed stream must not report as aborted");
+    assert.equal(
+      aborted,
+      false,
+      "a completed stream must not report as aborted",
+    );
   });
 
   it("gives the assistant message an id, so turns can't collide in the database", async () => {
     const { message } = await runTurn(["Noted."]);
     assert.ok(message.id, "the assistant message needs a stable id");
-    assert.notEqual(message.id, "user-1", "the reply must not reuse the user message's id");
+    assert.notEqual(
+      message.id,
+      "user-1",
+      "the reply must not reuse the user message's id",
+    );
   });
 });

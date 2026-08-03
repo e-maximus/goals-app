@@ -2,10 +2,12 @@ import "server-only";
 import {
   modelCallLimitMiddleware,
   modelRetryMiddleware,
+  summarizationMiddleware,
   toolErrorMiddleware,
   toolRetryMiddleware,
   type AnyAgentMiddleware,
 } from "langchain";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { NotFoundError, ValidationError } from "../repo";
 import { tools as registry } from "../tools";
 
@@ -20,6 +22,17 @@ import { tools as registry } from "../tools";
 
 /** Cap on model calls in one turn — guards a runaway tool loop. */
 export const MAX_MODEL_CALLS = 12;
+
+/**
+ * How long the conversation gets before it is folded, and how much survives.
+ *
+ * These replace the hand-rolled window in [chat-agent.ts](../chat-agent.ts),
+ * which counted turns rather than messages; a turn here is a user message plus
+ * whatever tool traffic answering it took, so the numbers are in the same
+ * neighbourhood without being a translation of each other.
+ */
+export const SUMMARIZE_AFTER_MESSAGES = 24;
+export const KEEP_MESSAGES = 10;
 
 /**
  * Tools that only read. Retrying one is free; retrying a write is not — a
@@ -50,8 +63,38 @@ function describeToolError(error: unknown): string {
   return "The tool failed unexpectedly. Tell the user it didn't work and don't retry it.";
 }
 
-export function chatMiddleware(): AnyAgentMiddleware[] {
+/**
+ * Confirming a destructive tool is deliberately NOT wired up yet, though the
+ * checkpointer this file's summarization relies on is also what would make it
+ * possible. `humanInTheLoopMiddleware({ interruptOn: ... })` over the registry's
+ * `destructive` flag does stop the call — verified — but stopping is only half
+ * of it: with no way to answer, a delete would hang forever, which is worse
+ * than the current behaviour of asking the model nicely in the system prompt.
+ *
+ * The path is scouted. `@ai-sdk/langchain` already translates the interrupt
+ * into the AI SDK's own approval protocol — a `tool-approval-request` chunk and
+ * a part in `approval-requested` state — and `useChat` exposes
+ * `addToolApprovalResponse`. What is missing is the return leg: the POST route
+ * assumes a trailing *user* message, and resuming the graph needs a `Command`
+ * rather than new messages.
+ */
+
+export function chatMiddleware(options: { model?: BaseChatModel } = {}): AnyAgentMiddleware[] {
   return [
+    // Only useful with a checkpointer: it folds the thread's own state, which
+    // is only kept between turns when there is somewhere to keep it. Passing
+    // the chat's model rather than a cheaper one is deliberate for now — the
+    // summary is what the next turn reasons from, and this is one call per
+    // couple of dozen messages.
+    ...(options.model
+      ? [
+          summarizationMiddleware({
+            model: options.model,
+            trigger: { messages: SUMMARIZE_AFTER_MESSAGES },
+            keep: { messages: KEEP_MESSAGES },
+          }),
+        ]
+      : []),
     // Ends the turn rather than throwing, which is what `stopWhen:
     // stepCountIs(...)` did on the AI SDK engine: the user gets the partial
     // answer instead of an error.

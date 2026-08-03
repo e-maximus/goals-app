@@ -9,6 +9,7 @@ import {
 import { toBaseMessages, toUIMessageStream } from "@ai-sdk/langchain";
 import type { ChatEngine, Completer, TurnInput } from "../chat-engine";
 import { buildChatAgent } from "./agent";
+import { OwnerScopedCheckpointer } from "./checkpointer";
 import { chatModel } from "./model";
 import { buildLangChainTools } from "./tools";
 
@@ -37,9 +38,21 @@ type StreamableAgent = { stream: ReturnType<typeof buildChatAgent>["stream"] };
  * message stream. Split from {@link langchainEngine} so a test can drive the
  * whole translation with a fake model, without an HTTP response around it.
  */
+export type StreamTurnOptions = {
+  /**
+   * True when the graph already holds this thread's history, so only the new
+   * user message needs sending. False (or absent) hands over the whole
+   * conversation — which is both the no-checkpointer case and the first turn of
+   * a thread that predates the checkpointer, whose history lives only in
+   * `chat_messages`.
+   */
+  seeded?: boolean;
+};
+
 export function streamTurn(
   agent: StreamableAgent,
-  { conversation, userMessage, signal, onEnd }: Omit<TurnInput, "system" | "toolContext">
+  { threadId, conversation, userMessage, signal, onEnd }: Omit<TurnInput, "system" | "toolContext">,
+  { seeded = false }: StreamTurnOptions = {}
 ): ReadableStream<UIMessageChunk> {
   return createUIMessageStream({
     originalMessages: [userMessage],
@@ -47,9 +60,14 @@ export function streamTurn(
     // the messages table's primary key.
     generateId,
     execute: async ({ writer }) => {
+      const outgoing = seeded ? [userMessage] : (conversation as UIMessage[]);
       const agentStream = await agent.stream(
-        { messages: await toBaseMessages(conversation as UIMessage[]) },
-        { streamMode: ["values", "messages", "tools"], signal }
+        { messages: await toBaseMessages(outgoing) },
+        {
+          streamMode: ["values", "messages", "tools"],
+          signal,
+          configurable: { thread_id: threadId, checkpoint_ns: "" },
+        }
       );
       writer.merge(toUIMessageStream(agentStream));
     },
@@ -63,12 +81,27 @@ export function streamTurn(
 }
 
 export const langchainEngine: ChatEngine = async ({ system, toolContext, ...turn }) => {
+  // Bound to the request's owner, so there is no call here that could name a
+  // different one — see checkpointer.ts.
+  const checkpointer = new OwnerScopedCheckpointer(toolContext.pool, toolContext.ownerId);
+
+  // A thread that already has graph state only needs the new message; one that
+  // doesn't — a fresh thread, or an older one whose history lives only in
+  // `chat_messages` — is handed its conversation so the agent starts informed.
+  const existing = await checkpointer.getTuple({
+    configurable: { thread_id: turn.threadId, checkpoint_ns: "" },
+  });
+
   const agent = buildChatAgent({
     model: chatModel(),
     system,
     tools: buildLangChainTools(toolContext),
+    checkpointer,
   });
-  return createUIMessageStreamResponse({ stream: streamTurn(agent, turn) });
+
+  return createUIMessageStreamResponse({
+    stream: streamTurn(agent, turn, { seeded: existing !== undefined }),
+  });
 };
 
 /** One-shot completion on LangChain — see `Completer` in chat-engine.ts. */
