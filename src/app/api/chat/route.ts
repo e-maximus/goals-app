@@ -1,10 +1,4 @@
-import {
-  convertToModelMessages,
-  generateId,
-  stepCountIs,
-  streamText,
-  type UIMessage,
-} from "ai";
+import { type UIMessage } from "ai";
 import { currentUserForRequest } from "@/server/current-user";
 import { errorResponse, jsonResponse } from "@/server/http";
 import { chatRequestSchema } from "@/features/chat/schemas";
@@ -16,22 +10,28 @@ import {
   setThreadTitle,
 } from "@/server/chat-repo";
 import {
-  buildChatTools,
   buildSystemPrompt,
   maintainSummary,
-  MAX_STEPS,
   sanitize,
   selectContext,
   toUiMessage,
 } from "@/server/chat-agent";
-import { chatModel } from "@/server/llm";
+import { chatEngineName } from "@/server/chat-engine";
+import { aiSdkEngine } from "@/server/chat-engine-ai-sdk";
+import { langchainEngine } from "@/server/langchain/engine";
 import { logRequest } from "@/server/log";
 import { isSignedIn } from "@/server/users";
 
 /**
  * The AI chat endpoint. GET seeds the client with the active thread's persisted
- * messages; POST runs the agent (DeepSeek via the AI SDK) over that thread and
- * streams the reply back, persisting the completed turn.
+ * messages; POST runs the agent over that thread and streams the reply back,
+ * persisting the completed turn.
+ *
+ * The model stack behind POST is pluggable — the AI SDK or LangChain, chosen by
+ * `CHAT_ENGINE` ([chat-engine.ts](../../../server/chat-engine.ts)). Everything
+ * that is not the model call lives here and is shared by both: resolving the
+ * owner, validating the request, rebuilding context from the database, and
+ * persisting the turn once the stream ends.
  *
  * The owner is resolved from the session cookie the page navigation settled
  * (see server/current-user.ts), so the chat runs as the same user the store
@@ -112,29 +112,13 @@ export async function POST(request: Request) {
     );
     const conversation: UIMessage[] = [...context, userMessage];
 
-    const result = streamText({
-      model: chatModel(),
+    const engine = chatEngineName() === "langchain" ? langchainEngine : aiSdkEngine;
+    const response = await engine({
       system: buildSystemPrompt(thread.summary),
-      messages: await convertToModelMessages(conversation),
-      tools: buildChatTools({
-        pool,
-        ownerId,
-        onMutation: () => scheduleReindex(pool, user),
-      }),
-      stopWhen: stepCountIs(MAX_STEPS),
-      abortSignal: request.signal,
-    });
-
-    logRequest(request, 200, startedAt, { userId: ownerId });
-
-    return result.toUIMessageStreamResponse({
-      originalMessages: [userMessage],
-      // Forward the model's reasoning parts to the client (off by default). Only
-      // a reasoning-capable DEEPSEEK_MODEL emits them; for others this is a no-op.
-      sendReasoning: true,
-      // Give the assistant message a stable id — without this the SDK leaves it
-      // empty, and two turns would collide on the messages table's primary key.
-      generateMessageId: generateId,
+      conversation,
+      userMessage,
+      toolContext: { pool, ownerId, onMutation: () => scheduleReindex(pool, user) },
+      signal: request.signal,
       onEnd: async ({ responseMessage, isAborted }) => {
         // Only completed turns hit the DB — an aborted stream leaves the thread
         // valid, with no half-written tool call. Best-effort: a persistence
@@ -163,6 +147,9 @@ export async function POST(request: Request) {
         }
       },
     });
+
+    logRequest(request, 200, startedAt, { userId: ownerId });
+    return response;
   } catch (err) {
     return serverError(request, startedAt, err);
   }

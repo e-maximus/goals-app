@@ -1,7 +1,7 @@
 import "server-only";
-import { generateText, tool, type ToolSet, type UIMessage } from "ai";
+import { tool, type ToolSet, type UIMessage } from "ai";
 import { z } from "zod";
-import { chatModel } from "./llm";
+import { completer } from "./chat-engine";
 import { updateSummary, type StoredChatMessage } from "./chat-repo";
 import { runTool, tools as registry, type ToolContext } from "./tools";
 import type { Pool } from "./db";
@@ -182,6 +182,9 @@ export async function maintainSummary(
     transcript,
   ].join("\n");
 
-  const { text } = await generateText({ model: chatModel(), prompt });
+  // Summarizing runs on whichever engine the chat runs on: a LangChain
+  // deployment should not still reach for the AI SDK to fold its own history.
+  const summarize = await completer();
+  const text = await summarize(prompt);
   await updateSummary(pool, ownerId, threadId, text.trim(), falling[falling.length - 1].createdAt);
 }
