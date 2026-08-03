@@ -41,12 +41,31 @@ alongside.
 - **Search** — a derived index ([src/server/embeddings/](src/server/embeddings/),
   the `embeddings` table) rebuilt from the store after every write, and hybrid
   retrieval over it ([src/server/search/](src/server/search/)): BM25, vectors and
-  trigrams, fused by rank. The index is never a source of truth — it is rebuilt
-  from goals/steps/notes/tasks, so a stale row costs a reindex and nothing more.
+  trigrams, fused by rank. It runs **on LangChain** — the arms are `BaseRetriever`s
+  ([retrievers.ts](src/server/search/retrievers.ts)), the semantic one reading
+  through a `VectorStore` over the existing table
+  ([store.ts](src/server/search/store.ts)), and `EnsembleRetriever` fuses them
+  ([fusion.ts](src/server/search/fusion.ts)). The **rankings stay SQL**: nothing
+  the framework ships computes BM25 against one owner's corpus, so what it owns
+  is the plumbing between the arms — parallel invocation, weighted RRF, and a
+  callback surface that puts each arm in a LangSmith trace. Retrievers bind their
+  owner at construction, so they are **built per request**; a module-scoped one
+  would answer every later request as the first request's user. The index is
+  never a source of truth — it is rebuilt from goals/steps/notes/tasks, so a
+  stale row costs a reindex and nothing more.
   Without `EMBEDDING_API_KEY` the vector arm is simply absent and the keyword and
   trigram arms still answer; the ⌘K palette
   ([src/features/search/](src/features/search/)) reaches it through a Server
-  Action, and the agent through the `search_goals` tool. Both search **and**
+  Action, and the agent through the `search_goals` tool. **The two get different
+  searches.** The palette searches as the user types, so it is arms-and-fusion
+  only; the agent searches once inside a turn already expected to take seconds,
+  so `search_goals` also expands the query into several phrasings
+  ([expand.ts](src/server/search/expand.ts)) and reranks the candidates with the
+  chat model ([rerank.ts](src/server/search/rerank.ts)) — two model calls, for an
+  ordering worth them. Both degrade to the plain search when there is no model.
+  Retrieval changes are measured, not argued: a fixture corpus and 14 cases
+  scored by recall and MRR ([search-cases.ts](src/server/test/search-cases.ts))
+  print their numbers on every run. Both search **and**
   indexing are **signed-in only** — an anonymous account indexes nothing and
   can't query. The rule is one predicate (`isSignedIn` in
   [src/server/users.ts](src/server/users.ts)), applied at the write path's single
@@ -118,6 +137,15 @@ database, persisting the turn) stays in the route. The browser is spoken to in t
 **protocol**, not as an engine, and `@ai-sdk/langchain` translates the agent's
 stream into it. (The chat ran on the AI SDK until the move completed, behind a
 `CHAT_ENGINE` flag while both stacks were live; the flag and that engine are gone.)
+
+Search is on LangChain too, but the parts each uses barely overlap: the chat uses
+the agent loop, checkpointing and middleware, search uses retrievers, a vector
+store and a document compressor. What they share is the model
+([model.ts](src/server/langchain/model.ts)) — the reranker and the query expander
+are the same DeepSeek the chat talks to — and the `Embeddings` interface, which
+is why the embedding provider lives behind it too
+([embeddings/model.ts](src/server/embeddings/model.ts)) rather than behind the
+AI SDK.
 
 The agent keeps its own conversation in **checkpoints** rather than having the
 route rebuild it each request, so `summarizationMiddleware` folds the thread. The
