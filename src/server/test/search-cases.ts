@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Embeddings } from "@langchain/core/embeddings";
 import type { Goal, Note, Step, Task } from "../domain";
 import { EMBEDDING_DIMENSIONS, type Embedder } from "../embeddings/model";
 import type { SearchHit } from "../domain";
@@ -293,26 +294,41 @@ export function scoreCases(
  * A deterministic stand-in for the embedding provider whose cosine similarity
  * tracks word overlap — see the note at the top of this file for what that does
  * and does not buy.
+ *
+ * It is a real `Embeddings` subclass rather than a bare object, so everything
+ * downstream — the vector store, the retriever — runs the production code path
+ * against it. Both methods are pure and local: no network, no key, no flake.
  */
+export class LexicalEmbeddings extends Embeddings {
+  constructor() {
+    super({});
+  }
+
+  async embedDocuments(texts: string[]): Promise<number[][]> {
+    return texts.map((text) => this.vectorize(text));
+  }
+
+  async embedQuery(text: string): Promise<number[]> {
+    return this.vectorize(text);
+  }
+
+  private vectorize(text: string): number[] {
+    const vector = new Array<number>(EMBEDDING_DIMENSIONS).fill(0);
+    const tokens = text.toLowerCase().match(/\p{L}+/gu) ?? [];
+    for (const token of tokens) {
+      // Prefix folding, so an inflected form still lands near its stem:
+      // "переезд" and "переезду" share their first six characters and so share
+      // a dimension.
+      const stem = token.slice(0, 6);
+      const digest = createHash("sha256").update(stem).digest();
+      const dimension = digest.readUInt32BE(0) % EMBEDDING_DIMENSIONS;
+      vector[dimension] += 1;
+    }
+    const norm = Math.hypot(...vector);
+    return norm === 0 ? vector : vector.map((value) => value / norm);
+  }
+}
+
 export function lexicalEmbedder(modelName = "lexical-test-model"): Embedder {
-  return {
-    modelName,
-    async embed(texts) {
-      return texts.map((text) => {
-        const vector = new Array<number>(EMBEDDING_DIMENSIONS).fill(0);
-        const tokens = text.toLowerCase().match(/\p{L}+/gu) ?? [];
-        for (const token of tokens) {
-          // Prefix folding, so an inflected form still lands near its stem:
-          // "переезд" and "переезду" share their first six characters and so
-          // share a dimension.
-          const stem = token.slice(0, 6);
-          const digest = createHash("sha256").update(stem).digest();
-          const dimension = digest.readUInt32BE(0) % EMBEDDING_DIMENSIONS;
-          vector[dimension] += 1;
-        }
-        const norm = Math.hypot(...vector);
-        return norm === 0 ? vector : vector.map((value) => value / norm);
-      });
-    },
-  };
+  return { modelName, embeddings: new LexicalEmbeddings() };
 }

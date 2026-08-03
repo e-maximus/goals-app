@@ -1,11 +1,11 @@
 import "server-only";
-import { createOpenAI } from "@ai-sdk/openai";
-import { embedMany, type EmbeddingModel } from "ai";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import type { Embeddings } from "@langchain/core/embeddings";
 
 /**
  * The embedding model, built from env — the same shape as the chat's
- * ([llm.ts](../llm.ts)), so the provider or model can change without a code
- * change.
+ * ([model.ts](../langchain/model.ts)), so the provider or model can change
+ * without a code change.
  *
  * Named by role rather than provider (`EMBEDDING_*`, not `OPENAI_*`) because the
  * app already talks to two: the chat is on DeepSeek, which has no embeddings
@@ -16,6 +16,12 @@ import { embedMany, type EmbeddingModel } from "ai";
  * only one of them needs a model: with no key the index still fills with text
  * and BM25 + trigram still answer. So this module reports absence instead of
  * throwing, and callers degrade rather than fail.
+ *
+ * The provider is LangChain's `Embeddings` — the same interface the retrievers
+ * and the vector store speak, so a model reaches them without an adapter. Its
+ * two methods are exactly this app's two call sites: `embedDocuments` for the
+ * reindex, `embedQuery` for a search. Batching belongs to the provider
+ * (`batchSize` below) rather than to a loop here.
  */
 
 /** Must match the `vector(N)` column in migration 015. */
@@ -47,51 +53,39 @@ function normalizeBaseUrl(url: string): string {
   return /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
 }
 
-let cached: EmbeddingModel | null = null;
-
-function model(): EmbeddingModel {
-  if (cached) return cached;
-  const name = embeddingModelName();
-  if (!name) throw new Error("EMBEDDING_API_KEY is not set — no embedding provider configured.");
-  const openai = createOpenAI({
-    apiKey: process.env.EMBEDDING_API_KEY!,
-    ...(process.env.EMBEDDING_BASE_URL
-      ? { baseURL: normalizeBaseUrl(process.env.EMBEDDING_BASE_URL) }
-      : {}),
-  });
-  cached = openai.textEmbeddingModel(name);
-  return cached;
-}
-
 /**
- * How the rest of the server asks for vectors. The reindex path takes this as a
- * parameter so tests can hand it a deterministic stand-in — embedding a few
- * hundred strings over the network in CI would be slow, flaky, and would make a
- * paid key a prerequisite for running the suite.
+ * A model paired with the name recorded alongside every vector it produces.
+ *
+ * The name cannot come from the `Embeddings` interface — it has no such member,
+ * and a test stand-in has no provider model to name — but the index depends on
+ * it: vectors are compared only against their own model, because coordinates
+ * from two models mean different things. So the pair travels together, and the
+ * reindex path takes one as a parameter so tests can hand over a deterministic
+ * stand-in instead of a paid key.
  */
 export type Embedder = {
-  /** The name recorded alongside every vector it produces. */
   readonly modelName: string;
-  embed(texts: string[]): Promise<number[][]>;
+  readonly embeddings: Embeddings;
 };
+
+let cached: Embedder | null = null;
 
 /** The real, configured embedder, or null when there is no provider. */
 export function embedder(): Embedder | null {
   const modelName = embeddingModelName();
   if (!modelName) return null;
-  return {
+  if (cached?.modelName === modelName) return cached;
+  cached = {
     modelName,
-    async embed(texts: string[]): Promise<number[][]> {
-      const out: number[][] = [];
-      for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-        const { embeddings } = await embedMany({
-          model: model(),
-          values: texts.slice(i, i + BATCH_SIZE),
-          providerOptions: { openai: { dimensions: EMBEDDING_DIMENSIONS } },
-        });
-        out.push(...embeddings);
-      }
-      return out;
-    },
+    embeddings: new OpenAIEmbeddings({
+      apiKey: process.env.EMBEDDING_API_KEY!,
+      model: modelName,
+      dimensions: EMBEDDING_DIMENSIONS,
+      batchSize: BATCH_SIZE,
+      ...(process.env.EMBEDDING_BASE_URL
+        ? { configuration: { baseURL: normalizeBaseUrl(process.env.EMBEDDING_BASE_URL) } }
+        : {}),
+    }),
   };
+  return cached;
 }

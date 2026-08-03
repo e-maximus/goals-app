@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import type { Pool } from "../db";
 import type { Goal, Task } from "../domain";
 import * as repo from "../repo";
+import { Embeddings } from "@langchain/core/embeddings";
+import type { Embedder } from "../embeddings/model";
 import { reindexOwner } from "../embeddings/reindex";
-import { EMBEDDING_DIMENSIONS, type Embedder } from "../embeddings/model";
 import { keywordArm, trigramArm } from "../search/arms";
 import { fuse } from "../search/rrf";
 import { promoteGoals, search } from "../search/search";
 import type { SearchHit } from "@/lib/types";
-import { createOwner, reset, setupPool } from "./helpers";
+import { createOwner, fakeEmbedder, reset, setupPool } from "./helpers";
 
 let pool: Pool;
 let owner: string;
@@ -25,19 +25,6 @@ beforeEach(async () => {
   await reset(pool);
   owner = await createOwner(pool);
 });
-
-/** Deterministic stand-in for the provider — see reindex.test.ts. */
-function fakeEmbedder(modelName = "fake-model"): Embedder {
-  return {
-    modelName,
-    async embed(texts) {
-      return texts.map((text) => {
-        const seed = createHash("sha256").update(text).digest();
-        return Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) => seed[i % seed.length]! / 255);
-      });
-    },
-  };
-}
 
 function goal(overrides: Partial<Goal> = {}): Goal {
   return {
@@ -265,9 +252,17 @@ describe("search", () => {
     await indexed([goal({ id: "g-1", title: "Move to Barcelona" })]);
     const broken: Embedder = {
       modelName: "fake-model",
-      embed: async () => {
-        throw new Error("provider is down");
-      },
+      embeddings: new (class extends Embeddings {
+        constructor() {
+          super({});
+        }
+        async embedDocuments(): Promise<number[][]> {
+          throw new Error("provider is down");
+        }
+        async embedQuery(): Promise<number[]> {
+          throw new Error("provider is down");
+        }
+      })(),
     };
 
     const hits = await search(pool, owner, "Barcelona", { embed: broken });

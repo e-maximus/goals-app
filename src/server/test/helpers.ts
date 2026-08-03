@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
+import { Embeddings } from "@langchain/core/embeddings";
 import { createPool, migrate, type Pool } from "../db";
+import { EMBEDDING_DIMENSIONS, type Embedder } from "../embeddings/model";
 
 /**
  * These tests run against a real Postgres rather than a fake — the whole point
@@ -38,4 +41,47 @@ export async function createOwner(pool: Pool, id = "owner-1"): Promise<string> {
     [id, `${id}-session`, Date.now()]
   );
   return id;
+}
+
+/**
+ * A deterministic stand-in for an embedding provider.
+ *
+ * Embedding over the network in CI would be slow, flaky, and would make a paid
+ * key a prerequisite for running the suite. The vector is derived from a hash of
+ * the text, so it is stable across runs but says nothing about meaning — tests
+ * that care about *ranking* want the lexical embedder in
+ * [search-cases.ts](./search-cases.ts) instead.
+ *
+ * It extends `Embeddings` rather than faking the shape, so the production path —
+ * the vector store, the retriever — runs unmodified against it. Every batch it
+ * is handed is recorded, which is how the reindex tests assert what was sent.
+ */
+export class FakeEmbeddings extends Embeddings {
+  /** Every batch of texts sent to `embedDocuments`, in order. */
+  readonly batches: string[][] = [];
+
+  constructor() {
+    super({});
+  }
+
+  async embedDocuments(texts: string[]): Promise<number[][]> {
+    this.batches.push(texts);
+    return texts.map((text) => this.vectorize(text));
+  }
+
+  async embedQuery(text: string): Promise<number[]> {
+    return this.vectorize(text);
+  }
+
+  private vectorize(text: string): number[] {
+    const seed = createHash("sha256").update(text).digest();
+    return Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) => seed[i % seed.length]! / 255);
+  }
+}
+
+/** A {@link FakeEmbeddings} paired with a model name, ready for the index. */
+export function fakeEmbedder(modelName = "fake-model"): Embedder & {
+  embeddings: FakeEmbeddings;
+} {
+  return { modelName, embeddings: new FakeEmbeddings() };
 }

@@ -137,7 +137,7 @@ async function semanticArm(
 ): Promise<ArmHit[] | null> {
   if (!embed) return null;
   try {
-    const [vector] = await embed.embed([query]);
+    const vector = await embed.embeddings.embedQuery(query);
     if (!vector) return null;
     return await vectorArm(pool, ownerId, vector, embed.modelName);
   } catch (err) {
