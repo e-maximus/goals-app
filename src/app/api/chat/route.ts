@@ -26,6 +26,7 @@ import {
 } from "@/server/chat-agent";
 import { chatModel } from "@/server/llm";
 import { logRequest } from "@/server/log";
+import { isSignedIn } from "@/server/users";
 
 /**
  * The AI chat endpoint. GET seeds the client with the active thread's persisted
@@ -35,15 +36,27 @@ import { logRequest } from "@/server/log";
  * The owner is resolved from the session cookie the page navigation settled
  * (see server/current-user.ts), so the chat runs as the same user the store
  * does. The model never sees an owner id; every tool is bound to it
- * server-side. The chat
- * is surfaced as a signed-in feature in the UI (`<Show when="signed-in">`), which
- * is the product boundary; the endpoint itself follows the app's cookie model.
+ * server-side.
+ *
+ * The assistant requires a signed-in account: the server enforces `isSignedIn`
+ * with a 403, and the UI hides the button based on the same server-resolved
+ * identity (see server/users.ts). This is the same predicate search uses — an
+ * anonymous account costs no model calls and stores no chat history its cookie
+ * can't recover.
  */
 
 export async function GET(request: Request) {
   const startedAt = Date.now();
   try {
     const { pool, user, setCookie } = await currentUserForRequest(request);
+    if (!isSignedIn(user)) {
+      const res = jsonResponse(
+        { error: "The assistant requires a signed-in account." },
+        { status: 403, setCookie }
+      );
+      logRequest(request, res.status, startedAt, { userId: user.id });
+      return res;
+    }
     const thread = await getOrCreateActiveThread(pool, user.id);
     const messages = await listMessages(pool, user.id, thread.id);
     const res = jsonResponse(
@@ -63,7 +76,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const startedAt = Date.now();
   try {
-    const { pool, user } = await currentUserForRequest(request);
+    const { pool, user, setCookie } = await currentUserForRequest(request);
+    if (!isSignedIn(user)) {
+      const res = jsonResponse(
+        { error: "The assistant requires a signed-in account." },
+        { status: 403, setCookie }
+      );
+      logRequest(request, res.status, startedAt, { userId: user.id });
+      return res;
+    }
     const ownerId = user.id;
 
     // Never trust the client's transcript: only the trailing user message is
