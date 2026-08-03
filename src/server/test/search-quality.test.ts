@@ -18,9 +18,10 @@ import { createOwner, reset, setupPool } from "./helpers";
 /**
  * The quality bar, run against every search implementation there is.
  *
- * Adding an implementation here is the point: the two must answer the same
- * corpus the same way, and a divergence should be a failing test rather than
- * something noticed in the UI weeks later.
+ * It stays parameterised by implementation because that is what made the move
+ * onto LangChain a comparison rather than a leap: both paths ran here side by
+ * side and had to answer the same corpus the same way. The list is down to one
+ * again, and the next change to retrieval should grow it back to two.
  */
 
 let pool: Pool;
@@ -48,7 +49,7 @@ type Implementation = {
 
 const implementations: Implementation[] = [
   {
-    name: "sql",
+    name: "langchain",
     run: (query, embed = embedder) => search(pool, owner, query, { embed }),
   },
 ];

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import type { Pool } from "../db";
-import type { Goal, Task } from "../domain";
+import type { Goal, SearchArm, Task } from "../domain";
 import * as repo from "../repo";
 import { Embeddings } from "@langchain/core/embeddings";
 import type { Embedder } from "../embeddings/model";
 import { reindexOwner } from "../embeddings/reindex";
-import { keywordArm, trigramArm } from "../search/arms";
-import { fuse } from "../search/rrf";
+import { ArmRetriever, KeywordRetriever, TrigramRetriever } from "../search/retrievers";
+import { fuseArms } from "../search/fusion";
 import { promoteGoals, search } from "../search/search";
 import type { SearchHit } from "@/lib/types";
 import { createOwner, fakeEmbedder, reset, setupPool } from "./helpers";
@@ -48,6 +48,15 @@ async function indexed(goals: Goal[], tasks: Task[] = [], embed: Embedder | null
 
 const titles = (hits: { title: string }[]) => hits.map((h) => h.title);
 
+/** Run one arm and read back the item ids it ranked, in its order. */
+async function armIds(retriever: ArmRetriever, query: string): Promise<string[]> {
+  const documents = await retriever.invoke(query);
+  return documents.map((d) => d.metadata.itemId as string);
+}
+
+const keywordArm = (query: string) => armIds(new KeywordRetriever({ pool, ownerId: owner }), query);
+const trigramArm = (query: string) => armIds(new TrigramRetriever({ pool, ownerId: owner }), query);
+
 describe("keyword arm (BM25)", () => {
   it("ranks the rare term above the common one", async () => {
     // "move" is in every goal; "Barcelona" is in one. Without IDF both terms
@@ -60,9 +69,9 @@ describe("keyword arm (BM25)", () => {
       goal({ id: "g-4", title: "Move the gym sessions", why: "Move them to the morning" }),
     ]);
 
-    const hits = await keywordArm(pool, owner, "move to Barcelona");
+    const hits = await keywordArm("move to Barcelona");
 
-    assert.equal(hits[0]!.itemId, "g-1");
+    assert.equal(hits[0], "g-1");
   });
 
   it("ranks a hit in the item's own title above one in its body", async () => {
@@ -71,9 +80,9 @@ describe("keyword arm (BM25)", () => {
       goal({ id: "g-body", title: "Relocation", why: "Sort out the visa at some point" }),
     ]);
 
-    const hits = await keywordArm(pool, owner, "visa");
+    const hits = await keywordArm("visa");
 
-    assert.equal(hits[0]!.itemId, "g-title");
+    assert.equal(hits[0], "g-title");
   });
 
   it("does not let a parent's title leak into a child's keyword score", async () => {
@@ -88,17 +97,12 @@ describe("keyword arm (BM25)", () => {
       }),
     ]);
 
-    const hits = await keywordArm(pool, owner, "Barcelona");
-
-    assert.deepEqual(
-      hits.map((h) => h.itemId),
-      ["g-1"]
-    );
+    assert.deepEqual(await keywordArm("Barcelona"), ["g-1"]);
   });
 
   it("finds nothing for a query with no shared words", async () => {
     await indexed([goal({ title: "Move to Barcelona" })]);
-    assert.deepEqual(await keywordArm(pool, owner, "kitchen renovation"), []);
+    assert.deepEqual(await keywordArm("kitchen renovation"), []);
   });
 });
 
@@ -109,41 +113,77 @@ describe("trigram arm", () => {
     // BM25 sees "barcelna" as simply a different word; this is the arm that
     // covers typos — and the same mechanism covers Russian morphology, which
     // the 'simple' config does not stem.
-    assert.deepEqual(await keywordArm(pool, owner, "Barcelna"), []);
-    const hits = await trigramArm(pool, owner, "Barcelna");
-    assert.equal(hits[0]!.itemId, "g-1");
+    assert.deepEqual(await keywordArm("Barcelna"), []);
+    const hits = await trigramArm("Barcelna");
+    assert.equal(hits[0], "g-1");
   });
 });
 
-describe("fuse", () => {
-  it("puts a row several arms agree on above one only a single arm loves", () => {
-    const fused = fuse([
+/**
+ * Fusion is driven by stub arms rather than the real three.
+ *
+ * What it does is combine *orderings*, and forcing three real arms into a chosen
+ * disagreement means fighting IDF, length normalisation and a similarity
+ * threshold at once — which breaks for reasons that have nothing to do with
+ * fusion. The arms have their own tests above.
+ */
+describe("fuseArms", () => {
+  function stubArm(arm: SearchArm, itemIds: string[]): ArmRetriever {
+    return new (class extends ArmRetriever {
+      lc_namespace = ["test"];
+      readonly arm = arm;
+      async _getRelevantDocuments() {
+        return this.toDocuments(
+          itemIds.map((itemId, i) => ({ kind: "goal", item_id: itemId, score: 100 - i }))
+        );
+      }
+    })({ pool, ownerId: owner });
+  }
+
+  const fuse = (arms: [SearchArm, string[]][]) =>
+    fuseArms(
       {
-        arm: "keyword",
-        hits: [
-          { kind: "goal", itemId: "loved-by-one", score: 99 },
-          { kind: "goal", itemId: "agreed", score: 1 },
-        ],
+        retrievers: arms.map(([arm, ids]) => stubArm(arm, ids)),
+        weights: arms.map(([arm]) => (arm === "trigram" ? 0.5 : 1)),
       },
-      { arm: "vector", hits: [{ kind: "goal", itemId: "agreed", score: 0.4 }] },
-      { arm: "trigram", hits: [{ kind: "goal", itemId: "agreed", score: 0.5 }] },
+      "anything"
+    );
+
+  it("puts a row several arms agree on above one only a single arm loves", async () => {
+    const fused = await fuse([
+      ["keyword", ["loved-by-one", "agreed"]],
+      ["vector", ["agreed"]],
+      ["trigram", ["agreed"]],
     ]);
 
-    // Note the scores are wildly different scales — 99 vs 0.4 — and RRF ignores
-    // them entirely, which is the point: only the orderings are comparable.
+    // The arms' scores are on wildly different scales — BM25 is unbounded,
+    // cosine sits in [-1, 1] — and RRF ignores them entirely, which is the
+    // point: only the orderings are comparable.
     assert.equal(fused[0]!.itemId, "agreed");
     assert.deepEqual(fused[0]!.arms, ["keyword", "vector", "trigram"]);
   });
 
-  it("works with an arm missing entirely", () => {
-    const fused = fuse([
-      { arm: "keyword", hits: [{ kind: "goal", itemId: "a", score: 2 }] },
-      { arm: "trigram", hits: [] },
+  it("works with an arm missing entirely", async () => {
+    const fused = await fuse([
+      ["keyword", ["a"]],
+      ["trigram", []],
     ]);
     assert.deepEqual(
       fused.map((h) => h.itemId),
       ["a"]
     );
+  });
+
+  it("reports the arms in the retrievers' order, not the order they finished", async () => {
+    // The arms run in parallel, so completion order varies between requests;
+    // `arms` reaches the client, so it has to be stable.
+    const fused = await fuse([
+      ["keyword", ["a"]],
+      ["trigram", ["a"]],
+      ["vector", ["a"]],
+    ]);
+
+    assert.deepEqual(fused[0]!.arms, ["keyword", "trigram", "vector"]);
   });
 });
 
@@ -346,11 +386,6 @@ describe("search", () => {
       goal({ id: "g-common", title: "Weekly review", why: "Review the week" }),
     ]);
 
-    const hits = await keywordArm(pool, owner, "Barcelona");
-
-    assert.deepEqual(
-      hits.map((h) => h.itemId),
-      ["g-rare"]
-    );
+    assert.deepEqual(await keywordArm("Barcelona"), ["g-rare"]);
   });
 });
