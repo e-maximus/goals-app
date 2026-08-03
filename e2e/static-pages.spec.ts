@@ -49,4 +49,40 @@ test.describe("Static pages", () => {
     await page.getByRole("link", { name: "Back to My Goals" }).click();
     await expect(page).toHaveURL(/\/goals$/);
   });
+
+  test("/robots.txt allows public paths, disallows private ones, and points at the sitemap", async ({
+    page,
+  }) => {
+    const res = await page.request.get("/robots.txt");
+    expect(res.status()).toBe(200);
+    const body = await res.text();
+
+    // The public marketing surface stays crawlable…
+    expect(body).toContain("Allow: /about");
+    expect(body).toContain("Allow: /privacy");
+    expect(body).toContain("Allow: /terms");
+    // …while the per-user surface is kept out of the index.
+    expect(body).toContain("Disallow: /api/");
+    expect(body).toContain("Disallow: /goal/");
+    expect(body).toContain("Disallow: /goals");
+    expect(body).toContain("Disallow: /tasks");
+    expect(body).toContain("Disallow: /settings");
+    expect(body).toContain("Disallow: /sign-in");
+    expect(body).toContain("Disallow: /sign-up");
+    expect(body).toContain("Sitemap: https://keepgoing.you/sitemap.xml");
+  });
+
+  test("/sitemap.xml lists only the static public pages, not per-user routes", async ({
+    page,
+  }) => {
+    const res = await page.request.get("/sitemap.xml");
+    expect(res.status()).toBe(200);
+    const body = await res.text();
+
+    expect(body).toContain("https://keepgoing.you/");
+    expect(body).toContain("/about");
+    expect(body).toContain("/privacy");
+    expect(body).toContain("/terms");
+    expect(body).not.toContain("/goals");
+  });
 });
