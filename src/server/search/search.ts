@@ -1,10 +1,12 @@
 import "server-only";
 import type { BaseDocumentCompressor } from "@langchain/core/retrievers/document_compressors";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { Pool } from "../db";
 import * as repo from "../repo";
 import { embedder, type Embedder } from "../embeddings/model";
 import { buildRetrievers } from "./retrievers";
 import { fuseArms } from "./fusion";
+import { expandQuery, fuseVariants } from "./expand";
 import { buildIndex, promoteGoals } from "./hydrate";
 import { ListwiseReranker, rerankHits } from "./rerank";
 import { chatModel } from "../langchain/model";
@@ -50,6 +52,12 @@ export type SearchOptions = {
    * to use a specific one; `true` builds the configured model's.
    */
   rerank?: boolean | BaseDocumentCompressor;
+  /**
+   * Search several phrasings of the query and fuse what each finds. Costs a
+   * model call *before* the SQL runs. Pass a model to use a specific one; `true`
+   * builds the configured one.
+   */
+  expand?: boolean | BaseChatModel;
 };
 
 const DEFAULT_LIMIT = 8;
@@ -75,7 +83,18 @@ export async function search(
   const limit = options.limit ?? DEFAULT_LIMIT;
   const embed = options.embed === undefined ? embedder() : options.embed;
 
-  const fused = await fuseArms(buildRetrievers(pool, ownerId, embed), trimmed);
+  const queries = await maybeExpand(trimmed, options.expand);
+  const fused =
+    queries.length === 1
+      ? await fuseArms(buildRetrievers(pool, ownerId, embed), trimmed)
+      : fuseVariants(
+          await Promise.all(
+            // A fresh set of retrievers per variant: they are per-request objects
+            // and running one concurrently against several queries would have the
+            // arms share state that was never meant to be shared.
+            queries.map((variant) => fuseArms(buildRetrievers(pool, ownerId, embed), variant))
+          )
+        );
   if (fused.length === 0) return [];
 
   const state = await repo.getState(pool, ownerId);
@@ -97,6 +116,16 @@ export async function search(
   return promoteGoals(reranked).slice(0, limit);
 }
 
+/** The query plus its rewrites, or just the query when expansion is off or broken. */
+async function maybeExpand(
+  query: string,
+  expand: SearchOptions["expand"]
+): Promise<string[]> {
+  if (!expand) return [query];
+  const model = expand === true ? tryChatModel("search_expand_unavailable") : expand;
+  return model ? expandQuery(model, query) : [query];
+}
+
 async function maybeRerank(
   query: string,
   hits: SearchHit[],
@@ -106,16 +135,9 @@ async function maybeRerank(
 
   let reranker: BaseDocumentCompressor;
   if (rerank === true) {
-    try {
-      reranker = new ListwiseReranker(chatModel());
-    } catch (err) {
-      // No model configured is a normal state for a self-hosted instance, and
-      // the fused ordering is a perfectly good answer without one.
-      log.error("search_rerank_unavailable", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return hits;
-    }
+    const model = tryChatModel("search_rerank_unavailable");
+    if (!model) return hits;
+    reranker = new ListwiseReranker(model);
   } else {
     reranker = rerank;
   }
@@ -123,4 +145,21 @@ async function maybeRerank(
   const pool = hits.slice(0, RERANK_POOL);
   const ordered = await rerankHits(reranker, query, pool);
   return [...ordered, ...hits.slice(RERANK_POOL)];
+}
+
+/**
+ * The configured chat model, or null when there isn't one.
+ *
+ * A self-hosted instance with no `DEEPSEEK_API_KEY` is a supported state — the
+ * whole search works without a model, it just doesn't get the extra pass. So an
+ * absent model degrades rather than throws, exactly as an absent embedding
+ * provider does.
+ */
+function tryChatModel(event: string): BaseChatModel | null {
+  try {
+    return chatModel();
+  } catch (err) {
+    log.error(event, { error: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
 }
