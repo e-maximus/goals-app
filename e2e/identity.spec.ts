@@ -53,4 +53,17 @@ test.describe("Page titles", () => {
       title.replace(" — Keep Going", "")
     );
   });
+
+  test("the auth pages name themselves rather than the site default", async ({ page }) => {
+    // Regression: the Clerk sign-in/sign-up routes used to export no metadata,
+    // so both tabs read as the site default — indistinguishable from the home
+    // tab they came from.
+    await page.goto("/sign-in");
+    await expect(page).toHaveTitle("Sign in — Keep Going");
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex");
+
+    await page.goto("/sign-up");
+    await expect(page).toHaveTitle("Sign up — Keep Going");
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex");
+  });
 });
