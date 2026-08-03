@@ -60,15 +60,40 @@ jobs:
           echo "level=$level" >> "$GITHUB_OUTPUT"
           echo "Bumping: $level"
 
-      - name: Bump version, commit and tag
-        run: node scripts/release.mjs "${{ steps.bump.outputs.level }}"
-
-      - name: Push commit and tag
-        run: git push --follow-tags origin main
-
-      - name: Read new version
+      - name: Bump, tag and push (retrying if main moved)
         id: ver
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        env:
+          LEVEL: ${{ steps.bump.outputs.level }}
+        # `main` can move while this job runs — another PR merging is enough.
+        # Rather than gate merges on the release, redo the bump on top of
+        # whatever main now is and push again. Each attempt starts from a clean
+        # origin/main, so the version is always computed from the current
+        # package.json instead of rebasing a stale bump onto a newer one (which
+        # would conflict on exactly the line it changes).
+        #
+        # The push is --atomic: the branch and the tag land together or not at
+        # all. A tag pushed alone (the branch rejected) would point at a commit
+        # on no branch and make every later release collide on that version.
+        run: |
+          for attempt in 1 2 3 4 5; do
+            git fetch --tags --force --prune --prune-tags origin main
+            git reset --hard origin/main
+
+            node scripts/release.mjs "$LEVEL"
+            version="$(node -p "require('./package.json').version")"
+
+            if git push --atomic --follow-tags origin main; then
+              echo "version=$version" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "::warning::Push rejected (attempt $attempt/5) — main moved, retrying."
+            git tag -d "v$version"
+            sleep $((attempt * 5))
+          done
+
+          echo "::error::Could not push the release after 5 attempts."
+          exit 1
 
       - name: Publish GitHub Release
         env:

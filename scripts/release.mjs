@@ -65,6 +65,18 @@ else fail(`Unknown bump "${bump}". Use patch | minor | major | x.y.z`);
 
 console.log(`Releasing ${current} → ${next}`);
 
+// Fail before touching anything if that tag is already taken — otherwise the
+// bump and the commit land and only `git tag` fails, leaving a half-done state.
+// A taken tag means package.json is behind the tags: fetch main, or delete the
+// stray tag.
+const tagExists = spawnSync("git", ["rev-parse", "-q", "--verify", `refs/tags/v${next}`]).status === 0;
+if (tagExists) {
+  fail(
+    `Tag v${next} already exists — package.json (${current}) is behind the tags.\n` +
+      `Pull the latest main, or delete the stray tag: git push origin :refs/tags/v${next}`,
+  );
+}
+
 if (dryRun) {
   console.log(`\n(dry run) would bump to ${next}, commit, and tag v${next}`);
   process.exit(0);
@@ -82,7 +94,9 @@ console.log(`✓ Committed and tagged v${next}`);
 // --- 4. optionally push ------------------------------------------------------
 
 if (push) {
-  sh("git", ["push", "--follow-tags"], { stdio: "inherit" });
+  // --atomic: all refs or none, so a rejected branch can never leave the tag
+  // pushed on its own — a stray tag would block every later release.
+  sh("git", ["push", "--atomic", "--follow-tags"], { stdio: "inherit" });
   console.log("✓ Pushed — the Release workflow will publish the GitHub Release.");
 } else {
   console.log(`\nNext: git push --follow-tags   (or re-run with --push)`);
