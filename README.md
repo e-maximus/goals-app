@@ -41,7 +41,8 @@ those goals too.
 - **[Clerk](https://clerk.com)** for optional sign-in and MCP OAuth
 - **Zustand** store, **Postgres** via **[Prisma](https://www.prisma.io)** (over
   the **[pg](https://node-postgres.com)** pool)
-- **AI chat** with the **[AI SDK](https://ai-sdk.dev)** (DeepSeek)
+- **AI chat** on **[LangChain](https://langchain.com)** (DeepSeek), streamed to the
+  browser in the **[AI SDK](https://ai-sdk.dev)**'s UI message protocol
 - **MCP** over Streamable HTTP ([@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol))
 - Deployed as a self-contained server (`output: "standalone"`) to **Railway**
 
@@ -67,7 +68,7 @@ src/
     api/
       goals/route.ts      # GET/PUT the whole store — scoped to the current user
       me/route.ts         # the current user's id (no token — MCP is OAuth now)
-      chat/route.ts       # the AI chat endpoint (AI SDK)
+      chat/route.ts       # the AI chat endpoint (LangChain agent)
       mcp/route.ts        # MCP endpoint (Streamable HTTP), OAuth 2.1-authorized
       health/route.ts     # health probe
       test/reset/route.ts # env-gated e2e reset to the canonical seed

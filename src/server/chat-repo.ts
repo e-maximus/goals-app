@@ -15,9 +15,14 @@ import { NotFoundError } from "./repo";
 export type ChatThread = {
   id: string;
   title: string | null;
-  /** A rolling summary of the turns already folded out of the live context. */
+  /**
+   * A summary of turns folded out of the live context, written by the chat's
+   * own rolling summary before the agent kept its history in checkpoints. Read
+   * only to seed such a thread; nothing writes it now — `summarizationMiddleware`
+   * folds a thread inside its graph state (see langchain/middleware.ts).
+   */
   summary: string | null;
-  /** created_at (epoch ms) up to which `summary` covers; null if none folded yet. */
+  /** created_at (epoch ms) up to which `summary` covers; null if none folded. */
   summaryThroughCreatedAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -178,21 +183,3 @@ export async function setThreadTitle(
   });
 }
 
-/**
- * Advance the rolling summary: store the new summary text and the created_at up
- * to which it covers. The request builds model context from this summary plus
- * the messages after `throughCreatedAt`. Done in one write, so a failure leaves
- * the pointer where it was and the next request just carries a longer tail.
- */
-export async function updateSummary(
-  pool: Pool,
-  ownerId: string,
-  threadId: string,
-  summary: string,
-  throughCreatedAt: number
-): Promise<void> {
-  await pool.db.chatThread.updateMany({
-    where: { id: threadId, owner_id: ownerId },
-    data: { summary, summary_through_created_at: BigInt(throughCreatedAt) },
-  });
-}

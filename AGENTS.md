@@ -107,26 +107,26 @@ moves together; the write-path Zod schemas
 ([src/features/goals/schemas.ts](src/features/goals/schemas.ts)) assert at compile
 time that they still match, so a new field can't be silently dropped on save.
 
-The **AI chat's model stack is being moved to LangChain**, and the two stacks run
-side by side while that happens. `CHAT_ENGINE` picks one — the Vercel AI SDK
-(default) or `langchain` — and the seam is
-[src/server/chat-engine.ts](src/server/chat-engine.ts): everything that is not the
-model call (resolving the owner, validating, rebuilding context from the database,
-persisting the turn) stays in the route and is shared. Both engines speak the AI
-SDK's UI message stream to the browser, so the drawer, the stored `parts` shape and
-the e2e suite are the same on either path; `ai` therefore stays a dependency as the
-**protocol**, not as the engine. The LangChain stack lives under
+The **AI chat runs on LangChain**. The stack lives under
 [src/server/langchain/](src/server/langchain/): the model, the agent, the tool
 adapter over the shared registry, and the middleware that caps a runaway loop and
-decides what a failed tool tells the model. It reaches feature parity with the AI
-SDK path — tools, streaming, reasoning, persistence, abort — and on that path the
-agent keeps its own conversation in **checkpoints** rather than having the route
-rebuild it from `chat_messages` each request, so `summarizationMiddleware` folds
-the thread instead of [chat-agent.ts](src/server/chat-agent.ts)'s hand-rolled
-window. The saver is ours ([checkpointer.ts](src/server/langchain/checkpointer.ts))
-because LangGraph's keys on `thread_id` alone, which would break the isolation
-rule below; the owner is bound at construction, so no call site can name a
-different one. `chat_messages` stays the display history the drawer loads.
+decides what a failed tool tells the model. The seam it plugs into is
+[src/server/chat-engine.ts](src/server/chat-engine.ts): everything that is not the
+model call (resolving the owner, validating, seeding a thread's context from the
+database, persisting the turn) stays in the route. The browser is spoken to in the
+**AI SDK's UI message stream** — `ai` and `@ai-sdk/react` are dependencies as that
+**protocol**, not as an engine, and `@ai-sdk/langchain` translates the agent's
+stream into it. (The chat ran on the AI SDK until the move completed, behind a
+`CHAT_ENGINE` flag while both stacks were live; the flag and that engine are gone.)
+
+The agent keeps its own conversation in **checkpoints** rather than having the
+route rebuild it each request, so `summarizationMiddleware` folds the thread. The
+saver is ours ([checkpointer.ts](src/server/langchain/checkpointer.ts)) because
+LangGraph's keys on `thread_id` alone, which would break the isolation rule below;
+the owner is bound at construction, so no call site can name a different one.
+`chat_messages` stays the display history the drawer loads — and the seed for a
+thread with no graph state yet (a fresh one, or one older than the checkpointer),
+which is all [chat-agent.ts](src/server/chat-agent.ts) is still for.
 
 Turns are traceable: set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` and
 LangChain reports to LangSmith on its own. What this repo adds is the owner,

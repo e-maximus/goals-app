@@ -6,7 +6,6 @@ import {
   getOrCreateActiveThread,
   listMessages,
   setThreadTitle,
-  updateSummary,
 } from "../chat-repo";
 import { NotFoundError } from "../repo";
 import { createOwner, reset, setupPool } from "./helpers";
@@ -63,14 +62,11 @@ describe("chat-repo", () => {
     assert.ok(msg.id.length > 0);
   });
 
-  it("stores a title and rolling summary", async () => {
+  it("stores a title", async () => {
     const thread = await getOrCreateActiveThread(pool, owner);
     await setThreadTitle(pool, owner, thread.id, "Planning the week");
-    await updateSummary(pool, owner, thread.id, "user wants weekly reviews", 1234);
     const reread = await getOrCreateActiveThread(pool, owner);
     assert.equal(reread.title, "Planning the week");
-    assert.equal(reread.summary, "user wants weekly reviews");
-    assert.equal(reread.summaryThroughCreatedAt, 1234);
   });
 
   it("keeps threads and messages isolated per owner", async () => {
@@ -85,10 +81,10 @@ describe("chat-repo", () => {
       appendMessages(pool, other, mine.id, [{ id: "x", role: "user", parts: textMsg("nope") }]),
       NotFoundError
     );
-    // ...and a summary update on someone else's thread is a no-op.
-    await updateSummary(pool, other, mine.id, "leak", 1);
+    // ...nor retitle it (the update names an owner, so it matches no row).
+    await setThreadTitle(pool, other, mine.id, "leak");
     const still = await getOrCreateActiveThread(pool, owner);
-    assert.equal(still.summary, null);
+    assert.equal(still.title, null);
 
     // My data is untouched.
     const mineMsgs = await listMessages(pool, owner, mine.id);
