@@ -1,0 +1,217 @@
+<!--
+  Mockup kit for the ui-variants skill.
+
+  Copy the <style> block below verbatim into every variant of a set, then write
+  only the markup that differs. Tokens are lifted from src/app/globals.css, so a
+  mockup built on this reads as this product; the primitives mirror the real
+  components named in references/app-ui.md.
+
+  Artifacts are published as body content — no <html>, <head> or <body> tags of
+  your own, and no external requests (fonts, CDNs, images all blocked).
+-->
+<style>
+  /* ---- tokens: src/app/globals.css ---- */
+  :root {
+    --background: oklch(0.98 0.006 150);
+    --foreground: oklch(0.22 0.01 150);
+    --card: oklch(1 0 0);
+    --primary: oklch(0.6 0.13 150);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.95 0.03 150);
+    --secondary-foreground: oklch(0.35 0.08 150);
+    --muted: oklch(0.93 0.01 150);
+    --muted-foreground: oklch(0.52 0.012 150);
+    --accent: oklch(0.95 0.03 150);
+    --destructive: oklch(0.577 0.245 27.325);
+    --warning: oklch(0.75 0.15 75);
+    --warning-foreground: oklch(0.4 0.09 65);
+    --border: oklch(0.9 0.008 150);
+    --border-strong: oklch(0.78 0.012 150);
+    --radius: 0.875rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; }
+    :root:not([data-theme="light"]) {
+      --background: oklch(0.2 0.012 150);
+      --foreground: oklch(0.96 0.005 150);
+      --card: oklch(0.25 0.014 150);
+      --primary: oklch(0.68 0.14 150);
+      --primary-foreground: oklch(0.2 0.03 150);
+      --secondary: oklch(0.3 0.03 150);
+      --secondary-foreground: oklch(0.96 0.005 150);
+      --muted: oklch(0.3 0.02 150);
+      --muted-foreground: oklch(0.72 0.02 150);
+      --accent: oklch(0.32 0.04 150);
+      --destructive: oklch(0.704 0.191 22.216);
+      --warning: oklch(0.8 0.14 80);
+      --warning-foreground: oklch(0.88 0.1 85);
+      --border: oklch(1 0 0 / 12%);
+      --border-strong: oklch(1 0 0 / 22%);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --background: oklch(0.2 0.012 150);
+    --foreground: oklch(0.96 0.005 150);
+    --card: oklch(0.25 0.014 150);
+    --primary: oklch(0.68 0.14 150);
+    --primary-foreground: oklch(0.2 0.03 150);
+    --secondary: oklch(0.3 0.03 150);
+    --secondary-foreground: oklch(0.96 0.005 150);
+    --muted: oklch(0.3 0.02 150);
+    --muted-foreground: oklch(0.72 0.02 150);
+    --accent: oklch(0.32 0.04 150);
+    --destructive: oklch(0.704 0.191 22.216);
+    --warning: oklch(0.8 0.14 80);
+    --warning-foreground: oklch(0.88 0.1 85);
+    --border: oklch(1 0 0 / 12%);
+    --border-strong: oklch(1 0 0 / 22%);
+  }
+
+  /* ---- page ---- */
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  * { box-sizing: border-box; }
+  .shell { max-width: 64rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  .shell--md { max-width: 48rem; }
+  .shell--xl { max-width: 72rem; }
+
+  /* ---- the variant's argument, above the UI ---- */
+  .brief {
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 2.5rem;
+    background: color-mix(in oklab, var(--card) 60%, transparent);
+  }
+  .brief h1 { margin: 0 0 .5rem; font-size: 1.05rem; letter-spacing: -.01em; }
+  .brief dl { display: grid; grid-template-columns: max-content 1fr; gap: .35rem .9rem; margin: 0; font-size: .875rem; }
+  .brief dt { color: var(--muted-foreground); font-weight: 600; }
+  .brief dd { margin: 0; }
+
+  /* ---- chrome: identical across a set ---- */
+  .topbar {
+    display: flex; align-items: center; gap: 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+    padding: .75rem 1.5rem;
+  }
+  .topbar .brand { font-weight: 800; letter-spacing: -.02em; }
+  .topbar nav { display: flex; gap: .25rem; margin-left: auto; }
+  .topbar nav a {
+    color: var(--muted-foreground); text-decoration: none;
+    padding: .35rem .7rem; border-radius: calc(var(--radius) * .6);
+    font-size: .875rem; font-weight: 600;
+  }
+  .topbar nav a[aria-current] { color: var(--foreground); background: var(--muted); }
+
+  /* ---- primitives (mirror src/components) ---- */
+  .card {
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) * 1.15);
+    background: var(--card);
+    padding: .5rem .75rem;
+    box-shadow: 0 1px 2px oklch(0 0 0 / 5%);
+  }
+  .section-label {
+    font-size: .75rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--muted-foreground);
+    margin: 0 0 .5rem .25rem;
+  }
+  .row {
+    display: flex; align-items: flex-start; gap: .625rem;
+    padding: .5rem; border-radius: .5rem; cursor: pointer;
+  }
+  .row:hover { background: color-mix(in oklab, var(--muted) 60%, transparent); }
+  .row .title { font-weight: 500; }
+  .row .desc { font-size: .8125rem; color: var(--muted-foreground); }
+  .row.done .title { color: var(--muted-foreground); text-decoration: line-through; }
+  .check {
+    flex: none; width: 1.15rem; height: 1.15rem; margin-top: .15rem;
+    border: 1.5px solid var(--border-strong); border-radius: .35rem;
+    display: grid; place-items: center; font-size: .7rem; color: transparent;
+  }
+  .check.on { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .75rem; font-weight: 600; padding: .1rem .5rem;
+    border-radius: 999px; background: var(--secondary); color: var(--secondary-foreground);
+    text-decoration: none;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: .25rem;
+    font-size: .75rem; font-weight: 600; padding: .1rem .45rem;
+    border-radius: .4rem; background: var(--muted); color: var(--muted-foreground);
+  }
+  .badge.warn { background: color-mix(in oklab, var(--warning) 22%, transparent); color: var(--warning-foreground); }
+  .badge.over { background: color-mix(in oklab, var(--destructive) 15%, transparent); color: var(--destructive); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: .4rem;
+    border: 0; border-radius: .5rem; padding: .5rem 1rem;
+    background: var(--primary); color: var(--primary-foreground);
+    font: inherit; font-size: .875rem; font-weight: 600; cursor: pointer;
+  }
+  .btn.ghost { background: transparent; color: var(--muted-foreground); border: 1px solid var(--border); }
+  .btn.dashed {
+    width: 100%; justify-content: center; background: transparent;
+    color: var(--muted-foreground); border: 1px dashed var(--border-strong);
+    border-radius: calc(var(--radius) * 1.15); padding: .85rem 1rem;
+  }
+
+  .progress { height: .35rem; border-radius: 999px; background: var(--muted); overflow: hidden; }
+  .progress > i { display: block; height: 100%; background: var(--primary); }
+
+  .empty { text-align: center; color: var(--muted-foreground); padding: 3rem 1rem; font-size: .875rem; }
+  .stack > * + * { margin-top: 2rem; }
+</style>
+
+<!--
+  Skeleton. Replace everything below the .brief with the variant's own layout.
+
+<div class="topbar">
+  <span class="brand">Keep Going</span>
+  <nav>
+    <a href="#" aria-current="page">Today</a>
+    <a href="#">Goals</a>
+    <a href="#">Tasks</a>
+  </nav>
+</div>
+
+<div class="shell">
+  <div class="brief">
+    <h1>Variant 1 — Inbox to Today</h1>
+    <dl>
+      <dt>The idea</dt><dd>…one sentence.</dd>
+      <dt>Best when</dt><dd>…who this shape serves.</dd>
+      <dt>Costs</dt><dd>…what it gives up; anything new it needs from the model.</dd>
+    </dl>
+  </div>
+
+  <div class="stack">
+    <section>
+      <p class="section-label">Today · 2 of 5</p>
+      <div class="card">
+        <div class="row done"><span class="check on">✓</span><span class="title">Morning run</span></div>
+        <div class="row">
+          <span class="check"></span>
+          <span>
+            <span class="title">Draft the search write-up</span>
+            <span class="chip">◎ Ship hybrid search</span>
+            <div class="desc">Two paragraphs on how fusion works.</div>
+          </span>
+          <span class="badge over" style="margin-left:auto">2 days late</span>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+-->
