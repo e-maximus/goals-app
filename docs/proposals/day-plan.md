@@ -1,6 +1,23 @@
 # Proposal — The Day Plan
 
-**Status:** ready to implement · **Bump:** `release:minor` (new user-facing feature)
+**Status:** implemented · **Bump:** `release:minor` (new user-facing feature)
+
+Two things this document left ambiguous, as they were settled in the build:
+
+- **The fallback rule.** "Skip writes `dayPlannedOn` and the fallback applies"
+  and "a settled day's list is `plannedFor === today`" can't both hold, since
+  skipping settles the day. The rule shipped is: the **marker** decides whether
+  /today opens the picker or the list, and the **plan** decides the list's
+  contents — an empty plan falls back to `todayTasks`. That makes skipping mean
+  "not now" rather than "nothing", which is what the mockup's *Dailies still show
+  up* says too. It lives in one place, `dayList` in
+  [types.ts](../../src/lib/types.ts).
+- **The evening summary isn't on a clock.** It's a footer under the day's list
+  whenever there's a plan, rather than appearing after some hour. A day you can
+  close out whenever you're done with it needs no timezone opinion.
+
+Drag-reordering the plan was dropped, per the out-of-scope note: it wasn't cheap
+on top of the existing list, and the plan's value doesn't depend on its order.
 
 ## What we're building
 

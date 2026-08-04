@@ -6,11 +6,11 @@ import Link from "next/link";
 import { ArrowRight, Check, Plus } from "lucide-react";
 import { useStore } from "@/lib/store";
 import {
+  dayList,
   goalStatus,
   goalStepCounts,
   isGoalComplete,
   nextStep,
-  todayTasks,
   type Goal,
   type Task,
 } from "@/lib/types";
@@ -42,13 +42,16 @@ export function FocusHero({ name, goals, tasks }: { name: string | null; goals: 
   const router = useRouter();
   const addGoal = useStore((s) => s.addGoal);
   const addTask = useStore((s) => s.addTask);
+  const dayPlannedOn = useStore((s) => s.dayPlannedOn);
   const [goalOpen, setGoalOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
 
   const active = goals.filter((g) => !isGoalComplete(g) && goalStatus(g) === "active").length;
   const completed = goals.filter(isGoalComplete).length;
   const stepsDone = goals.reduce((n, g) => n + goalStepCounts(g).done, 0);
-  const today = todayTasks(tasks).length;
+  // The same "what is today" rule the strip below uses, so the tile can't
+  // disagree with the list it sits above.
+  const today = dayList(tasks, dayPlannedOn).length;
 
   const candidate = goals
     .filter((g) => !isGoalComplete(g) && goalStatus(g) === "active")

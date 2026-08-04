@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
-import { goalStatus, isGoalComplete, todayTasks } from "@/lib/types";
+import { dayList, goalStatus, isGoalComplete } from "@/lib/types";
 import { PageShell } from "@/components/layout/page-shell";
 import { LoadError } from "@/components/load-error";
 import { TaskRow } from "@/features/tasks";
@@ -14,12 +14,15 @@ import { LoadingState, SectionLabel } from "@/components/ui-bits";
 import { goalHref } from "@/lib/utils";
 
 /**
- * The dashboard's compact task strip: every daily task plus anything due today
- * or overdue, checkable in place. The full list lives on /tasks.
+ * The dashboard's compact task strip: the day's list, checkable in place. That
+ * is the plan the user committed to this morning — or, on a day they haven't
+ * planned, what the app has always shown here (see dayList). The full list
+ * lives on /tasks, the plan itself on /today.
  */
 function TodaySection() {
   const tasks = useStore((s) => s.tasks);
-  const today = todayTasks(tasks);
+  const dayPlannedOn = useStore((s) => s.dayPlannedOn);
+  const today = dayList(tasks, dayPlannedOn);
   if (today.length === 0) return null;
 
   return (
@@ -27,10 +30,10 @@ function TodaySection() {
       <SectionLabel
         action={
           <Link
-            href="/tasks"
+            href="/today"
             className="font-semibold normal-case tracking-normal text-muted-foreground transition-colors hover:text-foreground"
           >
-            All tasks →
+            Plan today →
           </Link>
         }
       >

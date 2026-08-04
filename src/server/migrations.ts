@@ -468,4 +468,24 @@ export const migrations: Migration[] = [
         ON chat_checkpoints (owner_id, thread_id, checkpoint_ns, created_at DESC);
     `,
   },
+  {
+    name: "018_task_planned_for",
+    sql: `
+      -- The day plan. \`planned_for\` is the day the user *chose* to do a task,
+      -- as a UTC midnight — distinct from \`due_date\`, which is when it must
+      -- happen. \`day_planned_on\` is the last day they settled a plan for, by
+      -- starting the day or by skipping it; it lives on the user because it is
+      -- one fact about them, not about any task.
+      --
+      -- Both nullable with no backfill: every existing user reads as "never
+      -- planned", which is the correct state for them — the day's list then
+      -- falls back to what the app showed before this existed.
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS planned_for BIGINT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS day_planned_on BIGINT;
+
+      -- Owner-first, because every task query is scoped by owner before it ever
+      -- looks at a day.
+      CREATE INDEX IF NOT EXISTS tasks_owner_planned_idx ON tasks (owner_id, planned_for);
+    `,
+  },
 ];

@@ -39,7 +39,9 @@ export function createMcpServer(
         "context the structure doesn't. Goals, groups and steps can each carry an " +
         "optional due date. Alongside the goals lives a flat task list — one-off " +
         "to-dos and daily habits, optionally linked to a goal but never counted in " +
-        "its progress (see list_tasks).",
+        "its progress (see list_tasks). A task may also carry a day the user chose " +
+        "to do it (`plannedFor`) — their plan, which is a different fact from a " +
+        "deadline; get_agenda reports both.",
     }
   );
 

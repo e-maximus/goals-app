@@ -38,6 +38,11 @@ export type AgendaItem = {
   dueDate?: number;
   /** A task that recurs every day rather than having a deadline. */
   daily?: boolean;
+  /**
+   * For a task: the day the user chose to do it (UTC midnight). A deadline says
+   * when something must happen; this says when they decided to.
+   */
+  plannedFor?: number;
 };
 
 export type StaleGoal = {
@@ -54,6 +59,12 @@ export type Agenda = {
   today: AgendaItem[];
   /** Due within `horizonDays`, soonest first. */
   upcoming: AgendaItem[];
+  /**
+   * The day the user actually chose, which is a different question from what is
+   * due. `settled` is false when they haven't planned today — the app then falls
+   * back to `today`, and so should anything reading this.
+   */
+  plan: { settled: boolean; items: AgendaItem[] };
   /** Active, unfinished, and untouched for a fortnight. */
   stale: StaleGoal[];
   /** Counts, so an agent can say "and 6 others" without being handed all of them. */
@@ -75,7 +86,9 @@ export function buildAgenda(
   goals: Goal[],
   tasks: Task[],
   now: number = Date.now(),
-  horizonDays: number = DEFAULT_HORIZON_DAYS
+  horizonDays: number = DEFAULT_HORIZON_DAYS,
+  /** The day the user last settled a plan for (see ServerState.dayPlannedOn). */
+  dayPlannedOn?: number
 ): Agenda {
   const today = utcMidnight(now);
   const horizon = today + horizonDays * DAY_MS;
@@ -130,18 +143,24 @@ export function buildAgenda(
   }
 
   const goalRefs = new Map(goals.map((g) => [g.id, { id: g.id, title: g.title, url: goalHref(g) }]));
+  const plan: AgendaItem[] = [];
   let openTasks = 0;
   for (const task of tasks) {
     if (isTaskDone(task, now)) continue;
     openTasks++;
-    file({
+    const item: AgendaItem = {
       kind: "task",
       id: task.id,
       title: task.title,
       goal: (task.goalId && goalRefs.get(task.goalId)) || null,
       dueDate: task.dueDate,
       ...(task.daily ? { daily: true } : {}),
-    });
+      ...(task.plannedFor ? { plannedFor: task.plannedFor } : {}),
+    };
+    // A planned task belongs in the plan whether or not it has a deadline —
+    // being chosen is the only qualification.
+    if (task.plannedFor === today) plan.push(item);
+    file(item);
   }
 
   const bySoonest = (a: AgendaItem, b: AgendaItem) => (a.dueDate ?? 0) - (b.dueDate ?? 0);
@@ -149,10 +168,14 @@ export function buildAgenda(
   upcoming.sort(bySoonest);
   stale.sort((a, b) => b.daysSinceActivity - a.daysSinceActivity);
 
+  const settled = dayPlannedOn === today;
   return {
     overdue,
     today: dueToday,
     upcoming,
+    // An unsettled day has no plan to report, even if some task carries a
+    // `plannedFor` from an agent's edit — the user hasn't committed to a day yet.
+    plan: { settled, items: settled ? plan : [] },
     stale,
     counts: { activeGoals, pausedGoals, openTasks },
   };

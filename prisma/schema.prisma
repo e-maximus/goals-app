@@ -29,6 +29,7 @@ model User {
   clerk_user_id    String? @unique
   display_name     String?
   avatar           String?
+  day_planned_on   BigInt?
 
   goals        Goal[]
   tasks        Task[]
@@ -121,6 +122,7 @@ model Task {
   due_date     BigInt?
   done         Boolean @default(false)
   completed_on BigInt?
+  planned_for  BigInt?
   created_at   BigInt
   position     Int
 
@@ -129,6 +131,7 @@ model Task {
 
   @@index([owner_id])
   @@index([goal_id])
+  @@index([owner_id, planned_for])
   @@map("tasks")
 }
 

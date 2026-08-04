@@ -484,10 +484,13 @@ export async function resetTestUser(pool: Pool): Promise<{ id: string; sessionTo
   await withTransaction(pool, async (client) => {
     const now = Date.now();
     await client.query(
+      // `day_planned_on` is reset to NULL along with the store: a day settled by
+      // one test would otherwise send the next one straight past the ritual.
       `INSERT INTO users (id, session_token, clerk_user_id, goals_updated_at, created_at, display_name, avatar)
        VALUES ($1, $2, $4, $3, $3, 'Shiny Fox', '🦊')
        ON CONFLICT (id) DO UPDATE
-         SET goals_updated_at = $3, clerk_user_id = $4, display_name = 'Shiny Fox', avatar = '🦊'`,
+         SET goals_updated_at = $3, clerk_user_id = $4, display_name = 'Shiny Fox', avatar = '🦊',
+             day_planned_on = NULL`,
       [TEST_USER.id, TEST_USER.sessionToken, now, TEST_USER.clerkUserId]
     );
     await client.query("DELETE FROM goals WHERE owner_id = $1", [TEST_USER.id]);
