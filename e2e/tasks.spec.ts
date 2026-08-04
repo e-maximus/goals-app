@@ -71,9 +71,11 @@ test.describe("Tasks", () => {
     // The goal page lists the task, without repeating the goal chip.
     await expect(page.getByText("Order foam panels")).toBeVisible();
 
-    // A daily task also surfaces in the dashboard's Today block.
+    // A daily task also surfaces in the dashboard's Today block. Matched
+    // exactly, inside the page body: "Today" is a nav link now, and the block's
+    // own header carries a "Plan today →" link beside the label.
     await page.goto("/goals");
-    await expect(page.getByText("Today")).toBeVisible();
+    await expect(page.getByRole("main").getByText("Today", { exact: true })).toBeVisible();
     await expect(page.getByText("Order foam panels")).toBeVisible();
   });
 

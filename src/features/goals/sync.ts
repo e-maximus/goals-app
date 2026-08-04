@@ -28,9 +28,10 @@ export function fetchState(): Promise<ServerState> {
 export async function pushState(
   goals: Goal[],
   tasks: Task[],
-  baseUpdatedAt: number | null
+  baseUpdatedAt: number | null,
+  dayPlannedOn: number | undefined
 ): Promise<ServerState> {
-  const result = await saveState({ goals, tasks, baseUpdatedAt });
+  const result = await saveState({ goals, tasks, baseUpdatedAt, dayPlannedOn });
   if (!result.ok) throw new SyncConflictError(result.serverUpdatedAt);
   return result.state;
 }

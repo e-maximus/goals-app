@@ -79,6 +79,7 @@ function toTask(row: {
   due_date: bigint | number | null;
   done: boolean;
   completed_on: bigint | number | null;
+  planned_for: bigint | number | null;
   created_at: bigint | number;
 }): Task {
   return {
@@ -90,6 +91,7 @@ function toTask(row: {
     ...(row.due_date ? { dueDate: ms(row.due_date) } : {}),
     done: row.done,
     ...(row.completed_on ? { completedOn: ms(row.completed_on) } : {}),
+    ...(row.planned_for ? { plannedFor: ms(row.planned_for) } : {}),
     createdAt: ms(row.created_at),
   };
 }
@@ -197,11 +199,26 @@ export async function getUpdatedAt(pool: Pool, ownerId: string): Promise<number 
 
 /** The owner's last-write stamp, or null if they've never been written to. */
 async function readUpdatedAt(client: Client | Pool, ownerId: string): Promise<number | null> {
+  return (await readStamps(client, ownerId)).updatedAt;
+}
+
+/**
+ * The two per-user stamps the store carries: when it was last written, and the
+ * day the user last settled a plan for. One row, one query — they travel
+ * together in `ServerState` and have the same lifetime.
+ */
+async function readStamps(
+  client: Client | Pool,
+  ownerId: string
+): Promise<{ updatedAt: number | null; dayPlannedOn: number | null }> {
   const user = await client.db.user.findUnique({
     where: { id: ownerId },
-    select: { goals_updated_at: true },
+    select: { goals_updated_at: true, day_planned_on: true },
   });
-  return user?.goals_updated_at != null ? ms(user.goals_updated_at) : null;
+  return {
+    updatedAt: user?.goals_updated_at != null ? ms(user.goals_updated_at) : null,
+    dayPlannedOn: user?.day_planned_on != null ? ms(user.day_planned_on) : null,
+  };
 }
 
 /**
@@ -314,6 +331,7 @@ async function insertTasks(client: Client, ownerId: string, tasks: Task[]): Prom
     due_date: task.dueDate != null ? BigInt(task.dueDate) : null,
     done: task.done,
     completed_on: task.completedOn != null ? BigInt(task.completedOn) : null,
+    planned_for: task.plannedFor != null ? BigInt(task.plannedFor) : null,
     created_at: BigInt(task.createdAt),
     position: index,
   }));
@@ -332,7 +350,7 @@ async function readTasks(client: Client | Pool, ownerId: string): Promise<Task[]
 
 /** Assemble one owner's whole store: five flat queries, stitched together in memory. */
 export async function getState(pool: Pool, ownerId: string): Promise<StoreState> {
-  const updatedAt = await readUpdatedAt(pool, ownerId);
+  const { updatedAt, dayPlannedOn } = await readStamps(pool, ownerId);
 
   const goalRows = await pool.db.goal.findMany({
     where: { owner_id: ownerId },
@@ -405,7 +423,13 @@ export async function getState(pool: Pool, ownerId: string): Promise<StoreState>
     notes: notesByGoal.get(g.id) ?? [],
   }));
 
-  return { initialized: updatedAt !== null, updatedAt: updatedAt ?? 0, goals, tasks };
+  return {
+    initialized: updatedAt !== null,
+    updatedAt: updatedAt ?? 0,
+    goals,
+    tasks,
+    ...(dayPlannedOn !== null ? { dayPlannedOn } : {}),
+  };
 }
 
 export async function getGoal(pool: Pool, ownerId: string, goalId: string): Promise<Goal> {
@@ -428,13 +452,18 @@ export async function getGoal(pool: Pool, ownerId: string, goalId: string): Prom
  * `baseUpdatedAt` is the version the client believed it was editing. If the
  * server has moved on since (an MCP tool wrote in the meantime), we reject
  * rather than clobber. Pass `null` to force the write.
+ *
+ * `dayPlannedOn` left undefined leaves the stored marker alone, for the same
+ * reason `tasks` does: a client from before the day plan existed must not
+ * unsettle a day it has never heard of.
  */
 export async function replaceAll(
   pool: Pool,
   ownerId: string,
   goals: Goal[],
   baseUpdatedAt: number | null,
-  tasks?: Task[]
+  tasks?: Task[],
+  dayPlannedOn?: number
 ): Promise<StoreState> {
   return withTransaction(pool, async (client) => {
     // Lock this owner's row for the duration so a concurrent writer for the same
@@ -462,8 +491,22 @@ export async function replaceAll(
     const nextTasks = tasks ?? keptTasks ?? [];
     await insertTasks(client, ownerId, nextTasks);
 
+    if (dayPlannedOn !== undefined) {
+      await client.db.user.updateMany({
+        where: { id: ownerId },
+        data: { day_planned_on: BigInt(dayPlannedOn) },
+      });
+    }
+
     const updatedAt = await touch(client, ownerId);
-    return { initialized: true, updatedAt, goals, tasks: await readTasks(client, ownerId) };
+    const settled = dayPlannedOn ?? (await readStamps(client, ownerId)).dayPlannedOn;
+    return {
+      initialized: true,
+      updatedAt,
+      goals,
+      tasks: await readTasks(client, ownerId),
+      ...(settled != null ? { dayPlannedOn: settled } : {}),
+    };
   });
 }
 
@@ -998,7 +1041,13 @@ export async function createTask(
   pool: Pool,
   ownerId: string,
   title: string,
-  options: { description?: string; goalId?: string; daily?: boolean; dueDate?: number } = {}
+  options: {
+    description?: string;
+    goalId?: string;
+    daily?: boolean;
+    dueDate?: number;
+    plannedFor?: number;
+  } = {}
 ): Promise<Task> {
   return withTransaction(pool, async (client) => {
     if (options.goalId) await requireGoal(client, ownerId, options.goalId);
@@ -1011,6 +1060,7 @@ export async function createTask(
       ...(options.goalId ? { goalId: options.goalId } : {}),
       ...(options.daily ? { daily: true } : {}),
       ...(options.dueDate ? { dueDate: options.dueDate } : {}),
+      ...(options.plannedFor ? { plannedFor: options.plannedFor } : {}),
       done: false,
       createdAt: now,
     };
@@ -1028,6 +1078,7 @@ export async function createTask(
         description: desc ?? null,
         daily: task.daily ?? false,
         due_date: task.dueDate != null ? BigInt(task.dueDate) : null,
+        planned_for: task.plannedFor != null ? BigInt(task.plannedFor) : null,
         done: false,
         created_at: BigInt(now),
         position: 0,
@@ -1042,7 +1093,8 @@ export async function createTask(
  * Edit a task's title, description, goal link, daily flag and/or due date.
  * Fields left undefined are untouched; an empty `description` clears it, an
  * empty `goalId` unlinks it from its goal, and a null `dueDate` clears the
- * deadline. Its done state is left alone — use setTaskDone for that.
+ * deadline. A null `plannedFor` takes the task back out of whatever day it was
+ * planned for. Its done state is left alone — use setTaskDone for that.
  */
 export async function updateTask(
   pool: Pool,
@@ -1054,6 +1106,7 @@ export async function updateTask(
     goalId?: string;
     daily?: boolean;
     dueDate?: number | null;
+    plannedFor?: number | null;
   }
 ): Promise<Task> {
   return withTransaction(pool, async (client) => {
@@ -1076,6 +1129,9 @@ export async function updateTask(
     }
     if (changes.dueDate !== undefined) {
       data.due_date = changes.dueDate === null ? null : BigInt(changes.dueDate);
+    }
+    if (changes.plannedFor !== undefined) {
+      data.planned_for = changes.plannedFor === null ? null : BigInt(changes.plannedFor);
     }
     if (Object.keys(data).length > 0) {
       await client.db.task.updateMany({ where: { id: taskId, owner_id: ownerId }, data });

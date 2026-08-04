@@ -76,6 +76,12 @@ export type SaveStatus = "saved" | "saving" | "error";
 type StoreState = {
   goals: Goal[];
   tasks: Task[];
+  /**
+   * UTC midnight of the last day a plan was settled for (see ServerState). It
+   * rides along with the goals rather than having a transport of its own: it is
+   * loaded, saved and reconciled by exactly the same paths.
+   */
+  dayPlannedOn: number | undefined;
   loadStatus: LoadStatus;
   saveStatus: SaveStatus;
   /** The server version our goals are based on — sent back to detect conflicts. */
@@ -152,10 +158,18 @@ type StoreState = {
 
   // Task actions. Tasks live next to the goals: linking one to a goal is
   // optional and never feeds that goal's progress.
+  /** Returns the created task, so a caller that has to act on it (the day
+   *  picker, capturing something straight into today) has its id. */
   addTask: (
     title: string,
-    options?: { description?: string; goalId?: string; daily?: boolean; dueDate?: number }
-  ) => void;
+    options?: {
+      description?: string;
+      goalId?: string;
+      daily?: boolean;
+      dueDate?: number;
+      plannedFor?: number;
+    }
+  ) => Task;
   editTask: (
     taskId: string,
     title: string,
@@ -164,11 +178,28 @@ type StoreState = {
   /** Flip a task's done state. For a daily task that means done *today*. */
   toggleTask: (taskId: string) => void;
   deleteTask: (taskId: string) => void;
+
+  // Day-plan actions. A plan is a decision: these write `plannedFor` on the
+  // tasks the user chose, and nothing here ever moves an unfinished day forward
+  // on its own.
+  /**
+   * Make exactly `taskIds` the plan for `day` (a UTC midnight): anything else
+   * planned for that day is taken back out. This is what committing the picker
+   * does, so re-committing an adjusted plan can't leave a stray behind.
+   */
+  planTasks: (taskIds: string[], day: number) => void;
+  /** Put one task into `day`'s plan, leaving the rest of that day alone. */
+  planTask: (taskId: string, day: number) => void;
+  /** Take a task back out of whatever day it was planned for. */
+  unplanTask: (taskId: string) => void;
+  /** Record that the user has settled `day` — by starting it or by skipping it. */
+  settleDay: (day: number) => void;
 };
 
 export const useStore = create<StoreState>((set) => ({
   goals: [],
   tasks: [],
+  dayPlannedOn: undefined,
   loadStatus: "loading",
   saveStatus: "saved",
   serverUpdatedAt: null,
@@ -194,6 +225,7 @@ export const useStore = create<StoreState>((set) => ({
         return {
           goals: [...localOnly, ...state.goals],
           tasks: [...localOnlyTasks, ...state.tasks],
+          dayPlannedOn: state.dayPlannedOn,
           serverUpdatedAt: state.updatedAt,
           loadStatus: "ready",
         };
@@ -213,6 +245,7 @@ export const useStore = create<StoreState>((set) => ({
         set({
           goals: state.goals,
           tasks: state.tasks,
+          dayPlannedOn: state.dayPlannedOn,
           serverUpdatedAt: state.updatedAt,
           loadStatus: "ready",
         });
@@ -232,6 +265,7 @@ export const useStore = create<StoreState>((set) => ({
     set({
       goals: state.goals,
       tasks: state.tasks,
+      dayPlannedOn: state.dayPlannedOn,
       serverUpdatedAt: state.updatedAt,
       loadStatus: "ready",
     });
@@ -496,10 +530,12 @@ export const useStore = create<StoreState>((set) => ({
       ...(options.goalId ? { goalId: options.goalId } : {}),
       ...(options.daily ? { daily: true } : {}),
       ...(options.dueDate ? { dueDate: options.dueDate } : {}),
+      ...(options.plannedFor ? { plannedFor: options.plannedFor } : {}),
       done: false,
       createdAt: Date.now(),
     };
     set((s) => ({ tasks: [task, ...s.tasks] }));
+    return task;
   },
 
   editTask: (taskId, title, options = {}) => {
@@ -538,6 +574,32 @@ export const useStore = create<StoreState>((set) => ({
 
   deleteTask: (taskId) =>
     set((s) => ({ tasks: s.tasks.filter((t) => t.id !== taskId) })),
+
+  planTasks: (taskIds, day) => {
+    const chosen = new Set(taskIds);
+    set((s) => ({
+      tasks: s.tasks.map((t) => {
+        const wanted = chosen.has(t.id);
+        // Only this day is rewritten: a task planned for tomorrow is none of
+        // today's business.
+        if (!wanted && t.plannedFor !== day) return t;
+        if (wanted && t.plannedFor === day) return t;
+        return { ...t, plannedFor: wanted ? day : undefined };
+      }),
+    }));
+  },
+
+  planTask: (taskId, day) =>
+    set((s) => ({
+      tasks: s.tasks.map((t) => (t.id === taskId ? { ...t, plannedFor: day } : t)),
+    })),
+
+  unplanTask: (taskId) =>
+    set((s) => ({
+      tasks: s.tasks.map((t) => (t.id === taskId ? { ...t, plannedFor: undefined } : t)),
+    })),
+
+  settleDay: (day) => set({ dayPlannedOn: day }),
 }));
 
 // ---- persistence ----
@@ -581,11 +643,11 @@ async function pushToServer(): Promise<void> {
 }
 
 async function pushOnce(): Promise<void> {
-  const { goals, tasks, serverUpdatedAt } = useStore.getState();
+  const { goals, tasks, dayPlannedOn, serverUpdatedAt } = useStore.getState();
   useStore.setState({ saveStatus: "saving" });
 
   try {
-    const result = await pushState(goals, tasks, serverUpdatedAt);
+    const result = await pushState(goals, tasks, serverUpdatedAt, dayPlannedOn);
     useStore.setState({ serverUpdatedAt: result.updatedAt, saveStatus: "saved" });
   } catch (err) {
     useStore.setState({ saveStatus: "error" });
@@ -601,6 +663,7 @@ async function pushOnce(): Promise<void> {
         useStore.setState({
           goals: state.goals,
           tasks: state.tasks,
+          dayPlannedOn: state.dayPlannedOn,
           serverUpdatedAt: state.updatedAt,
           saveStatus: "saved",
         });
@@ -624,7 +687,13 @@ async function pushOnce(): Promise<void> {
 if (typeof window !== "undefined") {
   useStore.subscribe((state, prev) => {
     if (state.loadStatus !== "ready") return;
-    if (state.goals === prev.goals && state.tasks === prev.tasks) return;
+    if (
+      state.goals === prev.goals &&
+      state.tasks === prev.tasks &&
+      state.dayPlannedOn === prev.dayPlannedOn
+    ) {
+      return;
+    }
     if (applyingRemote) return;
 
     clearTimeout(pushTimer);

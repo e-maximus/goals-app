@@ -36,10 +36,17 @@ export async function saveState(input: unknown): Promise<SaveResult> {
 
   // No casts: the schemas are asserted to match the domain types (./schemas.ts),
   // so a validated payload *is* a Goal[] / Task[].
-  const { goals, tasks, baseUpdatedAt } = parsed.data;
+  const { goals, tasks, baseUpdatedAt, dayPlannedOn } = parsed.data;
   const { pool, user } = await currentUserForAction();
   try {
-    const state = await repo.replaceAll(pool, user.id, goals, baseUpdatedAt ?? null, tasks);
+    const state = await repo.replaceAll(
+      pool,
+      user.id,
+      goals,
+      baseUpdatedAt ?? null,
+      tasks,
+      dayPlannedOn
+    );
     // The web app's write path, so this is where most reindexing is triggered
     // from. It runs after the action has answered — the user is waiting on the
     // save, not on the index.

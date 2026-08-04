@@ -78,6 +78,14 @@ export type ServerState = {
   updatedAt: number;
   goals: Goal[];
   tasks: Task[];
+  /**
+   * UTC midnight of the last day the user settled a plan for — by starting the
+   * day or by skipping it. Undefined means they have never planned. This is what
+   * decides whether opening /today lands in the picker or in the list; a day with
+   * an empty deliberate plan is a real answer and must not be mistaken for an
+   * unplanned one.
+   */
+  dayPlannedOn?: number;
 };
 
 /**
@@ -267,6 +275,13 @@ export type Task = {
   // "Done today" means completedOn === today; any older value reads as not
   // done, which is what makes the reset automatic.
   completedOn?: number;
+  /**
+   * The day the user chose to do this, as UTC midnight (epoch ms) — same shape as
+   * `completedOn`. Distinct from `dueDate`: a deadline is when it must happen, a
+   * plan is when you decided to. Absent means unplanned. Set for daily tasks too
+   * when they're picked into a day.
+   */
+  plannedFor?: number;
   createdAt: number;
 };
 
@@ -305,4 +320,79 @@ export function todayTasks(tasks: Task[], now: number = Date.now()): Task[] {
   return relevant.map((t, i) => [t, i] as const)
     .sort(([a, ai], [b, bi]) => rank(a) - rank(b) || ai - bi)
     .map(([t]) => t);
+}
+
+// ---- the day plan ----
+//
+// A plan is a decision, not a filter: `todayTasks` above computes what the app
+// *thinks* is relevant today, while `plannedFor` records what the user actually
+// chose this morning. Nothing here rolls an unfinished day forward — an
+// untouched plan simply stays where it was, and moving something on is the
+// user's own action.
+
+/** Was this task planned for `day` (a UTC midnight)? */
+export function isPlannedFor(task: Task, day: number): boolean {
+  return task.plannedFor === day;
+}
+
+/**
+ * The tasks planned for the day `now` falls on. Ordered the way `todayTasks`
+ * orders: undone first — dailies, then dated ones, then the rest — with
+ * completed tasks sinking to the bottom, each subgroup keeping the store's
+ * order.
+ */
+export function plannedTasks(tasks: Task[], now: number = Date.now()): Task[] {
+  const day = utcMidnight(now);
+  const rank = (t: Task) =>
+    isTaskDone(t, now) ? 3 : t.daily ? 0 : t.dueDate !== undefined ? 1 : 2;
+  return tasks
+    .filter((t) => isPlannedFor(t, day))
+    .map((t, i) => [t, i] as const)
+    .sort(([a, ai], [b, bi]) => rank(a) - rank(b) || ai - bi)
+    .map(([t]) => t);
+}
+
+/**
+ * Whether the user has already settled a plan for the day `now` falls on —
+ * either by starting the day or by skipping it. An empty plan is a real answer,
+ * which is why this asks the marker rather than counting planned tasks.
+ */
+export function isDaySettled(dayPlannedOn: number | undefined, now: number = Date.now()): boolean {
+  return dayPlannedOn === utcMidnight(now);
+}
+
+/**
+ * The day's list — the one rule, in the one place.
+ *
+ * A day with a plan is exactly what the user chose. Anything else falls back to
+ * `todayTasks`, which is what the app showed before plans existed: someone who
+ * never opens the ritual keeps the behaviour they already have, and the feature
+ * is additive rather than a surface they must adopt to keep working.
+ *
+ * The emptiness check is what makes **Skip for today** work. Skipping settles
+ * the day — so the ritual doesn't ask again until tomorrow — but chooses
+ * nothing, and a screen that answered "nothing at all" to a user who only said
+ * "not now" would be reading a decision they didn't make. Settling is therefore
+ * what decides whether /today opens the picker or the list; the plan itself is
+ * what decides the list's contents.
+ */
+export function dayList(
+  tasks: Task[],
+  dayPlannedOn: number | undefined,
+  now: number = Date.now()
+): Task[] {
+  const planned = isDaySettled(dayPlannedOn, now) ? plannedTasks(tasks, now) : [];
+  return planned.length > 0 ? planned : todayTasks(tasks, now);
+}
+
+/**
+ * Tasks planned for a day before today and still not done — what the picker
+ * offers as "Left from yesterday". Nothing moves them by itself; adding one to
+ * today is a tap, and it is always the user's.
+ */
+export function leftFromBefore(tasks: Task[], now: number = Date.now()): Task[] {
+  const day = utcMidnight(now);
+  return tasks.filter(
+    (t) => t.plannedFor !== undefined && t.plannedFor < day && !t.daily && !isTaskDone(t, now)
+  );
 }

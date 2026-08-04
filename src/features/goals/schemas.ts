@@ -56,6 +56,7 @@ const taskSchema = z.object({
   dueDate: z.number().optional(),
   done: z.boolean(),
   completedOn: z.number().optional(),
+  plannedFor: z.number().optional(),
   createdAt: z.number(),
 });
 
@@ -63,6 +64,11 @@ export const saveInputSchema = z.object({
   goals: z.array(goalSchema),
   tasks: z.array(taskSchema).optional(),
   baseUpdatedAt: z.number().nullable().optional(),
+  // The day the user last settled a plan for. Optional for the same reason
+  // `tasks` is: a tab opened before the day plan existed still saves its goals,
+  // and leaving it out keeps whatever the server already has rather than
+  // silently unsettling today.
+  dayPlannedOn: z.number().optional(),
 });
 
 export type SaveInput = z.infer<typeof saveInputSchema>;
